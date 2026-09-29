@@ -90,24 +90,29 @@ the Qt libraries next to the program.
 ## Setting up `$APLHOME`
 
 RetroAPL keeps its font, help files, workspaces and functions in one
-folder, named by the `APLHOME` environment variable. Any folder works.
+folder, named by the `APLHOME` environment variable. A setup script
+creates it from this repository.
 
-On Linux, for example `~/aplhome`:
+On Linux (the default folder is `~/aplhome`):
 
 ```bash
-export APLHOME=$HOME/aplhome    # add this to ~/.bashrc as well
-mkdir -p $APLHOME/fonts $APLHOME/ws $APLHOME/fns
-cp -r aplhome/. $APLHOME/
-cp fonts/kapl.ttf $APLHOME/fonts/
+./setup-aplhome.sh
 ```
 
+It then shows the `export APLHOME=...` line to add to your `~/.profile`.
 Then run `frontend/build/APLTerminal`.
 
-On Windows, for example `C:\aplhome`: copy the contents of the
-repository's `aplhome` folder into it, create `fonts`, `ws` and `fns`
-folders inside it, and copy `fonts\kapl.ttf` into its `fonts` folder.
-Then set `APLHOME` to `C:\aplhome` under **System Properties →
-Environment Variables**.
+On Windows (the default folder is `%USERPROFILE%\aplhome`):
+
+```bat
+setup-aplhome.bat
+```
+
+It also sets `APLHOME` for your account if it isn't set yet.
+
+Either script takes a different folder as an argument, and is safe to
+run again after updating: it refreshes the font and help files, but
+never replaces your own workspaces, functions or images.
 
 What goes where:
 
@@ -116,15 +121,16 @@ What goes where:
 | `fonts/kapl.ttf`             | The APL font. **Required**; this is the only place it's loaded from. |
 | `resources/*.md`             | The reference pages shown by the Help menu.                   |
 | `help.dat`                   | Help text used by the interpreter.                            |
-| `ws/`                        | Workspaces (`name.ws`).                                       |
+| `ws/`                        | Workspaces (`name.ws`). `mpl.ws` loads at startup.            |
 | `fns/`                       | Function files (`name.fn`).                                   |
+| `images/`                    | Images; the default folder for the graphics image functions.  |
 | `settings.ini`               | Your settings. Created automatically; don't copy someone else's. |
 
 ## Typing APL
 
-   ![IBM 2741 terminal with APL keyboard](docs/images/ibm2741-apl-keyboard.jpg)
+![IBM 2741 terminal with APL keyboard](docs/images/ibm2741-apl-keyboard.jpg)
 
-   *Photo: [Oscar.nierstrasz](https://commons.wikimedia.org/wiki/File:IBM_2741_Communications_Terminal.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)*
+*Photo: [Oscar.nierstrasz](https://commons.wikimedia.org/wiki/File:IBM_2741_Communications_Terminal.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)*
 
 APL symbols are typed with the 2741 keyboard layout; choose between the
 original and altered layouts under **Settings**. Composite symbols are
@@ -155,7 +161,8 @@ backend/     The interpreter (C): builds libapl.a and apl_cli
   tests/     Regression tests: .apl inputs and .expected transcripts
 frontend/    The Qt6 front end (C++) and Windows build scripts
 fonts/       kapl.ttf, the APL font
-aplhome/     Starting contents for $APLHOME (help files)
+aplhome/     Starting contents for $APLHOME (help files, default workspace)
+setup-*      Create or update an $APLHOME folder
 package-*    Scripts for packaging source and installs
 ```
 
