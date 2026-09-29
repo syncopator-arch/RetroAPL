@@ -122,7 +122,7 @@ What goes where:
 
 ## Typing APL
 
-   ![IBM 2741 terminal with APL keyboard](docs/images/IBM_2741_Communications_Terminal.jpg)
+   ![IBM 2741 terminal with APL keyboard](docs/images/ibm2741-apl-keyboard.jpg)
 
    *Photo: [Oscar.nierstrasz](https://commons.wikimedia.org/wiki/File:IBM_2741_Communications_Terminal.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)*
 
