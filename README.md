@@ -129,7 +129,7 @@ What goes where:
 APL symbols are typed with the 2741 keyboard layout; choose between the
 original and altered layouts under **Settings**. Composite symbols are
 made the way they were on the 2741: type one symbol, press
-**Backspace** once (the cursor moves back without erasing), then type
+**Backspace** once (the cursor moves back), then type
 the second symbol over it. For example, `○` then Backspace then `|`
 gives `⌽`.
 
