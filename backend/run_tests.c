@@ -32,7 +32,8 @@
 	understands it too), removed afterwards -- tests never touch real
 	workspaces or .fn files and can't affect each other. Any files in
 	TEST_DIR/fns/ are copied into the scratch APLHOME/fns/ first, where
-	)ENTER finds them.
+	)ENTER finds them, and the whole TEST_DIR/images/ tree (subfolders
+	and dot files included) into APLHOME/images/, where )IMAG looks.
 
 	The runner hands apl_cli the .apl file as its standard input and a
 	file as its standard output and error, directly -- no pipes, so no
@@ -167,6 +168,31 @@ copy_file(const char *src, const char *dst)
 	fclose(in);
 	if (fclose(out) != 0) ok = 0;
 	return ok;
+}
+
+/* Copy the directory tree src into dst (created if missing), files and
+   subdirectories alike, dot-names included -- tests/images/ has a
+   hidden file and nested folders on purpose, so )IMAG's handling of
+   both can be tested. "." and ".." are the only names skipped. */
+static void
+copy_tree(const char *src, const char *dst)
+{
+	DIR *d;
+	struct dirent *e;
+	char s[PATHSZ], t[PATHSZ];
+
+	make_dir(dst);		/* fine if it already exists */
+	d = opendir(src);
+	if (!d) return;
+	while ((e = readdir(d)) != NULL) {
+		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+			continue;
+		mkpath(s, "%s/%s", src, e->d_name);
+		mkpath(t, "%s/%s", dst, e->d_name);
+		if (is_dir(s)) copy_tree(s, t);
+		else if (is_file(s)) copy_file(s, t);
+	}
+	closedir(d);
 }
 
 /* whole file into a malloc'd, NUL-terminated buffer; *len gets the size */
@@ -632,6 +658,13 @@ main(int argc, char **argv)
 				}
 				closedir(d);
 			}
+		}
+		/* and the image fixtures, as a whole tree: )IMAG lists
+		   subfolders, so unlike fns/ this one isn't flat */
+		mkpath(src, "%s/images", test_dir);
+		if (is_dir(src)) {
+			mkpath(dst, "%s/images", scratch);
+			copy_tree(src, dst);
 		}
 		set_env("APLHOME", scratch);
 

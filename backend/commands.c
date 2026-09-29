@@ -113,6 +113,8 @@ UCHAR cmd_table[] = {
 				   so nothing earlier in the table captures it */
 	'S','T','E','P',0,	/* 44 - )step -- STA ()stack) and STOP come
 				   earlier but neither is a prefix of STEP */
+	'I','M','A','G',0,	/* 45 - )imag -- so )IMAGE and )IMAGES work
+				   too; INTDIV is the only other I entry */
 	'@',0,	/* end of table -- do_command() and the command list stop here */
 	0	/* empty name: table_flip() (set_case) stops here; without it,
 		   it read, and could case-flip, the byte past the table */
@@ -559,6 +561,53 @@ int count, capacity, k;
 }
 
 /* ============================================================
+   print_name_columns() - lay out a list of names across )WIDTH.
+   Shared by )FONT and )IMAG (it was do_fonts()'s own loop until
+   )IMAG needed the same layout).
+
+   Columns are sized to the longest name being shown plus two
+   spaces -- font families and file names often contain single
+   spaces, and a fixed 10- or 20-wide column (what )FNS/)LIB use)
+   would either truncate them or make it unclear where one name
+   ends and the next begins. A name wider than the whole line
+   still prints, alone on its line. No trailing padding after the
+   last name on a line, so a copied name doesn't pick up stray
+   spaces. Names are printed as-is, without OUT_TRANS_FLAG.
+   ============================================================ */
+static void
+print_name_columns(names,n)
+char **names;
+long n;
+{
+long k;
+int len, maxlen, colw, col, pos;
+
+	maxlen = 0;
+	for (k = 0; k < n; k++) {
+		len = (int)strlen(names[k]);
+		if (len > maxlen) maxlen = len;
+	}
+
+	colw = maxlen + 2;
+	col = 0;	/* start column of the name just printed */
+	pos = 0;	/* current output column */
+	for (k = 0; k < n; k++) {
+		if (pos) {
+			if (col + colw + maxlen > WIDTH - 1) {
+				NL();
+				col = pos = 0;
+			} else {
+				col += colw;
+				while (pos < col) { PRINT(" "); pos++; }
+			}
+		}
+		PRINT(names[k]);
+		pos += (int)strlen(names[k]);
+	}
+	if (pos) NL();
+}
+
+/* ============================================================
    do_fonts() - )FONT and )FONT pattern.
    Lists the font families available to graphics windows (for
    WFONT's face selection), in Qt's own capitalization so a name
@@ -570,14 +619,7 @@ int count, capacity, k;
    ignored). Only the first word is used, so a name with a space
    in it is matched with '*' instead: )FONT DEJAVU*MONO.
 
-   Sorted ignoring case. Laid out across )WIDTH in columns sized
-   to the longest name being shown plus two spaces -- family names
-   often contain single spaces, and a fixed 10- or 20-wide column
-   (what )FNS/)LIB use) would either truncate them or make it
-   unclear where one name ends and the next begins. A name wider
-   than the whole line still prints, alone on its line. No
-   trailing padding after the last name on a line, so a copied
-   name doesn't pick up stray spaces.
+   Sorted ignoring case, laid out by print_name_columns() above.
 
    Font names come from the OS, so they're plain ASCII printed
    without OUT_TRANS_FLAG -- the same way do_calldir() prints file
@@ -590,6 +632,8 @@ int count, capacity, k;
    ============================================================ */
 #define FONT_LIST_BUF 65536L
 
+/* Case-ignoring name order, exact order as the tie-break. Named for
+   )FONT, where it started; )IMAG sorts with it too. */
 static int
 font_name_cmp(a,b)
 const void *a,*b;
@@ -618,7 +662,7 @@ UCHAR *pattern;
 char *buf, **names, *cp;
 char pbuf[FILT_PAT_SIZE];
 long count, n, k;
-int len, maxlen, colw, col, pos, filtering;
+int len, filtering;
 
 	buf = (char *)malloc((size_t)FONT_LIST_BUF);
 	if (!buf) return(SET_ERR(ERR_WSFULL));
@@ -643,40 +687,338 @@ int len, maxlen, colw, col, pos, filtering;
 	}
 
 	n = 0;
-	maxlen = 0;
 	cp = buf;
 	for (k = 0; k < count; k++) {
 		len = (int)strlen(cp);
-		if (!filtering || filt_match(pbuf, cp)) {
+		if (!filtering || filt_match(pbuf, cp))
 			names[n++] = cp;
-			if (len > maxlen) maxlen = len;
-		}
 		cp += len + 1;
 	}
 
 	qsort(names, (size_t)n, sizeof(char *), font_name_cmp);
-
-	colw = maxlen + 2;
-	col = 0;	/* start column of the name just printed */
-	pos = 0;	/* current output column */
-	for (k = 0; k < n; k++) {
-		if (pos) {
-			if (col + colw + maxlen > WIDTH - 1) {
-				NL();
-				col = pos = 0;
-			} else {
-				col += colw;
-				while (pos < col) { PRINT(" "); pos++; }
-			}
-		}
-		PRINT(names[k]);
-		pos += (int)strlen(names[k]);
-	}
-	if (pos) NL();
+	print_name_columns(names, n);
 
 	free(names);
 	free(buf);
 	return(0);
+}
+
+/* ============================================================
+   do_images() - )IMAG, )IMAG pattern, )IMAG folder/pattern.
+   Lists what's in $APLHOME/images/ (or a folder under it, or any
+   absolute folder) exactly as the file system spells it -- no
+   case change, extensions kept -- so a name can be copied straight
+   into a string for WILOAD/WIRELOAD/WISAVE.
+
+   What's listed: every file, plus subfolders shown as "name/"
+   (not descended into). Names starting with '.' are hidden;
+   get_first_dir()/get_next_dir() already skip them on both
+   platforms. Sorted ignoring case (font_name_cmp), laid out by
+   print_name_columns(). Nothing matching prints nothing, as for
+   )FONT.
+
+   The argument, only its first word unless quoted:
+     (none)          $APLHOME/images/
+     pattern         names there matching pattern
+     sub/            what's in images/sub/  (the trailing separator
+                     is what says "folder"; plain "sub" is a
+                     pattern, matching sub/ along with subway.png)
+     sub/pattern     names in images/sub/ matching pattern
+     /abs/dir/...    an absolute folder, by the same test WILOAD
+                     uses (grfuncs.c's is_absolute_path(): leading
+                     '/' or a drive letter "X:"). No '~' expansion,
+                     since WILOAD doesn't do one either.
+   Separators are '/' or '\\', as do_calldir() accepts. ".." works;
+   nothing restricts the listing to images/, since WILOAD itself
+   takes absolute paths.
+
+   Pattern grammar is filt_match()'s ('*', X-Y ranges, case
+   ignored, a trailing '*' implied), applied to the last part only.
+
+   HOW THE ARGUMENT ARRIVES (checked by running apl_cli, which feeds
+   the backend through the same translation as a GUI paste): outside
+   quotes, input translation (itrans[]) has changed some characters
+   by the time COMMANDP sees them --
+       letters     case swapped (Sub -> sUB)
+       /           '%'       (so a real '%' can't be told from '/')
+       *           CHAR_POW
+       ~           '|'
+       =           CHAR_EQ
+       ^  and  |  '&' and '!' (colliding with the real '&' and '!')
+   -- while digits, '.', '_', '-', '\\' and most other punctuation
+   arrive as typed. img_get_arg() undoes the first five; '^' and '|'
+   are left alone since they can't be told apart and are unusual in
+   file names. Inside quotes, nothing is translated at all, so a
+   quoted argument arrives exactly as typed: that's the way to give
+   a name with a space, '%', '^' or '|' in it -- )IMAG 'My Pics/'.
+   '' inside quotes is one quote, as in an APL string; a missing
+   closing quote takes the rest of the line.
+
+   This un-translation is a new pattern in this file -- other
+   commands either don't care (filt_match() ignores case) or fold
+   case themselves (do_clist()'s go_lower()). It's needed here
+   because Linux file names are case-sensitive.
+
+   Folder case: typed text may still not have the disk's case (the
+   GUI keyboard may give only one case of letters), so each folder
+   in the path is tried exactly first, then matched ignoring case
+   against the folders actually there. One case-ignoring match is
+   used; none is "Can't find", two or more (Sub/ and SUB/) is
+   "Ambiguous" -- quote the path to pick one exactly. This applies
+   to quoted arguments too; it only comes into play when the exact
+   name doesn't exist.
+
+   Errors print a message and return 0, like do_calldir()'s
+   "Can't find". The folder in the message is shown as typed.
+   ============================================================ */
+
+static int
+img_is_sep(c)
+int c;
+{
+	return(c == '/' || c == '\\');
+}
+
+/* Same test as grfuncs.c's is_absolute_path() (static there, so
+   repeated rather than shared): leading '/', or a drive letter. */
+static int
+img_is_absolute(p)
+const char *p;
+{
+int c;
+
+	if (!p || !*p) return(0);
+	if (p[0] == '/') return(1);
+	c = (UCHAR)p[0] | 0x20;
+	if (c >= 'a' && c <= 'z' && p[1] == ':') return(1);
+	return(0);
+}
+
+/* The argument, as a plain file-system string (see above for what
+   is undone and why). -1 if it doesn't fit in outsz. */
+static int
+img_get_arg(raw,out,outsz)
+const UCHAR *raw;
+char *out;
+int outsz;
+{
+int n, c;
+
+	n = 0;
+	if (!raw) raw = (const UCHAR *)"";
+	while (*raw == ' ') raw++;
+
+	if (*raw == CHAR_QT) {
+		raw++;
+		while (*raw) {
+			if (*raw == CHAR_QT) {
+				if (raw[1] != CHAR_QT) break;	/* closing quote */
+				raw++;				/* '' -> ' */
+			}
+			if (n >= outsz - 1) return(-1);
+			out[n++] = (char)*raw++;
+		}
+		if (!*raw)	/* no closing quote: drop trailing blanks */
+			while (n > 0 && out[n-1] == ' ') n--;
+	} else {
+		while (*raw && *raw != ' ') {
+			c = *raw++;
+			if (c >= 'a' && c <= 'z') c -= 32;
+			else if (c >= 'A' && c <= 'Z') c += 32;
+			else if (c == '%') c = '/';
+			else if (c == CHAR_POW) c = '*';
+			else if (c == '|') c = '~';
+			else if (c == CHAR_EQ) c = '=';
+			if (n >= outsz - 1) return(-1);
+			out[n++] = (char)c;
+		}
+	}
+	out[n] = '\0';
+	return(0);
+}
+
+/* name equal to the len bytes at comp, ignoring case */
+static int
+img_same_nocase(name,comp,len)
+const char *name,*comp;
+int len;
+{
+int i;
+
+	for (i = 0; i < len; i++)
+		if (!name[i] || filt_up((int)(UCHAR)name[i]) !=
+				filt_up((int)(UCHAR)comp[i]))
+			return(0);
+	return(name[len] == '\0');
+}
+
+/* get_first_dir() wants a folder without a trailing separator
+   (Windows's appends "\\*" itself), except for a root: "/", "C:/" */
+static char *
+img_first_entry(dir)
+const char *dir;
+{
+char buf[PATHBUF_SIZE];
+int n;
+
+	strncpy(buf, dir, sizeof(buf) - 1);
+	buf[sizeof(buf) - 1] = '\0';
+	n = (int)strlen(buf);
+	if (n > 1 && img_is_sep(buf[n-1]) &&
+	    !(n == 3 && buf[1] == ':'))
+		buf[n-1] = '\0';
+	return(get_first_dir(buf));
+}
+
+/* Append the folders in dirs[0..dlen) to out (which already holds
+   the starting folder, ending in a separator, or is empty for a
+   drive-relative "C:"), one at a time: exact name first, then a
+   single case-ignoring match. 0 = found, 1 = not found (or too
+   long), 2 = more than one case-ignoring match. */
+static int
+img_resolve_dir(out,outsz,dirs,dlen)
+char *out;
+int outsz;
+const char *dirs;
+int dlen;
+{
+struct stat st;
+char trial[PATHBUF_SIZE], found[PATHBUF_SIZE];
+const char *comp, *end;
+char *entry;
+int clen, olen, nfound;
+
+	end = dirs + dlen;
+	while (dirs < end) {
+		while (dirs < end && img_is_sep((UCHAR)*dirs)) dirs++;
+		if (dirs >= end) break;
+		comp = dirs;
+		while (dirs < end && !img_is_sep((UCHAR)*dirs)) dirs++;
+		clen = (int)(dirs - comp);
+
+		olen = (int)strlen(out);
+		if (olen + clen + 2 > outsz || olen + clen + 2 > (int)sizeof(trial))
+			return(1);
+		memcpy(trial, out, (size_t)olen);
+		memcpy(trial + olen, comp, (size_t)clen);
+		trial[olen + clen] = '\0';
+
+		if (stat(trial, &st) != 0 || !S_ISDIR(st.st_mode)) {
+			/* not there as typed: look for it ignoring case */
+			nfound = 0;
+			for (entry = img_first_entry(out[0] ? out : ".");
+			     entry; entry = get_next_dir()) {
+				if (entry[0] != 'D') continue;
+				if (!img_same_nocase(entry + 1, comp, clen)) continue;
+				if (++nfound == 1) {
+					strncpy(found, entry + 1, sizeof(found) - 1);
+					found[sizeof(found) - 1] = '\0';
+				}
+			}
+			cleanup_dir();
+			if (nfound == 0) return(1);
+			if (nfound > 1) return(2);
+			clen = (int)strlen(found);
+			if (olen + clen + 2 > outsz) return(1);
+			memcpy(trial + olen, found, (size_t)clen + 1);
+		}
+		strcpy(out, trial);
+		strcat(out, "/");
+	}
+	return(0);
+}
+
+short
+do_images(arg)
+UCHAR *arg;
+{
+char path[PATHBUF_SIZE], dir[PATHBUF_SIZE], pbuf[PATHBUF_SIZE];
+char **names, **tmp, *entry, *pat;
+int last, plen, i, rc, len;
+long n, cap, k;
+
+	if (img_get_arg(arg, path, sizeof(path)) < 0) {
+		PRINT("Name too long");
+		NL();
+		return(0);
+	}
+
+	/* folder part is everything through the last separator */
+	last = -1;
+	for (i = 0; path[i]; i++)
+		if (img_is_sep((UCHAR)path[i])) last = i;
+
+	if (img_is_absolute(path)) {
+		plen = (path[0] == '/') ? 1 : 2;
+		if (plen == 2 && img_is_sep((UCHAR)path[2])) plen = 3;
+		memcpy(dir, path, (size_t)plen);
+		dir[plen] = '\0';
+		if (last + 1 < plen) last = plen - 1;	/* "C:name" */
+	} else {
+		plen = 0;
+		get_aplhome_dir(dir, sizeof(dir), "images");
+	}
+	pat = path + last + 1;
+
+	rc = 0;
+	if (last >= plen)
+		rc = img_resolve_dir(dir, (int)sizeof(dir), path + plen, last + 1 - plen);
+	/* the starting folder itself is only checked here, e.g. "C:"
+	   on a system with no such drive; like do_calldir(), an empty
+	   folder is fine but a missing one is "Can't find" */
+	if (!rc) {
+		struct stat st;
+		if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) rc = 1;
+	}
+	if (rc) {
+		PRINT(rc == 2 ? "Ambiguous: " : "Can't find: ");
+		*pat = '\0';	/* show just the folder part, as typed */
+		PRINT(path);
+		NL();
+		return(0);
+	}
+
+	/* pattern: filt_match() grammar, trailing '*' implied. Built
+	   here rather than by filt_build_pattern(), which stops at the
+	   first blank -- a quoted name can have blanks in it. */
+	if (*pat) {
+		len = (int)strlen(pat);
+		if (len > (int)sizeof(pbuf) - 2) len = (int)sizeof(pbuf) - 2;
+		memcpy(pbuf, pat, (size_t)len);
+		if (pbuf[len-1] != '*') pbuf[len++] = '*';
+		pbuf[len] = '\0';
+	}
+
+	n = 0;
+	cap = 64;
+	names = (char **)malloc((size_t)cap * sizeof(char *));
+	if (!names) return(SET_ERR(ERR_WSFULL));
+
+	rc = 0;
+	for (entry = img_first_entry(dir); entry; entry = get_next_dir()) {
+		if (*pat && !filt_match(pbuf, entry + 1)) continue;
+		if (n >= cap) {
+			tmp = (char **)realloc(names, (size_t)cap * 2 * sizeof(char *));
+			if (!tmp) { rc = 1; break; }
+			names = tmp;
+			cap *= 2;
+		}
+		len = (int)strlen(entry + 1);
+		names[n] = (char *)malloc((size_t)len + 2);
+		if (!names[n]) { rc = 1; break; }
+		strcpy(names[n], entry + 1);
+		if (entry[0] == 'D') strcat(names[n], "/");
+		n++;
+	}
+	cleanup_dir();
+
+	if (!rc) {
+		qsort(names, (size_t)n, sizeof(char *), font_name_cmp);
+		print_name_columns(names, n);
+	}
+	for (k = 0; k < n; k++) free(names[k]);
+	free(names);
+	return(rc ? SET_ERR(ERR_WSFULL) : 0);
 }
 
 short
@@ -3558,6 +3900,8 @@ long l;
 			return(do_fonts(COMMANDP));
 		case 44:	/* STEP */
 			return(do_step());
+		case 45:	/* IMAG */
+			return(do_images(COMMANDP));
 	}
 	return(SET_ERR(ERR_COMMAND));
 }

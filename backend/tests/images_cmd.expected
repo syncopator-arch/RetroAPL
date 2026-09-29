@@ -1,0 +1,55 @@
+Clear WS
+     )IMAG
+Apple.png                                a~b=c.png
+banana.JPG                               cherry_tree.png
+mandelbrot_zoom_sequence_frame_0003.png  My Pics/
+notes.txt                                Photos/
+     )IMAGES
+Apple.png                                a~b=c.png
+banana.JPG                               cherry_tree.png
+mandelbrot_zoom_sequence_frame_0003.png  My Pics/
+notes.txt                                Photos/
+     )IMAG b
+banana.JPG
+     )IMAG *.PNG
+Apple.png                                a~b=c.png
+cherry_tree.png                          mandelbrot_zoom_sequence_frame_0003.png
+     )IMAG zzz
+     )IMAG p
+Photos/
+     )IMAG Photos/
+Beach.png      Nested/        sunset-01.png
+     )IMAG photos/
+Beach.png      Nested/        sunset-01.png
+     )IMAG PHOTOS/NESTED/
+Deep.gif
+     )IMAG Photos/s
+sunset-01.png
+     )IMAG Photos/../c
+cherry_tree.png
+     )IMAG a~b=
+a~b=c.png
+     )IMAG 'My Pics/'
+Bob's Pic.png  Carol's.png
+     )IMAG 'My Pics/Bob''s'
+Bob's Pic.png
+     )IMAG 'My Pics/Bob''s
+Bob's Pic.png
+     )IMAG nosuch/
+Can't find: nosuch/
+     )IMAG Apple.png/
+Can't find: Apple.png/
+     )IMAG /no/such/dir/
+Can't find: /no/such/dir/
+     )WIDTH 40
+Was 82
+     )IMAG
+Apple.png
+a~b=c.png
+banana.JPG
+cherry_tree.png
+mandelbrot_zoom_sequence_frame_0003.png
+My Pics/
+notes.txt
+Photos/
+     

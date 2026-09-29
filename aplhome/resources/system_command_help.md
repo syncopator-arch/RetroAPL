@@ -19,7 +19,7 @@ and some could damage the workspace.
 Workspaces live in `$APLHOME/ws/` as `name.ws`, and function source
 files in `$APLHOME/fns/` as `name.fn`.
 
-`)LIB`, `)FNSL`, `)FNS`, `)VARS`, `)SYMBOLS` and `)FONT` can take a name
+`)LIB`, `)FNSL`, `)FNS`, `)VARS`, `)SYMBOLS`, `)FONT` and `)IMAG` can take a name
 pattern to narrow what they list. A pattern isn't a regular expression. Plain
 letters match the start of a name: `)FNS G` lists functions starting
 with G. `*` matches any run of characters: `)FNS *TEST` lists functions
@@ -391,6 +391,38 @@ first word is used, so a name containing a space is matched with `*`:
 `)FONT DEJAVU*MONO`. The pattern matches leading letters, but
 `⎕WFONT` needs the full name. Only works with graphics windows,
 the main text APL development window is not affected.
+
+`)IMAG`
+
+`)IMAG pattern`
+
+`)IMAG folder/`
+
+`)IMAG folder/pattern`
+
+Lists the files in `$APLHOME/images/`, the folder `⎕WILOAD`,
+`⎕WIRELOAD` and `⎕WISAVE` use for a name that isn't an absolute path.
+Names are shown exactly as they're spelled on disk, upper and lower
+case and extension included, so a name can be copied straight into a
+string for `⎕WILOAD`. All files are listed, not just images; names
+starting with `.` are hidden. Subfolders are shown with a `/` after
+the name but aren't opened: `)IMAG Photos/` lists what's in
+`Photos`, without `Photos/` in front of each name, and
+`)IMAG Photos/S` lists the names there starting with S. The `/` at the
+end is what makes it a folder: `)IMAG Photos` is a pattern, and lists
+every name starting with Photos, the folder included. Folders can go any depth
+(`)IMAG Photos/2024/June/`), `..` works, and a path starting with `/`
+(or a drive letter such as `C:` on Windows) lists that folder
+instead, so any folder on the system can be browsed. Also `)IMAGE`
+and `)IMAGES`.
+
+Case is ignored when matching a pattern. A folder name that doesn't
+exist with the case as typed is looked up ignoring case, so
+`)IMAG photos/` finds `Photos`; if two folders differ only in case,
+the result is `Ambiguous`. To give a name exactly, or one containing
+a space, `%`, `^` or `|`, put it in quotes: `)IMAG 'My Pictures/'`.
+Inside the quotes, `''` stands for one quote, as in an APL string.
+`Can't find` if the folder doesn't exist.
 
 ---
 
