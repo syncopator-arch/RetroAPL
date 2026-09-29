@@ -36,6 +36,9 @@ Windows from the same source.
   symbols, and pasting Unicode APL converts back, so code moves easily
   between RetroAPL and documents, email or other APLs.
 - **Printing** of the session or a function, to a printer or PDF.
+- **Supports most classic APL glyphs and syntax, with only two exceptions,
+  domino and braket dimension syntax-- mitigated by the fact it supports
+  the first dimension variations of dyadic / \ and , (⌿ ⍀ ⍪)
 - **`apl_cli`**, a command-line version of the interpreter that reads and
   writes UTF-8, used for the regression tests.
 
