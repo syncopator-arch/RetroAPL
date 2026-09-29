@@ -1,0 +1,13 @@
+Clear WS
+     ⎕FTELL ⍳200
+     ^
+Length Error
+     ⎕FTELL ⍳3
+¯1 ¯1 ¯1
+     1 ⎕FREAD ¯5
+     ^
+Domain Error
+     1 ⎕FREAD ¯1
+     ^
+File Tie Error
+     

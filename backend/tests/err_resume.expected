@@ -1,0 +1,41 @@
+Clear WS
+     )ENTER ER
+     )ENTER DZ
+     )LIST ER
+     ∇ ER
+[1]  NOSUCH÷1 2 3
+[2]  99
+     )LIST DZ
+     ∇ DZ
+[1]  Z←3÷0
+[2]  99
+     ER
+     ^
+Value Error
+ER [1] *
+     )LEFT
+Undefined
+     )RIGHT
+1 2 3
+     NOSUCH←10
+     →0
+10 5 3.3333333333
+99
+     )SI
+     DZ
+     ^
+Domain Error
+DZ [1] *
+     )LEFT
+3
+     )RIGHT
+0
+     →0
+     ^
+Domain Error
+DZ [1] *
+     )SI
+DZ [1] * 
+     →
+     )SI
+     

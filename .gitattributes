@@ -1,0 +1,16 @@
+# .gitattributes -- line endings and binary files.
+
+# Text files: stored with LF in the repo, and checked out with LF on
+# every platform (including Windows), so nothing ever gets converted.
+* text=auto eol=lf
+
+# Except Windows batch files: cmd.exe can misread labels/GOTO in
+# LF-only .bat files, so these are checked out with CRLF.
+*.bat text eol=crlf
+
+# Binary: never convert, never try to show line-by-line diffs.
+*.ttf binary
+*.ws  binary
+*.fn  binary
+*.png binary
+*.jpg binary

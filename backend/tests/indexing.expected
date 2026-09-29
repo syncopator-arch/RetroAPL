@@ -1,0 +1,10 @@
+Clear WS
+     X←5
+     X[1]
+     ^
+Index Error
+     V←⍳5
+     V[2]←2.5
+     V
+1 2.5 3 4 5
+     

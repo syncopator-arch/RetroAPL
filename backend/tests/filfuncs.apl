@@ -1,0 +1,4 @@
+⎕FTELL ⍳200
+⎕FTELL ⍳3
+1 ⎕FREAD ¯5
+1 ⎕FREAD ¯1

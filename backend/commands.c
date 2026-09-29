@@ -1,0 +1,3564 @@
+/*
+	commands.c
+
+	1.2 - adjust ws magic number
+	1.3 - adjust ws magic number read...
+	1.4 - adjust ws magic number, 64-bit clean fmt
+*/
+
+#define COMMANDS_C 1
+
+#include <sys/stat.h>	/* stat()/S_ISDIR -- portable "does this directory
+			   exist" check for do_calldir(); already relied on
+			   as part of the portable baseline by both platform
+			   files (linux_platform.c calls it directly, and
+			   windows_platform.c already includes this header) */
+
+#include "parse.h"
+#include "mplmem.h"
+#include "funcs.h"
+#include "fkeys.h"
+#include "externs.h"
+#include "platform.h"
+
+#define LTABLE_SIZE 4000L
+
+/* SYMT_REL removed -- SYMT is now embedded in workspace, all me_reference
+   values are plain ws_off_t offsets, no region tagging needed. */
+
+extern UCHAR *all_fnames[];
+
+extern long wssize;
+extern UCHAR var_lo,var_hi,alph_lo,alph_hi;
+/* Resolved workspace/function directory via $APLHOME */
+extern void get_aplhome_dir(char *out, size_t outsz, const char *subdir);
+extern int step_mode;	/* exec.c -- )STEP */
+int tablecase = 1;
+
+/*
+
+extern UCHAR op_table[];
+extern UCHAR char_xtable[];
+
+extern long file_serial();
+extern long GarbCollect();
+extern UCHAR *get_vstr();
+extern short lookup_sym();
+extern short compline();
+extern short pop_fn();
+extern short vout();
+extern short input_proc();
+extern struct ValEnt **get_vparm();
+extern void message(short n);
+extern void Adjust_Stack();
+extern void get_mplenv(char *s);
+*/
+
+
+/*
+extern UCHAR *all_fnames[];
+extern int term_fd;
+*/
+
+FILE *dbgf = 0L;
+int text_dump_flag = 0;
+
+
+UCHAR cmd_table[] = {
+	'O','F','F',0,		/* 0 - )off */
+	'V','A','R',0,		/* 1 - )vars */
+	'D','E','B','U','G',0,	/* 2 - )debug */
+	'D','U','M','P',0,	/* 3 - )dump */
+	'C','L',0,		/* 4 - )clear */
+	'W','S',0,		/* 5 - )wsid */
+	'G','A','R','B',0,	/* 6 - )garb */
+	'S','A','V','E',0,	/* 7 - )save */
+	'L','O','A','D',0,	/* 8 - )load */
+	'E','R','A',0,	 	/* 9 - )erase */
+	'F','N','S','L',0,	/* 10 - )fnsl */
+	'F','N','S',0,		/* 11 - )fns */
+	'S','Y','M',0, 		/* 12 - )symbols */
+	'M','E','M',0,		/* 13 - )mem */
+	'O','R',0,		/* 14 - )origin */
+	'W','I',0,		/* 15 - )width */
+	'E','N','T',0,		/* 16 - )enter (fn) */
+	'E','D',0,		/* 17 - )edit */
+	'S','I','V',0,		/* 18 - )siv */
+	'L','I','B',0,		/* 19 - )lib */
+	'P','U','R',0,		/* 20 - )purge */
+	'S','Y','S',0,		/* 21 - )sys */
+	'S','I',0,		/* 22 - )si */
+	'S','T','A',0,		/* 23 - )stack */
+	'L','I',0,		/* 24 - )list */
+	'O','U','T',0,		/* 25 - )outsync */
+	'H','E',0,		/* 26 - )help */
+	'B','O',0,		/* 27 - )boot */
+	'P','S',0,		/* 28 - )psnap */
+	'B','A',0,		/* 29 - )base */
+	'S','T','O','P',0,	/* 30 - )stop (was )ltrace; same slot, so the
+				   numbering after it is unchanged) */
+	'T','R',0,		/* 31 - )trace */
+	'R','I',0,		/* 32 - )right */
+	'L','E',0,		/* 33 - )left */
+	'S','C','R',0,		/* 34 - )scrh */
+	'H','I','S','T',0,	/* 35 - )hist */
+	'C','A','S','E',0,	/* 36 - )case */
+	'V','E','R',0,		/* 37 - )version */
+	'T','E','X','T',0,	/* 38 - )text */
+	'D','R','O','P',0,	/* 39 - )drop */
+	'R','E','S',0,		/* 40 - )resize */
+	'D','I','G',0,		/* 41 - )digits */
+	'I','N','T','D','I','V',0,	/* 42 - )intdiv */
+	'F','O','N','T',0,	/* 43 - )font -- no entry above starts with "FO",
+				   so nothing earlier in the table captures it */
+	'S','T','E','P',0,	/* 44 - )step -- STA ()stack) and STOP come
+				   earlier but neither is a prefix of STEP */
+	'@',0,	/* end of table -- do_command() and the command list stop here */
+	0	/* empty name: table_flip() (set_case) stops here; without it,
+		   it read, and could case-flip, the byte past the table */
+};
+
+void
+dbget()
+{
+char path[PATHBUF_SIZE];
+
+	if (!dbgf) 
+	{
+		get_aplhome_dir(path, sizeof(path), "");
+		strcat(path,"debug.log");
+		dbgf = fopen(path,"a+");
+
+		if (dbgf)
+		{
+			PRINT("Writing to debug.log at: ");
+			PRINT(path);
+			NL();
+		}
+		
+	}
+}
+
+void
+CNL()
+{
+	switch (SILENT_COMMAND) 
+	{
+		case 0:
+			NL();
+			break;
+		case 2:
+			dbget();
+			fprintf(dbgf,"\n");
+			fflush(dbgf);
+			break;
+	}
+}
+
+void
+CPRINT(s)
+char *s;
+{
+	switch (SILENT_COMMAND) 
+	{
+		case 0:
+			PRINT(s);
+			break;
+		case 2:
+			dbget();
+			fprintf(dbgf,"%s",s);
+			fflush(dbgf);
+			break;
+	}
+}
+
+void
+Cmessage(n)
+short n;
+{
+	if (!SILENT_COMMAND) message(n);
+}
+
+void
+stamp_ws()
+{
+short i;
+int32_t *lp;
+
+    get_tod();
+    lp = (int32_t *)LSCRATCH;
+    for (i=0;i<6;i++) wspace->tstamp[i] = (short)lp[i];
+}
+
+void
+print_stamp()
+{
+char *cp;	
+short *sp;
+
+	if (SILENT_COMMAND) return;	
+	cp = (char *)LSCRATCH;
+	sp = wspace->tstamp;
+	sprintf(cp," %d.%02d.%02d %02d/%02d/%02d ",sp[3],sp[4],sp[5],sp[1],sp[2],sp[0]%100);
+	PRINT(cp);
+}
+
+void
+print_num(l)
+long l;
+{
+char cb[15];
+	if (SILENT_COMMAND) return;
+	sprintf(cb,"%ld",l);
+	PRINT(cb);
+}
+
+short
+print_name(i)
+short i;
+{
+struct NameEnt *ne;
+UCHAR *cp;
+REG short j;
+static UCHAR cb[256];
+
+	cb[1] = '\0';
+	if (SYMT[i].namelen) 
+	{
+		if (SYMT[i].namelen <= SYMNAME_MAX) 
+		{
+			cp = (UCHAR *)&SYMT[i].name.c[0];			
+		} else {
+			ne = (struct NameEnt *)WS_PTR(SYMT[i].name.a);
+			cp = ne->ne_data;
+		}
+		i = SYMT[i].namelen;
+		for (j=0;j<i;j++) 
+		{
+			if (symbolcase) cb[0] = char_flip(*cp++);
+			else cb[0] = *cp++;
+			CPRINT(cb);
+		}
+	} else {
+		CPRINT("********");
+		i = 8;
+	}
+	CURSX += i;
+	return(i);
+}
+
+void
+go_lower(cp)
+char *cp;
+{
+	while (*cp) 
+	{
+		if (*cp >= 'A' && *cp <= 'Z') *cp += 32;
+		cp++;
+	}
+}
+
+short
+on_stack(f)
+short f;
+{
+int32_t *sp,t;
+short fline;
+
+	if (FUNC_NUM == f) return(1);
+	Adjust_Stack();
+	sp = MSTACK;
+	while (sp < STACKMAX) {
+		sp++;	/* skip over emark */
+		fline = (short)((*sp++ >> FLINE_SHIFT) & FLINE_MASK);
+		t = *sp++;
+		if (fline) {
+			fline = (short)((t >> FNUM_SHIFT) & FNUM_MASK);
+			if (fline == f) return(1);
+		}
+		while (*sp != STACK_EMARK) {
+			if (*sp == STACK_TEMP_VAL) sp++;
+			sp++;
+		}
+	}
+	return(0);
+}
+
+static void get_sym_name_str(short idx, char *buf, int buflen)
+{
+    struct NameEnt *ne;
+    UCHAR *cp;
+    int len = SYMT[idx].namelen;
+    if (len <= 0) { buf[0] = '\0'; return; }
+    if (len <= SYMNAME_MAX)
+        cp = (UCHAR *)&SYMT[idx].name.c[0];
+    else {
+        ne = (struct NameEnt *)WS_PTR(SYMT[idx].name.a);
+        cp = ne->ne_data;
+    }
+    if (len >= buflen) len = buflen - 1;
+    memcpy(buf, cp, len);
+    buf[len] = '\0';
+}
+
+static int sym_name_cmp(const void *a, const void *b)
+{
+    char na[256], nb[256];
+    get_sym_name_str(*(short *)a, na, sizeof(na));
+    get_sym_name_str(*(short *)b, nb, sizeof(nb));
+    return strcmp(na, nb);
+}
+
+/* ============================================================
+   Optional name filter for )VARS, )FNS, and )SYMS
+   ============================================================
+   Grammar applied to the text following the command name:
+     *        matches zero or more characters
+     X-Y      a single character, a dash, and a single character
+              matches one character in [X,Y], case-insensitively.
+              Any other placement of '-' (nothing usable before
+              it, or its bounds already consumed by an earlier
+              range) is treated as a literal '-' rather than a
+              syntax error.
+     other    matches itself, case-insensitively
+
+   Convenience: unless the argument already ends in '*', one is
+   appended before matching -- so "L" behaves like "L*" (filter
+   by first letter) and "*TEST" behaves like "*TEST*" (filter by
+   substring). "A-D*TEST" behaves like "[A-D]*TEST*".
+   ============================================================ */
+
+#define FILT_PAT_SIZE 64
+
+static int
+filt_up(c)
+int c;
+{
+	if (c >= 'a' && c <= 'z') c -= 32;
+	return(c);
+}
+
+static int
+filt_match(pat,str)
+const char *pat,*str;
+{
+int lo,hi,c;
+
+	while (*pat) {
+		if (*pat == '*') {
+			while (*pat == '*') pat++;
+			if (!*pat) return(1);
+			while (*str) {
+				if (filt_match(pat,str)) return(1);
+				str++;
+			}
+			return(0);
+		}
+
+		/* X-Y : single char, dash, single char -> range */
+		if (pat[1] == '-' && pat[2] && pat[2] != '*') {
+			lo = filt_up((int)(UCHAR)pat[0]);
+			hi = filt_up((int)(UCHAR)pat[2]);
+			if (lo > hi) { c = lo; lo = hi; hi = c; }
+			if (!*str) return(0);
+			c = filt_up((int)(UCHAR)*str);
+			if (c < lo || c > hi) return(0);
+			pat += 3;
+			str += 1;
+			continue;
+		}
+
+		if (!*str) return(0);
+		if (filt_up((int)(UCHAR)*pat) != filt_up((int)(UCHAR)*str)) return(0);
+		pat++;
+		str++;
+	}
+	return(*str == '\0');
+}
+
+/* Normalize a raw command argument into a filter pattern: take the
+   first whitespace-delimited token, then append a trailing '*'
+   unless one is already there.
+
+   A typed '*' arrives here as CHAR_POW, not literal 0x2a -- itrans[]
+   (platform_translate.c) maps keyboard '*' to the internal power/
+   exponent code, not to itself. Letters and '-' are unaffected by
+   this (letters just get case-flipped, which filt_up() already
+   ignores; '-' is identity in itrans[]), but '*' needs an explicit
+   translation back to the literal wildcard byte this parser expects. */
+static void
+filt_build_pattern(raw,out,outsz)
+const char *raw;
+char *out;
+int outsz;
+{
+int len;
+
+	if (!raw) raw = "";
+	while (*raw == ' ') raw++;
+
+	len = 0;
+	while (raw[len] && raw[len] != ' ' && len < outsz - 2) {
+		out[len] = ((UCHAR)raw[len] == CHAR_POW) ? '*' : raw[len];
+		len++;
+	}
+	out[len] = '\0';
+
+	if (len == 0 || out[len-1] != '*') {
+		out[len] = '*';
+		out[len+1] = '\0';
+	}
+}
+
+/* ============================================================
+   do_calldir() - shared implementation behind )LIB and )FNSL.
+
+   Session 2 platform dedup (see PORTING_PLAN.md): calldir() was
+   retyped near-verbatim in linux_platform.c and windows_platform.c.
+   Only raw directory enumeration was genuinely platform-specific,
+   and get_first_dir()/get_next_dir()/cleanup_dir() already existed
+   in identical shape on both sides (filfuncs.c's f_fdir(), for
+   ⎕FDIR, is their only other caller, and it's confirmed safe to
+   share -- see the porting plan). This walks that shared iterator
+   instead of calling opendir()/readdir() or FindFirstFileA()/
+   FindNextFileA() directly, and matches names with the same
+   filt_match() grammar )VARS/)FNS/)SYMS already use, instead of
+   fnmatch() (Linux) or FindFirstFileA()'s native wildcard dialect
+   (Windows).
+
+   Two behavior changes fall out of that, both intentional:
+
+   1. Matching is now case-insensitive on both platforms. Linux's
+      fnmatch() was case-sensitive (no FNM_CASEFOLD) while Windows's
+      FindFirstFileA() was case-insensitive (NTFS default) -- exactly
+      the divergence the porting plan flagged. filt_match() folds
+      case on both sides, so behavior now matches what Windows
+      already did.
+
+   2. Subdirectories are now excluded from the listing on both
+      platforms. Windows's calldir() already skipped them via
+      FILE_ATTRIBUTE_DIRECTORY; Linux's calldir() did not -- every
+      readdir() entry went straight into the list with no S_ISDIR
+      check, so e.g. )LIB in a directory containing a subfolder
+      would have printed the subfolder's name as if it were a
+      workspace. get_first_dir()/get_next_dir() already tag every
+      entry 'D' or 'F' for exactly this purpose; do_calldir() uses
+      that tag to drop directories, matching Windows's (and the
+      obviously intended) prior behavior.
+
+   One deliberate non-change: get_first_dir()/get_next_dir() can't
+   tell "no such directory" from "directory exists but is empty" --
+   both just stop producing entries. Rather than let that collapse
+   the old "Can't find: X" message into firing on legitimately empty
+   directories, this stat()s dirbuf up front (portable -- both
+   platform files already build against sys/stat.h) and only reports
+   "Can't find" when dirbuf isn't a directory at all.
+
+   NOTE: filt_match() has no '?' single-char wildcard, unlike
+   fnmatch()/FindFirstFileA(). Not believed to matter in practice --
+   '*' is the only wildcard documented anywhere for )LIB/)FNSL -- but
+   flagging it here in case that assumption is wrong.
+   ============================================================ */
+void
+do_calldir(s)
+char *s;
+{
+struct stat st;
+char dirbuf[PATHBUF_SIZE];
+char pattern[PATHBUF_SIZE];
+char (*names)[64];
+char *entry, *last_slash, *cp;
+int count, capacity, k;
+
+	if (DEBUGFLAG) { NL(); PRINT("["); PRINT(s ? s : ""); PRINT("]"); NL(); }
+
+	if (!s || !*s) {
+		strcpy(dirbuf, ".");
+		strcpy(pattern, "*.ws");
+	} else {
+		last_slash = strrchr(s, '/');
+		if (!last_slash) last_slash = strrchr(s, '\\');
+		if (!last_slash) {
+			strcpy(dirbuf, ".");
+			strncpy(pattern, s, sizeof(pattern) - 1);
+			pattern[sizeof(pattern) - 1] = '\0';
+		} else if (last_slash == s) {
+			strcpy(dirbuf, "/");
+			strncpy(pattern, last_slash + 1, sizeof(pattern) - 1);
+			pattern[sizeof(pattern) - 1] = '\0';
+		} else {
+			size_t dlen = (size_t)(last_slash - s);
+			if (dlen >= sizeof(dirbuf)) dlen = sizeof(dirbuf) - 1;
+			strncpy(dirbuf, s, dlen);
+			dirbuf[dlen] = '\0';
+			strncpy(pattern, last_slash + 1, sizeof(pattern) - 1);
+			pattern[sizeof(pattern) - 1] = '\0';
+		}
+		if (!*pattern) strcpy(pattern, "*");
+	}
+
+	if (DEBUGFLAG) { PRINT(dirbuf); NL(); }
+
+	if (stat(dirbuf, &st) != 0 || !S_ISDIR(st.st_mode)) {
+		PRINT("Can't find: ");
+		PRINT(dirbuf);
+		NL();
+		return;
+	}
+
+	count = 0;
+	capacity = 64;
+	names = (char (*)[64])malloc((size_t)capacity * sizeof(*names));
+	if (!names) return;
+
+	for (entry = get_first_dir(dirbuf); entry; entry = get_next_dir()) {
+		char type = entry[0];
+		char *nm = entry + 1;
+		int nl, stem, i;
+
+		if (type != 'F') continue;		/* skip subdirectories */
+		if (!filt_match(pattern, nm)) continue;
+
+		nl = strlen(nm);
+		stem = nl;
+		for (i = nl - 1; i > 0; i--)
+			if (nm[i] == '.') { stem = i; break; }
+
+		if (count >= capacity) {
+			char (*tmp)[64];
+			capacity *= 2;
+			tmp = (char (*)[64])realloc(names, (size_t)capacity * sizeof(*names));
+			if (!tmp) break;
+			names = tmp;
+		}
+
+		if (stem >= 63) stem = 63;
+		strncpy(names[count], nm, (size_t)stem);
+		names[count][stem] = '\0';
+		for (cp = names[count]; *cp; cp++)
+			if (*cp >= 'a' && *cp <= 'z') *cp -= 32;
+		count++;
+	}
+	cleanup_dir();
+
+	qsort(names, (size_t)count, sizeof(*names),
+	      (int(*)(const void *, const void *))strcmp);
+
+	for (k = 0; k < count; k++) {
+		char buf[64];
+		strncpy(buf, names[k], 20);
+		buf[20] = '\0';
+		strcat(buf, "                    ");
+		buf[20] = '\0';
+		if ((CURSX + 20) > WIDTH) NL();
+		PRINT(buf);
+	}
+
+	free(names);
+	NL();
+}
+
+/* ============================================================
+   do_fonts() - )FONT and )FONT pattern.
+   Lists the font families available to graphics windows (for
+   WFONT's face selection), in Qt's own capitalization so a name
+   can be copied straight into a string -- family matching ignores
+   case, so a name typed in uppercase works too.
+
+   Pattern: same filt_build_pattern()/filt_match() grammar )FNS/
+   )VARS/)LIB use (leading letters, '*', X-Y ranges, case
+   ignored). Only the first word is used, so a name with a space
+   in it is matched with '*' instead: )FONT DEJAVU*MONO.
+
+   Sorted ignoring case. Laid out across )WIDTH in columns sized
+   to the longest name being shown plus two spaces -- family names
+   often contain single spaces, and a fixed 10- or 20-wide column
+   (what )FNS/)LIB use) would either truncate them or make it
+   unclear where one name ends and the next begins. A name wider
+   than the whole line still prints, alone on its line. No
+   trailing padding after the last name on a line, so a copied
+   name doesn't pick up stray spaces.
+
+   Font names come from the OS, so they're plain ASCII printed
+   without OUT_TRANS_FLAG -- the same way do_calldir() prints file
+   names.
+
+   FONT_LIST_BUF is a generous fixed ceiling, not a measured need:
+   a desktop system with a few hundred families is ~10 KB of
+   names. sys_font_families() stops at whole names, so an
+   oversize list is cut short rather than corrupted.
+   ============================================================ */
+#define FONT_LIST_BUF 65536L
+
+static int
+font_name_cmp(a,b)
+const void *a,*b;
+{
+const char *s = *(const char * const *)a;
+const char *t = *(const char * const *)b;
+int c1,c2;
+
+	for (;;) {
+		c1 = filt_up((int)(UCHAR)*s);
+		c2 = filt_up((int)(UCHAR)*t);
+		if (c1 != c2 || !c1) break;
+		s++;
+		t++;
+	}
+	if (c1 != c2) return(c1 - c2);
+	/* equal ignoring case: fall back to exact order so the
+	   result doesn't depend on qsort()'s tie handling */
+	return(strcmp(*(const char * const *)a, *(const char * const *)b));
+}
+
+short
+do_fonts(pattern)
+UCHAR *pattern;
+{
+char *buf, **names, *cp;
+char pbuf[FILT_PAT_SIZE];
+long count, n, k;
+int len, maxlen, colw, col, pos, filtering;
+
+	buf = (char *)malloc((size_t)FONT_LIST_BUF);
+	if (!buf) return(SET_ERR(ERR_WSFULL));
+	count = sys_font_families(buf, FONT_LIST_BUF);
+	if (count < 0) {
+		free(buf);
+		PRINT("Font list not available");
+		NL();
+		return(0);
+	}
+
+	filtering = 0;
+	if (pattern && *pattern) {
+		filt_build_pattern((const char *)pattern, pbuf, sizeof(pbuf));
+		filtering = 1;
+	}
+
+	names = (char **)malloc((size_t)(count ? count : 1) * sizeof(char *));
+	if (!names) {
+		free(buf);
+		return(SET_ERR(ERR_WSFULL));
+	}
+
+	n = 0;
+	maxlen = 0;
+	cp = buf;
+	for (k = 0; k < count; k++) {
+		len = (int)strlen(cp);
+		if (!filtering || filt_match(pbuf, cp)) {
+			names[n++] = cp;
+			if (len > maxlen) maxlen = len;
+		}
+		cp += len + 1;
+	}
+
+	qsort(names, (size_t)n, sizeof(char *), font_name_cmp);
+
+	colw = maxlen + 2;
+	col = 0;	/* start column of the name just printed */
+	pos = 0;	/* current output column */
+	for (k = 0; k < n; k++) {
+		if (pos) {
+			if (col + colw + maxlen > WIDTH - 1) {
+				NL();
+				col = pos = 0;
+			} else {
+				col += colw;
+				while (pos < col) { PRINT(" "); pos++; }
+			}
+		}
+		PRINT(names[k]);
+		pos += (int)strlen(names[k]);
+	}
+	if (pos) NL();
+
+	free(names);
+	free(buf);
+	return(0);
+}
+
+short
+do_list(type,pattern)
+short type;
+char *pattern;
+{
+REG short i;
+short w;
+short *indices;
+int nind = 0, k;
+char pbuf[FILT_PAT_SIZE];
+int filtering = 0;
+
+    if (pattern && *pattern) {
+        filt_build_pattern((const char *)pattern, pbuf, sizeof(pbuf));
+        filtering = 1;
+    }
+
+    indices = (short *)malloc((size_t)SYMTACTUAL * sizeof(short));
+    if (!indices) return(-1);
+
+    for (i = 0; i < SYMTACTUAL; i++) {
+        if (type == -1 || (SYMT[i].type == type && SYMT[i].value))
+            if (SYMT[i].namelen) {
+                if (filtering) {
+                    char nbuf[256];
+                    get_sym_name_str(i, nbuf, sizeof(nbuf));
+                    if (!filt_match(pbuf, nbuf)) continue;
+                }
+                indices[nind++] = i;
+            }
+    }
+
+    qsort(indices, (size_t)nind, sizeof(short), sym_name_cmp);
+
+    w = 0;
+    for (k = 0; k < nind; k++) {
+        i = indices[k];
+        if (!text_dump_flag) {
+            w += 1 + SYMT[i].namelen;
+            if ((w > (WIDTH - 1)) || (((w+10) > WIDTH) && type == -1)) {
+                w = SYMT[i].namelen + 1;
+                NL();
+            }
+        }
+        if (text_dump_flag && SYMT[i].type == SYM_FUN) PRINT(")enter ");
+        print_name(i);
+        if (text_dump_flag) PRINT("\n");
+
+        if (!text_dump_flag) {
+            if (!SYMT[i].value) PRINT("-");
+            else {
+                if (WS_PTR(SYMT[i].value)->me_reference == WS_OFF(&SYMT[i].value)) PRINT(" ");
+                else PRINT("#");
+            }
+        }
+
+        if (!text_dump_flag) {
+            while ((w % 10) && w < (WIDTH - 1)) { PRINT(" "); w++; }
+        }
+
+        if (!text_dump_flag && type == -1) {
+            char cb[20];
+            sprintf(cb, "%08x ", SYMT[i].value);
+            PRINT(cb);
+            w += 9;
+        }
+    }
+    free(indices);
+    if (!text_dump_flag) NL();
+    return(0);
+}
+
+short
+do_text_dump()
+{
+int tfdsave;
+
+	tfdsave = term_fd;
+	text_dump_flag = 1;
+
+	/* redirect output to file */
+	term_fd = open("text_dump.txt",O_CREAT|O_TRUNC|O_WRONLY,0666);
+
+	do_list(SYM_FUN, (char *)0);
+	do_list(SYM_VAR, (char *)0);
+
+	close(term_fd);
+	term_fd = tfdsave;
+	text_dump_flag = 0;
+
+	Cmessage(MSG_SAVED);
+	NL();
+	return(0);
+}
+
+short
+do_vars(pattern)
+char *pattern;
+{
+	return(do_list(SYM_VAR, pattern));
+}
+
+short
+do_fns(pattern)
+char *pattern;
+{
+	return(do_list(SYM_FUN, pattern));
+}
+
+short
+do_syms(pattern)
+char *pattern;
+{
+	return(do_list(-1, pattern));
+}
+
+short
+do_wsid(f)
+short f;
+{
+	if (*COMMANDP) {
+		COMMANDP = get_vstr(COMMANDP);
+		if (COMMANDP) {
+			if (f) {
+				Cmessage(MSG_WAS);
+				CPRINT(wspace->wsid);
+			}
+			strncpy((char *)wspace->wsid,(char *)VBUF,WSID_SIZE-1);
+			wspace->wsid[WSID_SIZE-1] = '\0';
+			return(0);
+		}
+	}
+	if (f) {
+		CPRINT(wspace->wsid);
+		CNL();
+	}
+	return(0);
+}
+
+/*
+	compiles LINEB into wspace entry
+*/
+struct FuncEnt *
+MakeFNEnt()
+{
+short il,s;
+long l;
+struct FuncEnt *fe;
+UCHAR c,*cp,*cpb;
+
+	cp = LINEB;
+	while (*cp == ' ' || *cp == 9) cp++;
+	cpb = cp;
+	while (*cpb) 
+	{
+		c = *cpb++;
+		if (c == ':') 	/* found label, ignore */
+		{
+			cp = cpb;
+			break;
+		}
+		if (c < '0' || c > '9') break;		/* no label, quit looking */
+	}
+	l = (long)sizeof(struct FuncEnt) - (long)sizeof(struct MemEnt);
+	if (*cp == ')') 		/* a command */
+	{
+		il = 3 + strlen(cp);
+		strcpy(&LINEA[2],cp);
+		LINEA[0] = 255;
+		LINEA[1] = 255;
+	} else {
+		s = compline(cp,LINEA);
+		if (s) 
+		{
+			if (s > -3) ERROR_CODE = SET_ERR(ERR_STOVF);
+			else ERROR_CODE = SET_ERR(ERR_SYNTAX);
+			return(0L);
+		}
+		il = (LINEA[0] << 8) + LINEA[1];
+	}
+	l += il - 4; /* first four characters are accounted for in struct */
+	fe = (struct FuncEnt *)MakeEnt(l,ME_FUNCN,(ws_off_t *)0);
+	if (!fe) 
+	{
+		ERROR_CODE = SET_ERR(ERR_WSFULL);
+		return(0L);
+	}
+	memcpy((char *)fe->fe_exec,(char *)LINEA,(int)il);
+	fe->fe_NextLine = 0;
+	return(fe);
+}
+
+void
+caseflip(cp)
+UCHAR *cp;
+{
+int inq;
+	inq = 0;
+
+	while (*cp) 
+	{
+		if (*cp == '"') inq ^= 1;
+		if (inq) cp++;
+		else { *cp = char_flip(*cp); cp++; }
+	}
+}
+
+void
+sym_delete(i)
+short i;
+{
+struct MemEnt *me;
+
+/* 
+	must add special memory deallocation here, and should do a nested
+	delete of nested arrays.  Should split out the function so that
+	non-symbol table entries can be processed as well.
+*/
+
+	me = SYMT[i].value ? WS_PTR(SYMT[i].value) : NULL;
+	if (me) me_delete(me);
+
+	SYMT[i].type = SYM_UNDEF;
+	SYMT[i].value = 0;		/* mark deleted */
+}
+
+short
+do_enter()
+{
+short i,line,loc,s,ms,rs,ls,zs,t,ct,qt;
+long l;
+FILE *ifp;
+struct Func0Ent *f0e;
+struct FuncEnt *fe;
+ws_off_t *fep;
+UCHAR c,cbuf[80];
+UCHAR *ltable,*lp,*cp;
+char *tp;
+
+	ltable = (UCHAR *)malloc(LTABLE_SIZE); 
+	if (!ltable) return(SET_ERR(ERR_NOMEM));
+	/* tp holds a saved copy of the raw source line for error display.
+	   Must NOT alias LSCRATCH -- MakeFNEnt() below recompiles the line
+	   (via compline()/parsenums()), which writes numeric literals into
+	   LSCRATCH and would clobber the saved text before it's printed. */
+	tp = (char *)malloc(LINE_SIZE);
+	if (!tp) {
+		free(ltable);
+		return(SET_ERR(ERR_NOMEM));
+	}
+	lp = ltable;
+
+	strcpy(cbuf,COMMANDP);
+	COMMANDP = cbuf;
+	while (*COMMANDP) 
+	{
+		COMMANDP = get_vstr(COMMANDP);
+		if (!COMMANDP) 	
+		{
+			i = SET_ERR(ERR_COMMAND);
+			goto enterr;
+		}
+
+		go_lower(VBUF);
+		get_aplhome_dir((char *)LINEA, LINE_SIZE, "fns");
+		strcat((char *)LINEA,(char *)VBUF);
+		strcat((char *)LINEA,".fn");
+		ifp = fopen((char *)LINEA,"r");
+
+		if (!ifp) 
+		{
+NL();
+PRINT(LINEA);
+NL();
+			i = SET_ERR(ERR_FNOTF);
+			goto enterr;
+		}
+/* first pass scan for labels */
+		line = -1;
+		while (fgets((char *)LINEA,LINE_SIZE,ifp)) 
+		{
+			{	/* strip line ending; checks length first, so a blank line
+				   doesn't read (or zero) the byte before LINEA */
+				size_t n = strlen((char *)LINEA);
+				while (n > 0 && (LINEA[n-1] == 10 || LINEA[n-1] == 13)) LINEA[--n] = '\0';
+			}
+			if (wspace->caseflip) caseflip(LINEA);
+#ifdef NO_INPUT_PROC
+			ct = file_translate(LINEA,LINEB);
+			strcpy(LINEA,LINEB);
+#else
+			ct = input_proc(LINEA,LINEB);
+			if (ct < 0) {
+		        /* Error handling - syntax error in function line */
+       			break;
+    		}
+    		strcpy(LINEA, LINEB);
+#endif
+
+			t = 0;
+			while (LINEA[t] == ' ' || LINEA[t] == 9) t++;
+			// if (ct) line++;	<-- removed, causes comment only lines not to be counted
+			line++; /* every file line counts so comment only lines are counted too */
+			i = t;
+			while (line && LINEA[i]) 	/* don't proc line 0 */
+			{
+				c = LINEA[i++];
+				if (c == ':') 
+				{
+					LINEA[i-1] = '\0';
+					strcpy(lp,&LINEA[t]);
+					lp += strlen(lp) + 1;
+					*lp++ = (UCHAR)line >> 8;
+					*lp++ = (UCHAR)(line & 255);
+				}
+				/* bail if not alphanum */
+/*				if (!is_varch(c)) break; */
+				if (c < '0' || c > var_hi || (c > '9' && c < var_lo)) break;
+			}
+		}
+		fseek(ifp,0L,0);	/* start again */
+		*lp = 0;	/* terminate table */
+
+/* second pass, compile */
+		line = 0;
+		fep = NULL;	/* set while compiling line 0 (the header); still NULL
+				   after the loop means the file was empty */
+		while (fgets((char *)LINEA,LINE_SIZE,ifp)) 
+		{
+			{	/* strip line ending; checks length first, so a blank line
+				   doesn't read (or zero) the byte before LINEA */
+				size_t n = strlen((char *)LINEA);
+				while (n > 0 && (LINEA[n-1] == 10 || LINEA[n-1] == 13)) LINEA[--n] = '\0';
+			}
+			strcpy(tp,LINEA);	/* make a copy for error msgs -- raw file bytes,
+						   translated via orig_trans[] at display time to
+						   match )LIST's f==1 handling in do_clist() */
+			if (wspace->caseflip) caseflip(LINEA);
+			
+#ifdef NO_INPUT_PROC
+			ct = file_translate(LINEA,LINEB);
+			strcpy(LINEA,LINEB);
+#else
+			ct = input_proc(LINEA,LINEB);
+#endif
+
+			if (line == 0) 
+			{
+
+				zs = ls = ms = rs = -1;
+				i = s = 0;
+				while (i < ct) 	/* look for result var */
+				{
+					if (LINEA[i] == ';') break;
+					if (LINEA[i] == CHAR_AS) 	/* assign? */
+					{
+						s = 1;
+						break;
+					}
+					i++;
+				}
+				if (s) 
+				{
+					LINEA[i] = '\0';
+					zs = lookup_sym(LINEA);
+					i++;
+				} else i = 0;
+
+				while (LINEA[i] == ' ') i++;
+				s = i;
+
+				while (is_varch(LINEA[i])) i++;
+
+				ms = LINEA[i];
+				LINEA[i] = '\0';
+				ls = lookup_sym(&LINEA[s]);
+				LINEA[i] = (unsigned char)ms;
+				while (LINEA[i] == ' ') i++;
+				s = i;
+				if (i < ct && LINEA[i] != ';') 
+				{
+
+					while (is_varch(LINEA[i])) i++;
+
+					rs = LINEA[i];
+					LINEA[i] = '\0';
+					ms = lookup_sym(&LINEA[s]);
+					LINEA[i] = (unsigned char)rs;
+					while (LINEA[i] == ' ') i++;
+					s = i;
+					if (LINEA[i] && LINEA[i] != ';') 
+					{
+
+						while (is_varch(LINEA[i])) i++;
+
+						t = LINEA[i];
+						LINEA[i] = '\0';
+						rs = lookup_sym(&LINEA[s]);
+						LINEA[i] = (unsigned char)t;
+						while (LINEA[i] == ' ') i++;
+					} else {	/* monadic */
+						rs = ms;
+						ms = ls;
+						ls = -1;
+					}
+				} else {
+					ms = ls;	/* niladic */
+					ls = -1;
+				}
+				s = i;
+				loc = 0;
+				while (s < ct) 	/* count locals */
+				{
+					if (LINEA[s] == ';') loc++;
+					s++;
+				}
+				if (on_stack(ms)) return(SET_ERR(ERR_SI));	/* si damage */
+				sym_delete(ms);		/* rid any old fn or var */
+				/* NOTE!!! stuff can move here, but better not after that */
+				while (GarbCollect());		/* freeze stuff */
+				SYMT[ms].type = SYM_FUN;
+				fep = &SYMT[ms].value;
+				l = (long)sizeof(struct Func0Ent) - (long)sizeof(struct MemEnt);
+				loc--;
+				if (loc > 0) l += loc * 2;
+				f0e = (struct Func0Ent *)MakeEnt(l,ME_FUNC0,fep);
+				if (!f0e) return(SET_ERR(ERR_WSFULL));
+				f0e->f0e_result = zs;
+				f0e->f0e_left = ls;
+				f0e->f0e_right = rs;
+				f0e->f0e_Line1 = 0;
+
+				loc = 0;
+				while (LINEA[i] == ';') 
+				{
+					i++;
+					while (LINEA[i] == ' ') i++;
+					s = i;
+					while (is_varch(LINEA[i])) i++;
+					t = LINEA[i];
+					LINEA[i] = '\0';
+					f0e->f0e_locals[loc++] = lookup_sym(&LINEA[s]);
+					LINEA[i] = (unsigned char)t;
+					while (LINEA[i] == ' ') i++;
+				}
+
+				/* %%% seemed overkill, but Claude claimed it is not unprecidented */
+				if (i < ct) 	/* leftover junk after the last local -- e.g. ';V,M' */
+				{
+					sym_delete(ms);
+					free(tp);
+					free(ltable);
+					return(SET_ERR(ERR_SYNTAX));
+				}
+
+				f0e->f0e_MemEnt.me_rank = loc;
+				fep = &f0e->f0e_Line1;
+
+				if (DEBUGFLAG) 
+				{
+					sprintf((char *)LINEA,"[0]  ");
+					PRINT(LINEA);
+					cp = LINEB;
+					while (ct--) 
+					{
+						sprintf((char *)LINEA,"%02x ",*cp++);
+						PRINT(LINEA);
+					}
+					NL();
+				}
+
+			} else {	/* not line 0 */
+/* search the label table */
+				qt = 0;
+				cp = LINEB;
+				t = 0;
+				while (t < ct) 
+				{
+					c = *cp;
+					while (t < ct && ((c < var_lo || c > var_hi) || qt)) 
+					{
+						if (c == CHAR_QT) qt = 1 - qt;
+						cp++;
+						t++;
+						c = *cp;
+					}
+					lp = ltable;
+					while (*lp) 
+					{
+						i = strlen(lp);
+						if (!strncmp(cp,lp,i)) 
+						{
+							c = *(cp + i);						
+							if (c < '0' || c > var_hi || (c > '9' && c < var_lo)) 
+							{
+/* insert line number */
+								memcpy(LINEA,cp+i,((ct-t)+1)-i);
+								ct -= i;		/* adjust count */
+								lp += i + 1;
+								i = *lp++ << 8;
+								i += *lp;
+								if (i > 99) 
+								{
+									*cp++ = '0' + i / 100;
+									t++;
+									ct++;
+									i = i % 100;
+								}
+								if (i > 9) 
+								{
+									*cp++ = '0' + i / 10;
+									t++;
+									ct++;
+								}
+								*cp++ = '0' + i % 10;
+								ct++;
+								memcpy(cp,LINEA,(ct-t)+1);
+								cp--;
+								break;
+							} 
+						}
+						lp += i + 3;
+					}
+					while (*cp >= var_lo && *cp <= var_hi )
+					{
+						cp++;
+						t++;
+					}
+				}
+				if (DEBUGFLAG) 
+				{
+					sprintf((char *)LINEA,"[%d]  ",line);
+					PRINT(LINEA);
+					cp = LINEB;
+					while (ct--) 
+					{
+						sprintf((char *)LINEA,"%02x ",*cp++);
+						PRINT(LINEA);
+					}
+					NL();
+				}
+				fe = MakeFNEnt();  /* compiles LINEB into ws entry */
+				if (!fe) 
+				{
+					if (!ERROR_CODE) continue;
+					else {
+						UCHAR *gp;
+						NL();
+						sprintf((char *)LINEA,"[%d]  ",line);
+						CPRINT(LINEA);
+						/* translate raw file bytes -> display glyphs,
+						   same as do_clist()'s f==1 ()LIST) handling */
+						gp = (UCHAR *)tp;
+						while (*gp) { *gp = orig_trans[*gp]; gp++; }
+						FE_TRANS_FLAG++;
+						vout((UCHAR *)tp,0,strlen(tp));
+						FE_TRANS_FLAG--;
+						CNL();
+						sym_delete(i);	/* delete */
+						free(tp);
+						free(ltable);
+						return(ERROR_CODE);
+					}
+				}
+				fe->fe_MemEnt.me_reference = WS_OFF(fep);
+				*fep = WS_OFF(fe);
+				fep = &fe->fe_NextLine;
+			}
+			line++;
+		}
+		if (!fep) {		/* empty file: no header, so no function */
+			fclose(ifp);
+			i = SET_ERR(ERR_FNOTF);
+			goto enterr;
+		}
+		*fep = 0;		/* terminate line list */
+		fclose(ifp);
+		while (*COMMANDP == ' ') COMMANDP++;
+	}
+	free(tp);
+	free(ltable);
+	return(0);
+enterr:;
+	free(tp);
+	free(ltable);
+	return(i);
+}
+
+short
+do_width()
+{
+short i;
+
+	if (*COMMANDP) 
+	{
+		COMMANDP = get_vstr(COMMANDP);
+		if (COMMANDP) 
+		{
+			Cmessage(MSG_WAS);
+			print_num((long)WIDTH);
+			sscanf((char *)&VBUF[0],"%hd",&i);
+			if (i < 20) i = 20;
+			WIDTH = i;
+			RMARGIN = LMARGIN + i;
+		}
+	} else {
+		Cmessage(MSG_IS);
+		print_num((long)WIDTH);
+	}
+	CNL();
+	return(0);
+}
+
+short
+do_digits()
+{
+short i;
+short len;
+
+	if (*COMMANDP) 
+	{
+		/* Hand-copy the token instead of using get_vstr() -- get_vstr()
+		   is built for identifier-like tokens (workspace/function/symbol
+		   names, "on"/"off") and rejects a token starting with '-',
+		   which silently drops the whole command (no "Was" message, no
+		   error, no change) for a negative DIGITS setting. Typed '-' is
+		   identity through itrans[] (see filt_build_pattern() above), so
+		   it arrives here as plain ASCII '-' and sscanf() handles it
+		   directly -- same approach do_trace() already uses for its
+		   numeric argument. */
+		while (*COMMANDP == ' ') COMMANDP++;
+		len = 0;
+		while (*COMMANDP && *COMMANDP != ' ') VBUF[len++] = *COMMANDP++;
+		VBUF[len] = '\0';
+
+		if (len) 
+		{
+			Cmessage(MSG_WAS);
+			print_num((long)DIGITS);
+			sscanf((char *)&VBUF[0],"%hd",&i);
+			/* DIGITS>0: fixed decimals, trailing zeros kept.
+			   DIGITS<0: up to |DIGITS| decimals, trailing zeros trimmed
+			   (see floatlen() in vprint.c). 0 is valid either way. */
+			if (i > 17) i = 17;
+			if (i < -17) i = -17;
+			DIGITS = i;
+		}
+	} else {
+		Cmessage(MSG_IS);
+		print_num((long)DIGITS);
+	}
+	CNL();
+	return(0);
+}
+
+/*
+	)INTDIV [ON|OFF]
+
+	Reports or sets whether dyadic divide truncates to an integer when
+	both operands are integers (ON, this APL's original behavior) or
+	always returns float (OFF, classic APL behavior, and the default
+	for new/cleared workspaces -- see init_ws()). Same setting as
+	⎕INTDIV (sysfuncs.c), where 1 = ON, 0 = OFF. Stored inverted as
+	wspace->floatdiv (0 = ON), so workspaces saved before this setting
+	existed load as ON -- see struct WorkSpace in parse.h.
+	Saved/restored with the workspace header; nothing to sync in
+	do_save()/load_ws().
+
+	Argument parsing follows do_garb(): get_vstr() token, "on"/"off",
+	anything else is ERR_SYNTAX. Upper case is accepted too, rather
+	than relying on whatever case get_vstr() leaves in VBUF.
+*/
+short
+do_intdiv()
+{
+short upd;
+
+	if (*COMMANDP) 
+	{
+		COMMANDP = get_vstr(COMMANDP);
+		if (!COMMANDP) return(SET_ERR(ERR_SYNTAX));
+		upd = -1;
+		if (!strcmp((char *)VBUF,"on")  || !strcmp((char *)VBUF,"ON"))  upd = 1;
+		if (!strcmp((char *)VBUF,"off") || !strcmp((char *)VBUF,"OFF")) upd = 0;
+		if (upd == -1) return(SET_ERR(ERR_SYNTAX));
+		Cmessage(MSG_WAS);
+		if (wspace->floatdiv) CPRINT("OFF");
+		else CPRINT("ON");
+		wspace->floatdiv = upd ? 0 : 1;
+	} else {
+		Cmessage(MSG_IS);
+		if (wspace->floatdiv) CPRINT("OFF");
+		else CPRINT("ON");
+	}
+	CNL();
+	return(0);
+}
+
+/*
+	)STEP -- how ->0 continues a stopped function; a session setting
+	(step_mode in exec.c, not saved with the workspace):
+	  LINE  stop again at the start of the next line, stepping into
+	        called functions
+	  OP    stop after every compiled operation, reported as
+	        "FN [n] what", e.g. "F [2] push var: X"
+	  OFF   run on to the next )STOP line
+	Only code a ->0 resumed steps (step_resumed in exec.c); a function
+	freshly run from a typed line runs normally until a )STOP line.
+	So stepping is ->0 repeatedly. Display/set follows do_intdiv(): no argument shows the
+	mode, an argument shows the previous one and sets it, anything
+	else is ERR_SYNTAX; either case accepted.
+*/
+static void
+step_print(int m)
+{
+	if (m == STEP_LINE) CPRINT("LINE");
+	else if (m == STEP_OP) CPRINT("OP");
+	else CPRINT("OFF");
+}
+
+short
+do_step()
+{
+short upd;
+
+	if (*COMMANDP) 
+	{
+		COMMANDP = get_vstr(COMMANDP);
+		if (!COMMANDP) return(SET_ERR(ERR_SYNTAX));
+		upd = -1;
+		if (!strcmp((char *)VBUF,"line") || !strcmp((char *)VBUF,"LINE")) upd = STEP_LINE;
+		if (!strcmp((char *)VBUF,"op")   || !strcmp((char *)VBUF,"OP"))   upd = STEP_OP;
+		if (!strcmp((char *)VBUF,"off")  || !strcmp((char *)VBUF,"OFF"))  upd = STEP_OFF;
+		if (upd == -1) return(SET_ERR(ERR_SYNTAX));
+		Cmessage(MSG_WAS);
+		step_print(step_mode);
+		step_mode = upd;
+	} else {
+		Cmessage(MSG_IS);
+		step_print(step_mode);
+	}
+	CNL();
+	return(0);
+}
+
+int
+do_scrh()
+{
+short i;
+	
+	if (*COMMANDP) {
+		COMMANDP = get_vstr(COMMANDP);
+		if (COMMANDP) {
+			Cmessage(MSG_WAS);
+			print_num((long)(SCRH+1));
+			sscanf((char *)&VBUF[0],"%hd",&i);
+			if (i < 3) i = 3;
+			SCRH = i - 1;
+		}
+	} else {
+		Cmessage(MSG_IS);
+		print_num((long)(SCRH+1));
+	}
+	CNL();
+	return(0);
+}
+
+UCHAR
+char_flip(c)
+UCHAR c;
+{
+	if (c >= 'a' && c <= 'z') c -= 32;
+	else if (c >= 'A' && c <= 'Z') c += 32;
+	return(c);
+}
+
+void
+table_flip(cp)
+UCHAR *cp;
+{
+	while (*cp) 
+	{
+		caseflip(cp);
+		while (*cp) cp++;
+		cp++;
+	}
+}
+
+void
+set_case(c)
+short c;
+{
+UCHAR *cp,**np;
+struct NameEnt *ne;
+int i,j;
+
+	if (c) {
+		var_lo = 'A';
+		var_hi = 'Z';
+		alph_lo = 'a';
+		alph_hi = 'z';
+	} else {
+		var_lo = 'a';
+		var_hi = 'z';
+		alph_lo = 'A';
+		alph_hi = 'Z';
+	}
+	if (tablecase != c) {
+		/* flip command table */
+		table_flip(cmd_table);
+
+		/* flip op table */
+		cp = op_table;
+		while (*cp) {
+			*cp = char_flip(*cp);
+			cp += 2;
+		}
+
+		/* flip comb char table */
+		cp = char_xtable;
+		while (*cp) {
+			cp[0] = char_flip(cp[0]);
+			cp[1] = char_flip(cp[1]);
+			cp += 3;
+		}
+
+		/* flip func table */
+		np = all_fnames;
+		while (*np) table_flip(*np++);
+
+		tablecase = c;
+	}
+	if (c != wspace->caseflip) 
+	{
+		/* flip symbol table */
+		for (i=0;i<SYMTACTUAL;i++) 
+		{
+			j = SYMT[i].namelen;
+			if (j) 
+			{
+				if (j <= SYMNAME_MAX) 
+				{
+					cp = (UCHAR *)&SYMT[i].name.c[0];			
+				} else {
+					ne = (struct NameEnt *)WS_PTR(SYMT[i].name.a);
+					cp = ne->ne_data;
+				}
+				while (j--) { *cp = char_flip(*cp); cp++; }
+			}
+		}
+		wspace->caseflip = c;
+	}
+}
+
+
+short
+do_purge()
+{
+short t;
+
+	for (t=0;t<NUM_FLOATVS;t++) FLOATVS[t] = 0;
+	t = 1000;
+	while (t--) if (pop_fn()) return(0);
+	return(SET_ERR(ERR_SI));
+}
+
+void
+init_ws()
+{
+REG short i;
+
+	if (do_purge()) 
+	{
+		message(SET_ERR(ERR_SYSTEM));
+		die(1);
+	}
+	wspace->water = wspace->begin;
+	wspace->origin = 1;
+	wspace->bootfn = -1;
+	wspace->width = WIDTH;
+	wspace->digits = DIGITS;
+	wspace->floatdiv = 1;	/* )INTDIV OFF -- float divide, the default for
+				   new/cleared workspaces (classic APL behavior).
+				   Workspaces saved before )INTDIV existed carry 0
+				   in this byte and still load as ON. */
+	set_case(wspace->caseflip);
+
+	for (i=0;i<SYMTSIZE;i++) 
+	{
+		SYMT[i].type = SYM_UNDEF;
+		SYMT[i].namelen = 0;
+		SYMT[i].value = 0L;
+		SYMT[i].name.a = 0L;
+		SYMT[i].n2[0] = 0;		/* clear garbage */
+		SYMT[i].n2[1] = 0;
+	}
+	strcpy(wspace->wsid,"Clear WS");
+}
+
+/*
+	resize_ws_destructive() -- discard the current workspace and allocate
+	a fresh block at the given size. Content is NOT preserved. Used by
+	)CLEAR (which follows this with init_ws() to reset symbols/origin/
+	wsid) and by load_ws() (which follows this by reading a saved blob
+	directly over the fresh block, so init_ws() would be wasted work).
+
+	Callers needing to keep the live pool across a resize must use
+	mem_init()'s resize path instead -- see do_resize().
+*/
+static short
+resize_ws_destructive(long newsize)
+{
+UCHAR *cp;
+ws_off_t symt_base = (ws_off_t)sizeof(struct WorkSpace);
+ws_off_t pool_base = symt_base +
+                     (ws_off_t)(SYMTSIZE * sizeof(struct SymTable));
+
+	wssize = MAX(4096L, newsize);
+	cp = (UCHAR *)mem_alloc(wssize);
+	if (!cp) return(-1);
+
+	memset(cp, 0, (size_t)wssize);
+	free((char *)wspace);
+
+	wspace           = (struct WorkSpace *)cp;
+	wspace->wssize   = (int32_t)wssize;
+	wspace->begin    = pool_base;
+	wspace->water    = pool_base;
+	wspace->symtsize = SYMTSIZE;
+
+	SYMT     = (struct SymTable *)((char *)wspace + symt_base);
+	STACKMAX = (int32_t *)(((UCHAR *)wspace) + wssize);
+	*--STACKMAX = STACK_EMARK;
+	MSTACK   = STACKMAX;
+	wsactual = wssize;
+
+	SYMTACTUAL = SYMTSIZE;
+	for (int i = 0; i < NUM_FLOATVS; i++) FLOATVS[i] = 0;
+
+	return(0);
+}
+
+short
+do_clearws(a)
+long a;
+{
+    init_ws();
+    if (a && a != wspace->wssize)
+    {
+        if (resize_ws_destructive(a)) return(-1);
+        init_ws();      /* set origin, wsid, etc. on new workspace */
+    }
+    CPRINT(wspace->wsid);
+    CNL();
+    return(0);
+}
+
+short
+do_resize(a)
+long a;
+{
+	if (MSTACK != STACKMAX) return(SET_ERR(ERR_SI));
+	if (!a) return(SET_ERR(ERR_COMMAND));		/* )RESIZE needs a size */
+
+	if (a < (wspace->water + STACK_MARGIN))
+		return(SET_ERR(ERR_WSFULL));		/* wouldn't leave usable headroom */
+
+	if (a != wssize)
+	{
+		wssize = a;
+		if (mem_init(NULL) != 1) return(SET_ERR(ERR_NOMEM));
+	}
+
+	CPRINT(wspace->wsid);
+	CNL();
+	return(0);
+}
+
+#ifndef APLBIG_ENDIAN
+void
+bswap_ws()
+{
+	long_swap((char *)&wspace->water);
+	long_swap((char *)&wspace->wssize);
+	long_swap((char *)&wspace->symtsize);
+	short_swap((char *)&wspace->origin);
+	short_swap((char *)&wspace->caseflip);
+	short_swap((char *)&wspace->bootfn);
+	short_swap((char *)&wspace->width);
+	long_swap((char *)&wspace->begin);
+}
+#endif
+
+/*
+	adjust all ws pointers for saving
+*/
+void
+mod_ws()
+{
+REG short i;
+struct MemEnt *me,*md;
+struct ValEnt *ve;
+struct NameEnt *ne;
+struct Func0Ent *f0e;
+struct FuncEnt *fe;
+int32_t l,m;
+char *cp;
+short *sp;
+int32_t *lp;
+
+    md = WS_PTR(wspace->water);
+    me = WS_PTR(wspace->begin);
+
+    /* pool entries: me_reference is already a ws_off_t -- nothing to adjust.
+       On a big-endian machine we need to swap the fields for the file. */
+#ifndef APLBIG_ENDIAN
+    /* adjust timestamp endedness */
+    for (i=0;i<6;i++) short_swap((char *)&wspace->tstamp[i]);
+
+    while (me < md)
+    {
+        l = me->me_size;
+        ve = (struct ValEnt *)me;
+        ne = (struct NameEnt *)me;
+        f0e = (struct Func0Ent *)me;
+        fe = (struct FuncEnt *)me;
+        i = me->me_rank;
+        cp = DATA_AD(ve);
+        long_swap((char *)&me->me_reference);
+        long_swap((char *)&me->me_size);
+        short_swap((char *)&me->me_rank);
+        switch (me->me_flags & ME_TMASK)
+        {
+            case ME_VAL:
+                m = ve->ve_length;
+                long_swap((char *)&ve->ve_point);
+                long_swap((char *)&ve->ve_length);
+                while (i--) long_swap((char *)&ve->ve_rho[i]);
+                if (!(me->me_flags & ME_MAL))
+                {
+                    switch (ve->ve_vtype & BYTES_MASK)
+                    {
+                        case 2:
+                            m = m >> 1;
+                            sp = (short *)cp;
+                            while (m--) short_swap((char *)sp++);
+                            break;
+                        case 4:
+                            m = m >> 2;
+                            lp = (int32_t *)cp;
+                            while (m--) long_swap((char *)lp++);
+                            break;
+                    }
+                }
+                break;
+            case ME_NAM:
+                short_swap((char *)&ne->ne_length);
+                break;
+            case ME_FUNC0:
+                long_swap((char *)&f0e->f0e_Line1);
+                short_swap((char *)&f0e->f0e_result);
+                short_swap((char *)&f0e->f0e_left);
+                short_swap((char *)&f0e->f0e_right);
+                sp = f0e->f0e_locals;
+                while (i--) short_swap((char *)sp++);
+                break;
+            case ME_FUNCN:
+                long_swap((char *)&fe->fe_NextLine);
+                break;
+        }
+        me = (struct MemEnt *)((char *)me + l);
+    }
+#endif
+
+    /* adjust SymTable fields for endianness */
+#ifndef APLBIG_ENDIAN
+    for (i=0;i<SYMTACTUAL;i++)
+    {
+        long_swap((char *)&SYMT[i].value);
+        if (SYMT[i].namelen > SYMNAME_MAX)
+            long_swap((char *)&SYMT[i].name.a);
+    }
+    bswap_ws();
+#endif
+}
+
+void
+unmod_ws()
+{
+REG short i;
+struct MemEnt *me,*md;
+struct ValEnt *ve;
+struct NameEnt *ne;
+struct Func0Ent *f0e;
+struct FuncEnt *fe;
+int32_t l,m;
+char *cp;
+short *sp;
+int32_t *lp;
+
+#ifndef APLBIG_ENDIAN
+    bswap_ws();
+#endif
+
+    md = WS_PTR(wspace->water);
+    me = WS_PTR(wspace->begin);
+
+#ifndef APLBIG_ENDIAN
+    /* readjust timestamp endedness */
+    for (i=0;i<6;i++) short_swap((char *)&wspace->tstamp[i]);
+
+    while (me < md)
+    {
+        long_swap((char *)&me->me_reference);
+        long_swap((char *)&me->me_size);
+        short_swap((char *)&me->me_rank);
+        l = me->me_size;
+        ve = (struct ValEnt *)me;
+        ne = (struct NameEnt *)me;
+        f0e = (struct Func0Ent *)me;
+        fe = (struct FuncEnt *)me;
+        i = me->me_rank;
+        switch (me->me_flags & ME_TMASK)
+        {
+            case ME_VAL:
+                long_swap((char *)&ve->ve_point);
+                long_swap((char *)&ve->ve_length);
+                cp = DATA_AD(ve);
+                m = ve->ve_length;
+                while (i--) long_swap((char *)&ve->ve_rho[i]);
+                if (!(me->me_flags & ME_MAL))
+                {
+                    switch (ve->ve_vtype & BYTES_MASK)
+                    {
+                        case 2:
+                            m = m >> 1;
+                            sp = (short *)cp;
+                            while (m--) short_swap((char *)sp++);
+                            break;
+                        case 4:
+                            m = m >> 2;
+                            lp = (int32_t *)cp;
+                            while (m--) long_swap((char *)lp++);
+                            break;
+                    }
+                }
+                break;
+            case ME_NAM:
+                short_swap((char *)&ne->ne_length);
+                break;
+            case ME_FUNC0:
+                long_swap((char *)&f0e->f0e_Line1);
+                short_swap((char *)&f0e->f0e_result);
+                short_swap((char *)&f0e->f0e_left);
+                short_swap((char *)&f0e->f0e_right);
+                sp = f0e->f0e_locals;
+                while (i--) short_swap((char *)sp++);
+                break;
+            case ME_FUNCN:
+                long_swap((char *)&fe->fe_NextLine);
+                break;
+        }
+        me = (struct MemEnt *)((char *)me + l);
+    }
+
+    /* unswap SymTable fields */
+    for (i=0;i<SYMTACTUAL;i++)
+    {
+        long_swap((char *)&SYMT[i].value);
+        if (SYMT[i].namelen > SYMNAME_MAX)
+            long_swap((char *)&SYMT[i].name.a);
+    }
+#endif
+}
+
+
+char hashtab[] = {
+	'C','o','p','y','r','i','g','h','t',' ','2','0','0','7',',',
+	' ','K','e','i','t','h',' ','D','a','v','i','d',' ','D','o',
+	'y','l','e',',',' ','A','l','l',' ','R','i','g','h','t','s',
+	' ','R','e','s','e','r','v','e','d','.',' ',
+	0
+};
+
+
+
+#ifdef FOR_POSTERITY
+/* this was created because there were ws's that were somehow hashed with
+   the inverse of the above table.   This can be determined by filezapping
+   the ws and looking at the end to see if the copyright message is case
+   flipped.
+
+   Was able to fix by calling this on load, and then unswaping the hashtab on )save
+   -- left here for posterity */
+*/
+
+int hf_flag = 0;
+
+void
+hashflip()
+{
+char c,*cp;
+
+	if (hf_flag) return;
+	cp = hashtab;
+	while (*cp)
+	{
+		c = *cp;
+		if (c >= 'A' && c <= 'Z') c += 32;
+		else if (c >= 'a' && c <= 'z') c -= 32;
+		*cp++ = c;
+	}
+	hf_flag = 1;
+}
+#endif
+
+void
+text_hash(s,l,d)
+REG char *s;
+REG long l;
+int d;
+{
+REG int tabi;
+char c,t;
+
+#ifdef FOR_POSTERITY
+hashflip();
+#endif
+
+	tabi = 0;
+	while (l--) {
+		c = hashtab[tabi++];
+		if (!c) {
+			tabi = 0;
+			c = hashtab[tabi++];
+		}
+		if (d) {
+			t = (*s ^ 0xff) + 1;
+			*s++ = t ^ c;
+		} else {
+			t = *s ^ c;
+			*s++ = (t ^ 0xff) + 1;
+		}
+	}
+}
+
+short
+do_save()
+{
+int32_t l,n,o,v;
+long r;
+FILE *wfp;
+
+    Adjust_Stack();
+    wfp = NULL;
+    while (GarbCollect());
+
+    if (MSTACK != STACKMAX) return(SET_ERR(ERR_SI));
+
+	if (!strcmp("Clear WS",wspace->wsid)) strcpy(wspace->wsid,"continue");
+    do_wsid(0);
+    get_aplhome_dir((char *)LINEA, LINE_SIZE, "ws");
+    strcat((char *)LINEA, wspace->wsid);
+    strcat((char *)LINEA, ".ws");
+    strcpy(VBUF, wspace->wsid);   /* VBUF still used for display below */
+    wfp = fopen((char *)LINEA,"wb");
+
+    if (!wfp) return(SET_ERR(ERR_SAVE));
+
+    stamp_ws();
+    wspace->width = WIDTH;   /* sync current )WIDTH setting into header before save */
+	wspace->digits = DIGITS;	/* ditto with )DIGITS setting */
+
+    n = wspace->water;
+    l = n - (int32_t)((char *)&wspace->water - (char *)wspace);
+    wspace->water = l;      /* adjust to be rel to self */
+
+    /* new magic number -- incompatible with pre-64bit format */
+    o = 0x73777066L;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&o);
+#endif
+    if (4 != fwrite(&o,1,4,wfp))
+    {
+        fclose(wfp);
+        return(SET_ERR(ERR_SAVE));
+    }
+
+    /* write workspace file format version */
+    v = WS_FORMAT_VERSION;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&v);
+#endif
+    if (4 != fwrite(&v,1,4,wfp))
+    {
+        fclose(wfp);
+        return(SET_ERR(ERR_SAVE));
+    }
+
+    /* write wspace size */
+    o = wspace->wssize;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&o);
+#endif
+
+    mod_ws();       /* after this, can use saveerr */
+
+    if (4 != fwrite(&o,1,4,wfp)) goto saveerr;
+
+    /* write watermark (rel to &wspace->water) */
+    o = l;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&o);
+#endif
+    if (4 != fwrite(&o,1,4,wfp)) goto saveerr;
+
+    /* write the whole blob (header + SYMT + pool) hashed.
+       SYMT is now part of the workspace block -- no separate write. */
+    text_hash((char *)&wspace->water,l,1);
+    r = (long)fwrite((char *)&wspace->water,1,l,wfp);
+    text_hash((char *)&wspace->water,l,0);
+    if (l != r) goto saveerr;
+
+    fclose(wfp);
+    unmod_ws();
+    wspace->water = n;
+
+    Cmessage(MSG_SAVED);
+    print_stamp();
+    CPRINT(VBUF);
+    CNL();
+    return(0);
+saveerr:;
+    unmod_ws();
+    wspace->water = n;
+    if (wfp) fclose(wfp);
+    return(SET_ERR(ERR_SAVE));
+}
+
+void
+free_ws()
+{
+struct MemEnt *md,*me;
+struct ValEnt *mal;
+
+	md = WS_PTR(wspace->water);
+	me = WS_PTR(wspace->begin);
+	while (me < md) {
+		if (me->me_flags & ME_MAL) {
+				mal = (struct ValEnt *)me;
+				if (mal->ve_point)
+					sys_mfree((char *)(intptr_t)mal->ve_point,mal->ve_length);
+				mal->ve_point = 0L;
+		}
+		me = (struct MemEnt *)((char *)me + me->me_size);
+	}	
+}
+
+short
+load_ws(s,f)
+char *s;
+int f;
+{
+int32_t ll,l,osize,v;
+FILE *wfp;
+short ret;
+
+	ret = -1;
+    get_aplhome_dir((char *)LINEA, LINE_SIZE, "ws");
+    strcat((char *)LINEA, s);
+    strcat((char *)LINEA, ".ws");
+    strcpy((char *)VBUF, s);     /* keep display name in VBUF */
+    strcat((char *)VBUF, ".ws");
+
+	if (DEBUGFLAG)
+	{
+		NL();
+		PRINT(LINEA);
+		NL();
+	}
+
+    wfp = fopen((char *)LINEA,"rb");
+
+    if (!wfp) { ret = 2; goto loaderr; }
+
+    /* Read and validate the entire header before touching the live
+       workspace in any way. A failed )LOAD must leave the current
+       workspace exactly as it was -- free_ws() is deferred until every
+       check below has passed. */
+
+    /* read magic number */
+    if (4 != fread(&l,1,4,wfp)) goto loaderr;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&l);
+#endif
+    ll = 0x73777066L;       /* new magic -- 64-bit clean format */
+    if (l != ll)
+    {
+        ret = 1;            /* ws damaged or old format */
+        goto loaderr;
+    }
+
+    /* read format version */
+    if (4 != fread(&v,1,4,wfp)) goto loaderr;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&v);
+#endif
+    if (v != WS_FORMAT_VERSION) { ret = 3; goto loaderr; }   /* unsupported version */
+
+    /* read wssize -- the size the workspace was saved/set at */
+    if (4 != fread(&osize,1,4,wfp)) goto loaderr;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&osize);
+#endif
+
+    /* read watermark */
+    if (4 != fread(&l,1,4,wfp)) goto loaderr;
+#ifndef APLBIG_ENDIAN
+    long_swap((char *)&l);
+#endif
+
+    /* Corruption guard only: does the file's own claimed content fit its
+       own claimed size? )LOAD always restores the workspace to the size
+       it was saved at -- )RESIZE is the tool for deliberately changing
+       a workspace's size, so there's no longer any check against the
+       active workspace's current size here. */
+    if (l > (osize - STACK_MARGIN)) { ret = 4; goto loaderr; }
+
+    free_ws();                     /* release old workspace's external refs
+                                       before the block underneath it goes away */
+
+    if (resize_ws_destructive(osize)) goto loaderr;   /* ret stays -1: out of memory */
+
+    /* read the single blob -- header + SYMT + pool. Unlike every check
+       above, a short/truncated read here happens after wspace has
+       already started being overwritten -- it's the one failure mode
+       that can leave the live workspace in a genuinely mixed,
+       inconsistent state rather than simply untouched. */
+    if (l != (long)fread((char *)&wspace->water,1,l,wfp)) { ret = 5; goto loaderr; }
+    text_hash((char *)&wspace->water,l,0);
+
+    fclose(wfp);
+    unmod_ws();
+    wspace->water += (int32_t)((char *)&wspace->water - (char *)wspace);
+
+    /* The blob carries the saved workspace's own size, which should
+       already match what we just resized to -- restore it explicitly
+       anyway as a cheap guard against a corrupt/mismatched file. */
+    wspace->wssize = (int32_t)wssize;
+
+    /* SYMT pointer follows from wspace base -- no separate read needed */
+    SYMT = (struct SymTable *)((char *)wspace + sizeof(struct WorkSpace));
+	SYMTACTUAL = wspace->symtsize ? wspace->symtsize : SYMTSIZE;
+
+    set_case(wspace->caseflip);
+    WIDTH   = (wspace->width >= 20) ? wspace->width : 20;
+    RMARGIN = LMARGIN + WIDTH;
+	DIGITS = (wspace->digits >= 1 && wspace->digits <= 17) ? wspace->digits : 10;
+    return(0);
+loaderr:;
+    if (wfp) fclose(wfp);
+    return(ret);
+}
+
+short
+do_load()
+{
+	strcpy((char *)VBUF,"continue");
+	if (*COMMANDP) 
+	{
+		COMMANDP = get_vstr(COMMANDP);
+		if (!COMMANDP) 
+		{
+			goto loadrr;
+		}
+	}
+	switch (load_ws(VBUF,0)) 
+	{
+		case 0:
+			Cmessage(MSG_SAVED);
+			print_stamp();
+			CNL();
+			return(0);
+		case 1:
+			/* damaged or unrecognized file -- current workspace untouched */
+			return(SET_ERR(ERR_WSD)); 
+		case 2:
+			/* file not found -- current workspace untouched */
+			return(SET_ERR(ERR_WSNOTF));	
+		case 3:
+			/* recognized file, unsupported version -- current workspace untouched */
+			return(SET_ERR(ERR_WSD));	
+		case 4:
+			/* wouldn't fit in the active workspace -- current workspace untouched */
+			return(SET_ERR(ERR_WSFULL));	
+		case 5:
+			/* truncated mid-read -- live workspace left inconsistent, reset to clean */
+			free_ws();
+			do_clearws(0);
+			CNL();
+			return(SET_ERR(ERR_WSD));	
+	}
+
+loadrr:;
+	return(SET_ERR(ERR_WSLOAD));
+}
+
+
+short
+do_erase()
+{
+short i;
+
+	while (*COMMANDP) {
+		COMMANDP = get_vstr(COMMANDP);
+		if (!COMMANDP) return(SET_ERR(ERR_COMMAND));	/* error */
+		i = lookup_sym(VBUF);
+		if (on_stack(i)) return(SET_ERR(ERR_SI));
+		sym_delete(i);
+		while (*COMMANDP == ' ') COMMANDP++;
+	}
+	while (GarbCollect());
+	return(0);
+}
+
+short
+do_drop()
+{
+int i;
+
+    if (!*COMMANDP) return(SET_ERR(ERR_SYNTAX));
+    COMMANDP = get_vstr(COMMANDP);
+    if (!COMMANDP) return(SET_ERR(ERR_COMMAND));
+
+    /* lowercase name to match file save convention */
+    for (i = 0; VBUF[i]; i++)
+        if (VBUF[i] >= 'A' && VBUF[i] <= 'Z') VBUF[i] += 32;
+
+    get_aplhome_dir((char *)LINEA, LINE_SIZE, "fns");
+    strcat((char *)LINEA, (char *)VBUF);
+    strcat((char *)LINEA, ".fn");
+
+    if (unlink((char *)LINEA) == 0) {
+        CPRINT(VBUF);
+        CPRINT(" DROPPED");
+        CNL();
+        return(0);
+    } else {
+        CPRINT(VBUF);
+        CPRINT(" NOT FOUND");
+        CNL();
+        return(SET_ERR(ERR_COMMAND));
+    }
+}
+
+short
+dump_ws(f)
+short f;
+{
+struct MemEnt *me,*md;
+char *bp,*cp;
+long s;
+ws_off_t t;
+ws_off_t symt_lo,symt_hi;
+short i,j;
+char cb[4];
+
+    cb[1] = '\0';
+    if (f)
+    {
+        f = SILENT_COMMAND + 1;
+        SILENT_COMMAND = 2;
+    }
+    symt_lo = sizeof(struct WorkSpace);
+    symt_hi = symt_lo + (SYMTACTUAL * sizeof(struct SymTable));
+    bp = (char *)LSCRATCH;
+    sprintf(bp,"water: %04x, wsbeg: %04x, symtlo: %04x",
+        wspace->water, wspace->begin, symt_lo);
+    CPRINT(bp);
+    CNL();
+    md = WS_PTR(wspace->water);
+    me = WS_PTR(wspace->begin);
+
+    while (me < md)
+    {
+        CNL();
+        switch (me->me_flags & ME_TMASK) {
+            case ME_VAL:   CPRINT("VAL");        break;
+            case ME_NAM:   CPRINT("NAME");       break;
+            case ME_FUNC0: CPRINT("Func0");      break;
+            case ME_FUNCN: CPRINT("Func");       break;
+            case ME_ITMP:  CPRINT("Index Temp"); break;
+            default:       CPRINT("???");        break;
+        }
+        if (me->me_flags & ME_FTRACE) CPRINT(" -ftrace");
+        if (me->me_flags & ME_LTRACE) CPRINT(" -stop");
+        if (me->me_flags & ME_MAL)    CPRINT(" -malloc");
+
+        t = me->me_reference;
+        CPRINT("      ref: ");
+        cp = "Lost";
+        if (!t)
+        {
+            cp = "Deleted";
+        }
+        else
+        {
+            /* verify back-reference is consistent */
+            ws_off_t slot_val = *(ws_off_t *)((char *)wspace + t);
+            if (slot_val == WS_OFF(me))
+            {
+                char *ref = (char *)wspace + t;
+                if (ref >= (char *)MSTACK && ref <= (char *)STACKMAX)
+                {
+                    cp = "Stacked";
+                }
+                else if (t >= wspace->begin && t < wspace->water)
+                {
+                    sprintf(bp,"Mem ref - %04x", t);
+                    cp = bp;
+                }
+                else if (t >= symt_lo && t < symt_hi)
+                {
+                    i = (int)((t - symt_lo) / sizeof(struct SymTable));
+                    print_name(i);
+                    cp = ", Symbol Table Ref";
+                }
+                else if (t == WS_OFF(&wspace->curfunc))
+                {
+                    cp = "Current Func line";
+                }
+            }
+        }
+        CPRINT(cp);
+
+        s = me->me_size;
+        cp = (char *)me;
+        i = 16;
+        while (s--)
+        {
+            if (i == 4 || i == 8 || i == 12) CPRINT(" ");
+            if (i == 16)
+            {
+                CNL();
+                sprintf(bp,"%04x  ",(unsigned int)WS_OFF(cp));
+                CPRINT(bp);
+                i = 0;
+            }
+            sprintf(bp,"%02x ",(unsigned char)*cp++);
+            CPRINT(bp);
+            if (i == 15 || !s)
+            {
+                cp -= i + 1;
+                j = 15 - i;
+                while (j--)
+                {
+                    CPRINT("   ");
+                    if (j == 3 || j == 7 || j == 11) CPRINT(" ");
+                }
+                j = i + 1;
+                while (j--)
+                {
+                    cb[0] = *cp++ & 0x7f;
+                    if (cb[0] >= ' ' && cb[0] != 0x7f) CPRINT(cb);
+                    else CPRINT(".");
+                }
+            }
+            i++;
+        }
+        CNL();
+        me = (struct MemEnt *)((char *)me + me->me_size);
+    }
+    CPRINT("-----------");
+    CNL();
+    if (f) SILENT_COMMAND = f - 1;
+    return(0);
+}
+
+short
+do_mem()
+{
+short i,s;
+struct MemEnt *me,*md;
+unsigned char *cp;
+long l;
+ws_off_t t;
+char c,*tp;
+ws_off_t symt_lo,symt_hi;
+
+    tp = (char *)LSCRATCH;
+    symt_lo = sizeof(struct WorkSpace);
+    symt_hi = symt_lo + (SYMTACTUAL * sizeof(struct SymTable));
+    l = (long)((char *)MSTACK - ((char *)wspace + wspace->water));
+    l -= STACK_MARGIN;
+
+    /* sprintf(tp,"%lx: %ld bytes available, water=%3x", (long)wspace,l,wspace->water); */
+	sprintf(tp,"%p: %ld bytes available, water=%3x", (void*)wspace,l,wspace->water);
+
+    PRINT(tp);
+    NL();
+    md = WS_PTR(wspace->water);
+    me = WS_PTR(wspace->begin);
+
+    while (me < md)
+    {
+        sprintf(tp,"%3x ",(unsigned int)WS_OFF(me));
+        PRINT(tp);
+        t = me->me_reference;
+        c = '?';
+        if (!t) c = '-';
+        else {
+            char *ref = (char *)wspace + t;
+            if (ref >= (char *)MSTACK && ref <= (char *)STACKMAX) c = '#';
+            else if (t >= wspace->begin && t < wspace->water) c = 'm';
+            else if (t >= symt_lo && t < symt_hi) c = 's';
+        }
+        tp[0] = c;
+        tp[1] = 0;
+        PRINT(tp);
+        s = -1;
+        for (i=0;i<SYMTACTUAL;i++)
+            if (SYMT[i].value && WS_PTR(SYMT[i].value) == me) s = i;
+        if (s != -1)
+        {
+            if (me->me_reference != WS_OFF(&SYMT[s].value)) PRINT("#");
+            else PRINT(" ");
+            i = print_name(s);
+            while (i<5)
+            {
+                PRINT(" ");
+                i++;
+            }
+        } else PRINT("      ");
+        PRINT(" ");
+        switch (me->me_flags & ME_TMASK)
+        {
+            case ME_VAL:   PRINT("VAL"); break;
+            case ME_NAM:   PRINT("NAM"); break;
+            case ME_FUNC0: PRINT("F-0"); break;
+            case ME_FUNCN: PRINT("F-N"); break;
+            case ME_ITMP:  PRINT("ITM"); break;
+            default:       PRINT("???"); break;
+        }
+        if (me->me_flags & ME_FTRACE) PRINT("t");
+        if (me->me_flags & ME_LTRACE) PRINT("s");
+        if (me->me_flags & ME_MAL) PRINT("+");
+        else PRINT(" ");
+
+		sprintf(tp,"%02x ",me->me_vtype);
+		PRINT(tp);	
+
+
+        i = sizeof(struct MemEnt);
+        cp = (unsigned char *)me + i;
+        l = me->me_size - i;
+        if (l > 20L) l = 20L;
+        while (l--)
+        {
+            sprintf(tp,"%02x ",*cp++);
+            PRINT(tp);
+        }
+        NL();
+        me = (struct MemEnt *)((char *)me + me->me_size);
+    }
+    return(0);
+}
+
+
+short
+do_si(f)
+short f;
+{
+int32_t *sp,l,t;
+short fline,fnum,locals,j;
+struct Func0Ent *f0e;
+	
+	Adjust_Stack();
+	sp = MSTACK;
+	while (sp < STACKMAX) 
+	{
+		sp++;	/* skip over emark */
+		l = *sp++;	/* get fnline */
+		t = *sp++;	/* get CURFUNC or fnhead */
+		fline = (short)((l >> FLINE_SHIFT) & FLINE_MASK);
+		fnum = -1;
+		locals = 0;
+		if (fline) 
+		{
+			fnum = (short)((t >> FNUM_SHIFT) & FNUM_MASK);	
+			f0e = (struct Func0Ent *)WS_PTR(SYMT[fnum].value);
+			locals = f0e->f0e_MemEnt.me_rank;
+			j = (short)((l >> LVAR_SHIFT) & LVAR_MASK);	/* act locs */
+			sp += j;
+			print_name(fnum);
+			PRINT(" [");
+			print_num((long)fline);
+			PRINT("] ");
+			if (f) 
+			{
+				while (locals--) {
+					print_name(f0e->f0e_locals[locals]);
+					PRINT(" ");
+				}
+				if (f0e->f0e_left != -1) {
+					print_name(f0e->f0e_left);
+					PRINT(" ");
+				}
+				if (f0e->f0e_right != -1) {
+					print_name(f0e->f0e_right);
+					PRINT(" ");
+				}
+				if (f0e->f0e_result != -1) {
+					print_name(f0e->f0e_result);
+					PRINT(" ");
+				}
+			} else PRINT("* ");
+			NL();
+		}
+		while (*sp != STACK_EMARK) 
+		{
+			if (*sp == STACK_TEMP_VAL) sp++;
+			sp++;
+		}
+		if (ABORTSIG) return(SET_ERR(ERR_INTERRUPT));
+	}
+	l = 0;
+	for (j=0;j<NUM_FLOATVS;j++) if (FLOATVS[j]) l++;
+	if (l) {
+		print_num((long)l);
+		PRINT(" active FLOATVS");
+		NL();
+	}
+	return(0);
+}
+
+short
+do_stack()
+{
+int32_t *sp;
+int32_t l;
+char *cp;
+	
+	cp = (char *)LSCRATCH;
+	sp = MSTACK;
+	printf("Stack: %p",(void *)sp);
+	NL();
+	while (sp < STACKMAX) {
+		l = *sp++;
+		sprintf(cp,"%08x ",(unsigned int)l);
+		PRINT(cp);
+		if (l & STACK_TEMP_VAL) {
+			l = *sp++;
+			sprintf(cp,"%08x ",(unsigned int)l);
+			PRINT(cp);
+		}
+		NL();
+	}
+	return(0);
+}
+
+/*
+	does )list, if f=1
+	displays help.dat if f=0
+*/
+
+/* -----------------------------------------------------------------------
+   help.dat Unicode -> KAPL font-index translation
+   -----------------------------------------------------------------------
+   help.dat is authored as plain UTF-8 text containing real Unicode APL
+   glyphs (copy/pasted straight out of the emulator with clipboard Unicode
+   translation ON, edited in any normal UTF-8-aware editor). This table is
+   a direct mechanical port of the 50-entry table in kapl_unicode_mapping.hpp
+   (Qt/C++ side) -- same source, same derivation, same confidence notes.
+   See kapl_unicode_mapping.md for how each entry was identified.
+
+   This ONLY affects how help.dat is decoded when displayed via )HELP.
+   .fn files, screen codes, and orig_trans[]/ascii_trans[] are untouched.
+   ----------------------------------------------------------------------- */
+
+struct kapl_unicode_entry {
+	uint32_t unicode;
+	UCHAR    kapl;
+};
+
+static const struct kapl_unicode_entry kapl_unicode_table[] = {
+	{0x00A8, 0xA1},  /* diaeresis */
+	{0x00AF, 0xA2},  /* macron / APL high-minus */
+	{0x2264, 0xA4},  /* <= */
+	{0x2265, 0xA6},  /* >= */
+	{0x2260, 0xA8},  /* <> */
+	{0x2228, 0xA9},  /* or (inverted-caret) */
+	{0x00D7, 0xAB},  /* multiply */
+	{0x236A, 0xAC},  /* comma bar -- not independently confirmed reachable via a key/overstrike */
+	{0x2339, 0xAD},  /* quad divide (domino) -- see kapl_unicode_mapping.md root-cause note */
+	{0x233F, 0xAF},  /* slash bar (compress w/ dash) */
+	{0x2372, 0xB0},  /* nand */
+	{0x2371, 0xB9},  /* nor */
+	{0x2261, 0xBD},  /* identical to (match) -- not independently confirmed reachable */
+	{0x2337, 0xBE},  /* squish quad (squad) */
+	{0x237A, 0xC1},  /* alpha */
+	{0x22A5, 0xC2},  /* up tack */
+	{0x2229, 0xC3},  /* cap / intersection */
+	{0x230A, 0xC4},  /* left floor */
+	{0x2208, 0xC5},  /* element of */
+	{0x2207, 0xC7},  /* nabla / del */
+	{0x2206, 0xC8},  /* delta ("Del-up") */
+	{0x2373, 0xC9},  /* iota */
+	{0x2218, 0xCA},  /* jot */
+	{0x2395, 0xCC},  /* quad */
+	{0x007C, 0xCD},  /* stile (plain '|' -- see note below) */
+	{0x22A4, 0xCE},  /* down tack */
+	{0x25CB, 0xCF},  /* circle */
+	{0x2374, 0xD2},  /* rho */
+	{0x2308, 0xD3},  /* left ceiling */
+	{0x2193, 0xD5},  /* down arrow */
+	{0x222A, 0xD6},  /* union */
+	{0x2375, 0xD7},  /* omega */
+	{0x2283, 0xD8},  /* right shoe (pick) */
+	{0x2191, 0xD9},  /* up arrow */
+	{0x2282, 0xDA},  /* left shoe (enclose) */
+	{0x2340, 0xDC},  /* backslash bar (expand w/ dash) */
+	{0x00F7, 0xDF},  /* divide */
+	{0x2336, 0xE0},  /* I-beam */
+	{0x2296, 0xE1},  /* circle minus */
+	{0x234E, 0xE2},  /* execute */
+	{0x235D, 0xE3},  /* comment */
+	{0x236B, 0xE6},  /* locked del */
+	{0x2352, 0xE7},  /* grade down */
+	{0x234B, 0xE8},  /* grade up */
+	{0x235E, 0xEC},  /* quote-quad */
+	{0x2355, 0xEE},  /* format */
+	{0x235F, 0xF0},  /* circle star */
+	{0x2349, 0xF4},  /* transpose */
+	{0x233D, 0xF7},  /* rotate (circle stile) */
+	{0x2190, 0xFB},  /* left arrow (assignment) */
+	{0x2359, 0xFC},  /* delta underbar */
+	{0x2192, 0xFD},  /* right arrow (branch) */
+};
+#define KAPL_UNICODE_TABLE_SIZE \
+	(sizeof(kapl_unicode_table) / sizeof(kapl_unicode_table[0]))
+
+/* NOTE on 0x007C (stile): the plain ASCII '|' key also produces KAPL byte
+   0xCD (see mappings.hpp / OrigTrans V22 change), so an author typing a
+   literal '|' in help.dat -- which decode_utf8_char() returns unchanged as
+   codepoint 0x7C via the <0x80 passthrough below, never reaching this table
+   -- already gets 0xCD for free. This table entry exists only so that if
+   help.dat is ever machine-generated by copying a real U+007C VERTICAL LINE
+   out of some other source, it resolves the same way. */
+
+/* Linear scan is fine: table is tiny (50 entries) and this only runs once
+   per help.dat line at )HELP display time, not in any hot path. */
+static short
+unicode_to_kapl_byte(uint32_t cp)
+{
+size_t i;
+	for (i = 0; i < KAPL_UNICODE_TABLE_SIZE; i++) {
+		if (kapl_unicode_table[i].unicode == cp)
+			return((short)kapl_unicode_table[i].kapl);
+	}
+	return(-1);
+}
+
+/* Decode one UTF-8 sequence starting at *sp, advance *sp past it, and
+   return the codepoint. Malformed/truncated sequences are consumed one
+   byte at a time and returned as-is (so a bad byte can't desync the rest
+   of the line) rather than aborting the whole line. */
+static uint32_t
+decode_utf8_char(UCHAR **sp)
+{
+UCHAR *s = *sp;
+UCHAR b0 = *s;
+uint32_t cp;
+int extra, i;
+
+	if (b0 < 0x80) {
+		*sp = s + 1;
+		return((uint32_t)b0);
+	}
+	if ((b0 & 0xE0) == 0xC0) { cp = b0 & 0x1F; extra = 1; }
+	else if ((b0 & 0xF0) == 0xE0) { cp = b0 & 0x0F; extra = 2; }
+	else if ((b0 & 0xF8) == 0xF0) { cp = b0 & 0x07; extra = 3; }
+	else {
+		/* Not a valid UTF-8 lead byte (stray continuation byte, or a
+		   raw 0x80-0xFF byte left over from some other encoding).
+		   Consume just this one byte so we don't get stuck. */
+		*sp = s + 1;
+		return((uint32_t)b0);
+	}
+
+	for (i = 1; i <= extra; i++) {
+		if ((s[i] & 0xC0) != 0x80) {
+			/* Truncated/malformed sequence -- bail out on just the
+			   lead byte, same fallback as above. */
+			*sp = s + 1;
+			return((uint32_t)b0);
+		}
+		cp = (cp << 6) | (s[i] & 0x3F);
+	}
+	*sp = s + 1 + extra;
+	return(cp);
+}
+
+/* Translate one UTF-8 help.dat line (src) into KAPL font-index bytes
+   (dst). dst must be at least as large as src -- UTF-8 never expands
+   under this mapping, since every multi-byte input sequence collapses to
+   exactly one output byte, and single-byte input passes through 1:1. */
+static void
+translate_help_line(UCHAR *dst, UCHAR *src)
+{
+	while (*src) {
+		uint32_t cp = decode_utf8_char(&src);
+		if (cp < 0x80) {
+			*dst++ = (UCHAR)cp;
+		} else {
+			short b = unicode_to_kapl_byte(cp);
+			/* Unrecognized Unicode in help.dat (typo, wrong glyph,
+			   stray copy-paste from elsewhere): substitute a visible
+			   '?' rather than silently drop or misrender it. */
+			*dst++ = (b >= 0) ? (UCHAR)b : (UCHAR)'?';
+		}
+	}
+	*dst = '\0';
+}
+
+/*
+	clist_linenum() -- if the last word of s is a plain line number,
+	remove it from s and return it; otherwise leave s alone and return
+	-1. Leading zeros are ignored; more than 5 significant digits
+	returns 99999, which no function has, so it's reported as out of
+	range rather than as a bad name. At least one word must remain.
+*/
+static long
+clist_linenum(char *s)
+{
+char *word, *dp, *end;
+int j;
+
+	word = strrchr(s, ' ');
+	if (!word) return(-1L);		/* only one word: that's the name */
+	end = word;			/* where the name will end */
+	word++;
+	if (!*word) return(-1L);
+	for (j = 0; word[j]; j++)
+		if (word[j] < '0' || word[j] > '9') return(-1L);
+	while (end > s && end[-1] == ' ') end--;
+	if (end == s) return(-1L);	/* nothing left for a name */
+	dp = word;
+	while (*dp == '0' && dp[1]) dp++;
+	j = (int)strlen(dp);
+	*end = '\0';			/* cut the number (and blanks) off s */
+	if (j > 5) return(99999L);
+	return(atol(dp));
+}
+
+/*
+	do_clist() -- )LIST (f == 1) and )HELP's file listing (f == 0).
+
+	)LIST fname          whole file, header first as line 0
+	)LIST fname n        just line n (0 = the header)
+	)LIST fname n m      lines n through m
+
+	Line numbers are taken from the end of the argument: if the last
+	one or two words are plain numbers they're line numbers and the
+	rest is the name. A name ending in digits (FUNC1) is one word, so
+	it's unaffected; only a .fn file whose base name had a blank and
+	then a number could be misread, and no function can have such a
+	name. A range that runs backwards is a Syntax Error;
+	a line past the end prints "No line 9 (lines are 0 to 5)" and is a
+	Value Error, as for )TRACE. The numbers are the file's, which match
+	the function in the workspace as long as the file hasn't changed
+	since it was )ENTERed -- )ENTER counts every file line too.
+*/
+short
+do_clist(s,f)
+char *s;
+short f;
+{
+FILE *lfp;
+short i,j;
+char *cp;
+long first, last, n2;
+int ranged, nlines;
+	
+	cp = (char *)LSCRATCH;
+	/* strip trailing blanks; checks length first, so an empty argument
+	   doesn't read s[-1] */
+	i = strlen(s);
+	while (i > 0 && s[i-1] == ' ') s[--i] = '\0';
+	if (!*s) return(SET_ERR(ERR_COMMAND));
+
+	ranged = 0;
+	first = 0;
+	last = 0;
+	if (f == 1)
+	{
+		last = clist_linenum(s);
+		if (last >= 0)
+		{
+			ranged = 1;
+			first = last;
+			n2 = clist_linenum(s);
+			if (n2 >= 0) first = n2;
+			if (first > last) return(SET_ERR(ERR_SYNTAX));
+		}
+	}
+
+	if (strchr(s, '/')) {
+		strcpy(cp,s);
+	} else {
+		get_aplhome_dir(cp, LINE_SIZE, "fns");
+		go_lower(s);
+		strcat(cp,s);
+	}
+
+	if (f == 1) strcat(cp,".fn");
+	lfp = fopen(cp,"r");
+	if (!lfp) return(SET_ERR(ERR_FNOTF));
+
+	if (ranged)		/* check the range against the file first */
+	{
+		nlines = -1;	/* the header is line 0 */
+		while (fgets((char *)LINEA,LINE_SIZE-1,lfp)) nlines++;
+		if (last > nlines)
+		{
+			fclose(lfp);
+			if (nlines < 0) nlines = 0;
+			sprintf(cp, "No line %ld (lines are 0 to %d)", (first > nlines) ? first : last, nlines);
+			PRINT(cp);
+			NL();
+			return(SET_ERR(ERR_VALUE));
+		}
+		rewind(lfp);
+	}
+
+	i = 0;
+	while (fgets((char *)LINEA,LINE_SIZE-1,lfp)) 
+	{
+		if (ranged && i > last) break;
+		if (ranged && i < first)
+		{
+			i++;
+			continue;
+		}
+		if (!f)
+		{
+			translate_help_line(LINEB, LINEA);
+			strcpy(LINEA,LINEB);
+		}
+
+		j = strlen(LINEA);
+		while (j > 0 && (LINEA[j-1] == 10 || LINEA[j-1] == 13)) j--;
+		LINEA[j] = '\0';
+		if (f == 1)
+		{
+			UCHAR *tp = LINEA;
+			while (*tp) { *tp = orig_trans[*tp]; tp++; }
+		}
+		if (f == 1) 
+		{
+			if (i)  // don't number line 0?  Better if it's there
+			{
+				sprintf(cp,"[%d] ",i);
+				PRINT(cp);
+			} else PRINT("     \xc7");	// prefix with del
+			if (i < 10) PRINT(" ");
+			CURSX += 5;
+		}
+
+		FE_TRANS_FLAG++;
+		vout(LINEA,0,strlen(LINEA));
+		FE_TRANS_FLAG--;
+
+		NL();
+		i++;
+	}
+
+	fclose(lfp);
+	return(0);
+}
+
+short
+do_garb()
+{
+int upd;
+
+	if (*COMMANDP) 
+	{
+		COMMANDP = get_vstr(COMMANDP);
+		if (COMMANDP) 
+		{
+			/* check for valid param */
+			upd = -1;
+			if (!strcmp(VBUF,"on")) upd = 1;
+			if (!strcmp(VBUF,"off")) upd = 0;
+			if (upd == -1) return(SET_ERR(ERR_SYNTAX));
+			else {
+				/* if so, report was & set */
+				Cmessage(MSG_WAS);
+				if (garb_debug) CPRINT("ON");
+				else CPRINT("OFF");
+				NL();
+				garb_debug = upd;
+			}
+			return(0);
+		}
+	}
+	/* no param, do it the old way */
+	upd = GarbCollect();
+	CPRINT("Gained ");
+	print_num(upd);
+	CNL();
+	return(0);
+}
+
+/* ============================================================
+   )TRACE and )STOP
+   ============================================================
+   Both commands work on one flag bit in each function line's
+   MemEnt: ME_FTRACE for )TRACE (cnum 31), ME_LTRACE for )STOP
+   (cnum 30, which was )LTRACE; the bit keeps its old name). )TRACE
+   shows each flagged line's result; )STOP suspends the function
+   before a flagged line runs (see lexec() in exec.c). Every form
+   ends by showing the resulting state, prefixed "Now: " when the
+   command changed something, so a change and a query look different:
+
+     )TRACE              list every function with traced lines
+     )TRACE OFF          clear every trace in the workspace
+     )TRACE F            show F's traced lines, e.g. F[1 3]
+     )TRACE F OFF        clear all of F's traces
+     )TRACE F 1 3 ...    toggle each listed line
+
+   OFF is always the keyword, so a function named OFF can't be
+   traced. Line numbers must be 1 to the function's last line
+   (line 0 is the header; nothing reads a flag there). Every
+   token is checked before any line is changed, so a bad command
+   changes nothing. A malformed argument is a Syntax Error; a name
+   that isn't a function, or a line the function doesn't have, is a
+   Value Error, preceded by a line saying what was wrong. The flags live on the lines themselves, so
+   listing them means walking the functions -- no separate list
+   to keep in step with )ERASE, )ENTER, )LOAD etc.
+   ============================================================ */
+
+/* the flag bit a trace command works on */
+static UCHAR trace_bit(short n)
+{
+	return (n == 30) ? ME_LTRACE : ME_FTRACE;
+}
+
+/* true if VBUF holds the OFF keyword; both cases accepted, as
+   do_intdiv() does for ON/OFF */
+static int trace_is_off(void)
+{
+	return !strcmp((char *)VBUF,"OFF") || !strcmp((char *)VBUF,"off");
+}
+
+/* copy the next blank-delimited token at *pp into buf and advance
+   *pp past it; returns its length (0 = no more tokens), or -1 if it
+   doesn't fit in buf */
+static int trace_token(UCHAR **pp, char *buf, int size)
+{
+UCHAR *cp;
+int len;
+
+	cp = *pp;
+	while (*cp == ' ') cp++;
+	len = 0;
+	while (*cp && *cp != ' ')
+	{
+		if (len >= size - 1) return(-1);
+		buf[len++] = (char)*cp++;
+	}
+	buf[len] = '\0';
+	*pp = cp;
+	return(len);
+}
+
+/* number of lines in function fnum, not counting the header */
+static int trace_line_count(short fnum)
+{
+struct FuncEnt *fe;
+int count;
+
+	fe = (struct FuncEnt *)WS_PTR(SYMT[fnum].value);
+	count = 0;
+	while (fe->fe_NextLine)
+	{
+		fe = (struct FuncEnt *)WS_PTR(fe->fe_NextLine);
+		count++;
+	}
+	return(count);
+}
+
+/* line `line` (1 = first line after the header) of function fnum;
+   caller has already checked 1 <= line <= trace_line_count() */
+static struct FuncEnt *trace_line(short fnum, int line)
+{
+struct FuncEnt *fe;
+
+	fe = (struct FuncEnt *)WS_PTR(SYMT[fnum].value);
+	while (line--) fe = (struct FuncEnt *)WS_PTR(fe->fe_NextLine);
+	return(fe);
+}
+
+/* how many of function fnum's lines carry flag (header not counted) */
+static int trace_flag_count(short fnum, UCHAR flag)
+{
+struct FuncEnt *fe;
+int count;
+
+	fe = (struct FuncEnt *)WS_PTR(SYMT[fnum].value);
+	count = 0;
+	while (fe->fe_NextLine)
+	{
+		fe = (struct FuncEnt *)WS_PTR(fe->fe_NextLine);
+		if (fe->fe_MemEnt.me_flags & flag) count++;
+	}
+	return(count);
+}
+
+/* display function fnum's traced lines as NAME[1 3], or NAME[] */
+static void trace_show_fn(short fnum, UCHAR flag)
+{
+struct FuncEnt *fe;
+int line, first;
+
+	print_name(fnum);
+	CPRINT("[");
+	fe = (struct FuncEnt *)WS_PTR(SYMT[fnum].value);
+	line = 0;
+	first = 1;
+	while (fe->fe_NextLine)
+	{
+		fe = (struct FuncEnt *)WS_PTR(fe->fe_NextLine);
+		line++;
+		if (fe->fe_MemEnt.me_flags & flag)
+		{
+			if (!first) CPRINT(" ");
+			print_num((long)line);
+			first = 0;
+		}
+	}
+	CPRINT("]");
+	CNL();
+}
+
+/* clear flag on every entry of function fnum, the header included --
+   an old )TRACE F 0 could have set it there, where nothing shows it */
+static void trace_clear_fn(short fnum, UCHAR flag)
+{
+struct FuncEnt *fe;
+
+	fe = (struct FuncEnt *)WS_PTR(SYMT[fnum].value);
+	fe->fe_MemEnt.me_flags &= ~flag;
+	while (fe->fe_NextLine)
+	{
+		fe = (struct FuncEnt *)WS_PTR(fe->fe_NextLine);
+		fe->fe_MemEnt.me_flags &= ~flag;
+	}
+}
+
+/* true if symbol i is a function a trace command can work on */
+static int trace_is_fn(short i)
+{
+struct MemEnt *me;
+
+	if (i < 0 || !SYMT[i].namelen) return(0);
+	if (SYMT[i].type != SYM_FUN || !SYMT[i].value) return(0);
+	me = WS_PTR(SYMT[i].value);
+	return((me->me_flags & ME_TMASK) == ME_FUNC0);
+}
+
+/* )TRACE / )STOP with no argument: every function with at least
+   one flagged line, one per line, in name order (sorted the same way
+   do_list() sorts )FNS); "None" if there aren't any */
+static short trace_list_all(UCHAR flag)
+{
+short *indices;
+int nind, k;
+short i;
+
+	indices = (short *)malloc((size_t)SYMTACTUAL * sizeof(short));
+	if (!indices) return(SET_ERR(ERR_NOMEM));
+
+	nind = 0;
+	for (i = 0; i < SYMTACTUAL; i++)
+		if (trace_is_fn(i) && trace_flag_count(i, flag)) indices[nind++] = i;
+
+	qsort(indices, (size_t)nind, sizeof(short), sym_name_cmp);
+
+	if (!nind)
+	{
+		CPRINT("None");
+		CNL();
+	}
+	for (k = 0; k < nind; k++) trace_show_fn(indices[k], flag);
+
+	free(indices);
+	return(0);
+}
+
+short
+do_trace(n)
+short n;
+{
+UCHAR flag;
+UCHAR *args, *cp;
+short f;
+int nlines, len, pass, j, toggled;
+long line;
+char tok[64];
+
+	flag = trace_bit(n);
+
+	while (*COMMANDP == ' ') COMMANDP++;
+	if (!*COMMANDP) return(trace_list_all(flag));	/* )TRACE */
+
+	COMMANDP = get_vstr(COMMANDP);
+	if (!COMMANDP) return(SET_ERR(ERR_SYNTAX));
+
+	if (trace_is_off())		/* )TRACE OFF -- nothing may follow */
+	{
+		cp = COMMANDP;
+		if (trace_token(&cp, tok, sizeof(tok))) return(SET_ERR(ERR_SYNTAX));
+		for (f = 0; f < SYMTACTUAL; f++)
+			if (trace_is_fn(f)) trace_clear_fn(f, flag);
+		CPRINT("Now: None");	/* all that trace_list_all() could show */
+		CNL();
+		return(0);
+	}
+
+	f = lookup_sym(VBUF);
+	if (!trace_is_fn(f))
+	{
+		if (f >= 0)
+		{
+			print_name(f);
+			CPRINT(" is not a function");
+			CNL();
+		}
+		return(SET_ERR(ERR_VALUE));
+	}
+	nlines = trace_line_count(f);
+	args = COMMANDP;
+
+	/* )TRACE F OFF -- OFF must be the only thing after the name */
+	cp = args;
+	len = trace_token(&cp, tok, sizeof(tok));
+	if (len > 0 && (!strcmp(tok,"OFF") || !strcmp(tok,"off")))
+	{
+		if (trace_token(&cp, tok, sizeof(tok))) return(SET_ERR(ERR_SYNTAX));
+		trace_clear_fn(f, flag);
+		CPRINT("Now: ");
+		trace_show_fn(f, flag);
+		return(0);
+	}
+
+	/* )TRACE F [n ...] -- pass 0 checks every token, pass 1 toggles,
+	   so a bad token anywhere leaves every line unchanged. A token
+	   that isn't a plain number is a Syntax Error; a number that
+	   isn't one of F's lines is a Value Error, after a line saying
+	   how many lines F has. Leading zeros are ignored; more than 5
+	   significant digits can't be a line (FLINE_MASK allows 4095)
+	   and isn't passed to atol(). */
+	toggled = 0;
+	for (pass = 0; pass < 2; pass++)
+	{
+		cp = args;
+		while ((len = trace_token(&cp, tok, sizeof(tok))) != 0)
+		{
+			if (len < 0) return(SET_ERR(ERR_SYNTAX));
+			for (j = 0; j < len; j++)
+				if (tok[j] < '0' || tok[j] > '9') return(SET_ERR(ERR_SYNTAX));
+			j = 0;
+			while (j < len - 1 && tok[j] == '0') j++;
+			line = (len - j > 5) ? 0L : atol(&tok[j]);
+			if (line < 1 || line > nlines)
+			{
+				print_name(f);
+				CPRINT(" has no line ");
+				CPRINT(tok);
+				CPRINT(" (it has ");
+				print_num((long)nlines);
+				CPRINT((nlines == 1) ? " line)" : " lines)");
+				CNL();
+				return(SET_ERR(ERR_VALUE));
+			}
+			if (pass)
+			{
+				trace_line(f, (int)line)->fe_MemEnt.me_flags ^= flag;
+				toggled = 1;
+			}
+		}
+	}
+	COMMANDP = cp;
+
+	if (toggled) CPRINT("Now: ");
+	trace_show_fn(f, flag);
+	return(0);
+}
+
+short
+print_stack(n)
+short n;
+{
+int32_t *lp;
+
+	Adjust_Stack();
+	lp = MSTACK;
+
+	if (MSTACK < STACKMAX) MSTACK += 2;
+	if ((*MSTACK & 0xf0000000) != STACK_FNHEAD) {
+		MSTACK = lp;
+		return(0);
+	}
+	MSTACK++;
+	VTEMP = get_vparm(n);
+	MSTACK = lp;
+	if (!VTEMP) return(0);
+	if (!*VTEMP) PRINT("Undefined");
+	else vprint(WS_PTR(*VTEMP));
+	return(1);
+}
+
+void
+do_version()
+{
+int i,w,first;
+UCHAR *cp;
+UCHAR quadch[4];
+UCHAR ch[4];
+
+	quadch[0] = CHAR_QD;
+	quadch[1] = '\0';
+
+	PRINT("MPL Version ");
+	PRINT(VERSION);
+	NL();
+	PRINT("Commands:");
+	NL();
+
+	OUT_TRANS_FLAG++;
+
+	cp = cmd_table;
+	w = 0;
+	while (*cp != '@') 
+	{
+		if ((int)(w + strlen(cp)) > WIDTH-1) 
+		{
+			NL();
+			w = 0;
+		}
+		if (w) PRINT(" ");
+		PRINT(")");
+		PRINT(cp);
+		w += 2 + strlen(cp);
+		cp += 1 + strlen(cp);
+	}
+	OUT_TRANS_FLAG--;
+	NL();
+	NL();
+	PRINT("System Functions:");
+	OUT_TRANS_FLAG++;
+	first = 1;
+	i = 0;
+	while (all_fnames[i]) 
+	{
+		NL();
+		w = 0;
+		cp = all_fnames[i];
+		while (*cp) 
+		{
+			if (first == 0)  /* skip over the quad-ZZ dummy */
+			{
+				if ((int)(w + strlen(cp)) > WIDTH-1) 
+				{
+					NL();
+					w = 0;
+				}	
+				if (w) PRINT(" ");
+				PRINT(quadch);
+				PRINT(cp);
+				w += 2 + strlen(cp);
+			}
+			cp += 1 + strlen(cp);
+			first = 0;
+		}
+		i++;
+	}
+	NL();
+	NL();
+	w = 0;
+	cp = char_xtable;
+	while (*cp) 
+	{
+		if ((int)(w + 2) > WIDTH - 1) 
+		{
+			NL();
+			w = 0;
+		}
+		if (w) PRINT(" ");
+		ch[0] = *cp;
+		ch[1] = cp[1];
+		ch[2] = '\0';
+		PRINT(ch);
+		w += 3;
+		cp += 3;
+	}
+	NL();
+	OUT_TRANS_FLAG--;
+}
+
+void
+set_commandp(unsigned char *cp)
+{
+	COMMANDP = cp;
+}
+
+short
+do_command(line)
+UCHAR *line;
+{
+UCHAR *cp,*cp2;
+UCHAR bf[20];
+short cnum,j,w;
+int i;
+long l;
+
+	cp2 = bf;
+	cp = line+1;
+	while (*cp == ' ') cp++;
+	while (*cp >= var_lo && *cp <= var_hi) *cp2++ = *cp++;
+	while (*cp == ' ') cp++;
+	COMMANDP = cp;	/* remember where command ends */
+	*cp2 = 0;
+
+	cp = cmd_table;
+
+	cnum = -1;
+	i = 0;
+	while (*cp != '@') {
+		cp2 = bf;
+		while (*cp) {
+			if (*cp == *cp2) {
+				cp++;
+				cp2++;
+			} else break;
+		}
+		if (!*cp) { cnum = i; break; }
+		i++;
+		while (*cp++);
+	}
+	switch (cnum) 
+	{
+		case 0:		/* OFF */
+			return(SET_ERR(ERR_KILL));
+		case 1:		/* VARS */
+			return(do_vars(COMMANDP));
+		case 2:		/* DEBUG */
+			Cmessage(MSG_WAS);
+			if (DEBUGFLAG) Cmessage(MSG_ON);
+			else Cmessage(MSG_OFF);
+			DEBUGFLAG = 1-DEBUGFLAG;
+			CNL();
+			return(0);
+		case 3:		/* DUMP */
+			i = dump_ws(1);
+			if (dbgf) fclose(dbgf);
+			dbgf = 0L;
+			return(i);
+		case 4:		/* CLEAR */
+			l = 0L;
+			if (*COMMANDP) sscanf((char *)COMMANDP,"%ld",&l);
+			return(do_clearws(l));
+		case 5:		/* WSID */
+			return(do_wsid(1));
+		case 6:		/* GARB */
+			return(do_garb());
+		case 7:		/* SAVE */
+			return(do_save());
+		case 8:		/* LOAD */
+			return(do_load());
+		case 9:		/* ERASE */
+			return(do_erase());
+		case 10:	/* FNSL */
+			get_aplhome_dir((char *)LINEA, LINE_SIZE, "fns");
+			if (*COMMANDP) {
+				/* Session 2 fix: this argument used to be silently
+				   ignored -- )FNSL <anything> always listed every
+				   .fn file. Now routed through the same
+				   filt_build_pattern() grammar )VARS/)FNS/)SYMS use
+				   (auto-trailing-'*', CHAR_POW->'*' translation),
+				   then FN_POSTFIX is appended unconditionally so the
+				   .fn extension requirement still holds -- any
+				   redundant '*' this produces (e.g. "A**.fn") is
+				   harmless, filt_match() collapses runs of '*'. */
+				char fbuf[FILT_PAT_SIZE];
+				filt_build_pattern((const char *)COMMANDP, fbuf, sizeof(fbuf));
+				strcat(LINEA, fbuf);
+			}
+			strcat(LINEA,FN_POSTFIX);
+			calldir((char *)LINEA);
+			return(0);
+		case 11:	/* FNS */
+			return(do_fns(COMMANDP));
+		case 12:	/* SYMS */
+			return(do_syms(COMMANDP));
+		case 13:	/* MEM */
+			return(do_mem());
+		case 14:	/* ORIGIN */
+			if (*COMMANDP) 
+			{
+				sscanf((char *)COMMANDP,"%d",&i);
+				Cmessage(MSG_WAS);
+				print_num((long)wspace->origin);
+				wspace->origin = i;
+			} else {
+				Cmessage(MSG_IS);
+				print_num((long)wspace->origin);
+			}
+			CNL();
+			return(0);
+		case 15:	/* WIDTH */
+			return(do_width());
+		case 16:	/* ENTER */
+			return(do_enter());
+		case 17:	/* EDIT */
+            if (!COMMANDP[0]) return(SET_ERR(ERR_SYNTAX));
+            platform_edit(COMMANDP);
+            return(0);
+		case 18:	/* SIV */
+			return(do_si(1));
+		case 19:	/* LIB */
+			/* Session 2 fix, take 2: the first pass here still let
+			   calldir(fbuf) fall through to do_calldir()'s own
+			   defaults when fbuf had no directory component --
+			   "." (cwd) and no extension filter -- instead of
+			   $APLHOME/ws and *.ws. That's what was pulling in
+			   unrelated files from cwd. Rewritten to match the
+			   )FNSL case above exactly: always anchor to
+			   $APLHOME/ws and always enforce WS_POSTFIX, only
+			   adding the user's filt_build_pattern()'d text as an
+			   extra name-prefix when they typed one. This gives up
+			   the theoretical "point LIB at an arbitrary directory"
+			   capability the old raw-pass-through code implied --
+			   but that capability was already unreachable in
+			   practice (see the CHAR_POW note from before), so
+			   there was nothing real to preserve. */
+			get_aplhome_dir((char *)LINEA, LINE_SIZE, "ws");
+			if (*COMMANDP) {
+				char fbuf[FILT_PAT_SIZE];
+				filt_build_pattern((const char *)COMMANDP, fbuf, sizeof(fbuf));
+				strcat(LINEA, fbuf);
+			}
+			strcat(LINEA,WS_POSTFIX);
+			calldir((char *)LINEA);
+			CNL();
+			return(0);
+		case 20:	/* PURGE */
+			return(do_purge());
+		case 21:	/* SYS */
+			if (*COMMANDP) {
+				callsystem(COMMANDP);
+				return(0);
+			} 
+			else {
+				i = w = 0;
+				while ((cp = all_fnames[i++]) != NULL) 
+				{
+					cnum = 0;
+					while (cp[cnum]) 
+					{
+						if (w >= (WIDTH - 1)) 
+						{
+							w = 0;
+							NL();
+						}
+						PRINT(cp);
+						j = strlen(cp);
+						cp += j + 1;
+						w += j;
+						while ((w % 10) && w < (WIDTH - 1)) 
+						{
+							PRINT(" ");
+							w++;
+						}
+					}
+				}
+			}
+			CNL();
+			return(0);
+		case 22:	/* SI */
+			return(do_si(0));
+		case 23:	/* STACK */
+			return(do_stack());
+		case 24:	/* LIST */
+			j = do_clist(COMMANDP,1);
+			return(j);
+		case 25:	/* OUTSYNC */
+			Cmessage(MSG_WAS);
+			print_num(OUTSYNC);
+			if (OUTSYNC) OUTSYNC = 0;
+			else OUTSYNC = 1;
+			CNL();
+			return(0);
+		case 26:	/* HELP */
+			get_aplhome_dir((char *)LINEA, LINE_SIZE, "");
+			strcat((char *)LINEA, "help.dat");
+			i = do_clist((char *)LINEA, 0);
+			return(i);
+		case 27:	/* BOOT */
+			i = wspace->bootfn;
+			wspace->bootfn = -1;
+			if (*COMMANDP) {
+				COMMANDP = get_vstr(COMMANDP);
+				if (COMMANDP) wspace->bootfn = lookup_sym(VBUF);
+			}
+			Cmessage(MSG_WAS);
+			if (i != -1 ) print_name(i);
+			else Cmessage(MSG_OFF);
+			CNL();
+			return(0);
+		case 28:	/* PSNAP */
+			prof_dump();
+			prof_clear();
+			return(0);
+		case 29:	/* BASE */
+			if (*COMMANDP) {
+				i = strlen(COMMANDP);
+				while (COMMANDP[i-1] == ' ') i--;
+				COMMANDP[i] = '\0';
+				i = OUT_BASE;
+				if (!strcmp(COMMANDP,"hex")) OUT_BASE = 16;
+				else OUT_BASE = 10;
+				Cmessage(MSG_WAS);
+			} else {
+				i = OUT_BASE;
+				Cmessage(MSG_IS);
+			}	
+			if (i == 16) Cmessage(MSG_HEX);
+			else Cmessage(MSG_DEC);
+			CNL();
+			return(0);
+		case 30:	/* stop */
+		case 31:	/* trace */
+			return(do_trace(cnum));
+		case 32:	/* right */
+			if (!print_stack(1)) PRINT("No right parm");
+			NL();
+			return(0);
+		case 33:	/* left */
+			if (!print_stack(0)) PRINT("No left parm");
+			NL();
+			return(0);
+		case 34:	/* scrh */
+			return(do_scrh());
+		case 35:	/* hist */
+			return(SET_ERR(ERR_COMMAND));
+		case 36:	/* case */
+			set_case(wspace->caseflip ^ 1);
+			return(0);
+		case 37:
+			do_version();
+			return(0);
+		case 38:
+			return(do_text_dump());
+		case 39:    /* DROP */
+        	return(do_drop());
+		case 40:    /* RESIZE */
+			l = 0L;
+			if (*COMMANDP) sscanf((char *)COMMANDP,"%ld",&l);
+			return(do_resize(l));
+		case 41:	/* DIGITS */
+			return(do_digits());
+		case 42:	/* INTDIV */
+			return(do_intdiv());
+		case 43:	/* FONT */
+			return(do_fonts(COMMANDP));
+		case 44:	/* STEP */
+			return(do_step());
+	}
+	return(SET_ERR(ERR_COMMAND));
+}
+

@@ -1,0 +1,21 @@
+)ENTER ONE
+)ENTER TWO
+)ENTER EX
+)ENTER BJ
+)ENTER ST
+⍎'ONE'
+Q←⍎'ONE'
+Q
+⍎'Q←ONE'
+Q
+⍎'TWO'
+⍎'EX'
+⍎'BJ'
+⍎'ST'
+)STOP ST 2
+⍎'ST'
+)STOP OFF
+)TRACE ST 2
+⍎'ST'
+)TRACE OFF
+)SI

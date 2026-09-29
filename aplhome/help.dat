@@ -1,0 +1,33 @@
+)BASE <hex,dec>   )BOOT <bootfn> )CLEAR <wssize>
+)DEBUG <on,off>   )DUMP          )EDIT <fnname> 
+)ENTER <fnname>   )ERASE <sym>   )FNSL
+)FNS              )GARB <on,off> )HELP
+)LEFT (debug)     )LIB           )LIST <fnname>  
+)LOAD  <wsname>   )LTRACE        )MEM
+)OFF              )ORIGIN <val>  )OUTSYNC
+)PSNAP (prof)     )PURGE         )RIGHT (debug)
+)SAVE <wsname>    )SI            )SIV
+)STACK            )SYMBOLS       )SYS
+)TRACE            )VARS          )VERS (features)
+)WIDTH            )WSID
+ 
+  enter hex numbers as:  0x01f2
+ 
+   decode: ⊥   encode: ⊤  negative: ¯  divide: ÷
+   upgrade: ⍋  downgrade: ⍒  format: ⍕  execute: ⍎
+   rt shift: ⊃  lt shift: ⊂  bin AND: ∩  bin OR: ∪
+   first dim laminate: ⍪   also: ⍀ ⌿
+ 
+#LC current line  #TS time stamp     #CH input a char 
+#DL <val> delay   #TB (delay incr)   #ARGS input args
+#NL the nl char   #SRCH screen hite  #WA  free space
+#NTA num to alph  #ENV get env var   #AV atomic vector  
+#FONTH font hite  #TWID text width   #CQ convert quote 
+#STRUCT <len> (create nested array)  #VT variable type 
+#IO <origin>      #WI width          #WSID
+ 
+  1 #FOPEN <name>      #FCLOSE 1       1 #FREAD <len>
+    #FNUMS           1 #FSEEK <pos>      #FTELL 1
+  1 #FWRITE <data>   1 #FCREATE <name>   #FDIR <path>
+    #FDEL <name>       #CD <path> 
+             <newname> #FNAME <oldname> 

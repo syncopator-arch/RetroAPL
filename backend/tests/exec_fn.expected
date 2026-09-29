@@ -1,0 +1,49 @@
+Clear WS
+     )ENTER ONE
+     )ENTER TWO
+     )ENTER EX
+     )ENTER BJ
+     )ENTER ST
+     ⍎'ONE'
+5
+1111
+     Q←⍎'ONE'
+5
+     Q
+1111
+     ⍎'Q←ONE'
+5
+1111
+     Q
+1111
+     ⍎'TWO'
+5
+0.00090009
+     ⍎'EX'
+1
+     ⍎'BJ'
+2
+     ⍎'ST'
+1
+2
+3
+     )STOP ST 2
+Now: ST[2]
+     ⍎'ST'
+1
+
+ST [2] 2
+3
+     )STOP OFF
+Now: None
+     )TRACE ST 2
+Now: ST[2]
+     ⍎'ST'
+1
+
+ST [2] 2
+3
+     )TRACE OFF
+Now: None
+     )SI
+     

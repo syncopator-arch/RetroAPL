@@ -1,0 +1,108 @@
+Clear WS
+     )ENTER ST
+     )ENTER SC
+     )STEP
+Is OFF
+     )STEP LINE
+Was OFF
+     SC
+0
+1
+2
+3
+9
+     )STOP SC 1
+Now: SC[1]
+     SC
+
+SC [1] *
+     →0
+0
+
+SC [2] *
+     →0
+
+ST [1] *
+     →0
+1
+
+ST [2] *
+     →0
+2
+
+ST [3] *
+     →0
+3
+
+SC [3] *
+     →0
+9
+     )SI
+     )STOP SC OFF
+Now: SC[]
+     )STOP ST 1
+Now: ST[1]
+     )STEP OP
+Was LINE
+     ST
+
+ST [1] *
+     →0
+ST [1] push byte
+     →0
+1
+ST [2] push byte
+     )SI
+ST [2] * 
+     →0
+2
+ST [3] push byte
+     )STEP OFF
+Was OP
+     →0
+3
+     )SI
+     )STEP BAD
+     ^
+Syntax Error
+
+     )STEP
+Is OFF
+     )STOP OFF
+Now: None
+     SC
+0
+1
+2
+3
+9
+     )ENTER BJ
+     )ENTER EX
+     )STOP BJ 1
+Now: BJ[1]
+     )STEP OP
+Was OFF
+     BJ
+
+BJ [1] *
+     →0
+BJ [1] push byte
+     →0
+BJ [3] push byte
+     →0
+2
+     )STOP EX 2
+Now: EX[2]
+     EX
+1
+
+EX [2] *
+     →0
+EX [2] push byte
+     →0
+     )SI
+     )STEP OFF
+Was OP
+     )STOP OFF
+Now: None
+     

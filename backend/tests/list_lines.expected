@@ -1,0 +1,52 @@
+Clear WS
+     )LIST ST
+     ∇ ST
+[1]  1
+[2]  2
+[3]  3
+     )LIST ST 0
+     ∇ ST
+     )LIST ST 2
+[2]  2
+     )LIST ST 1 3
+[1]  1
+[2]  2
+[3]  3
+     )LIST ST 002
+[2]  2
+     )LIST ST 0 1
+     ∇ ST
+[1]  1
+     )LIST ST 3 1
+     ^
+Syntax Error
+
+     )LIST ST 4
+No line 4 (lines are 0 to 3)
+     ^
+Value Error
+
+     )LIST ST 2 9
+No line 9 (lines are 0 to 3)
+     ^
+Value Error
+
+     )LIST ST 1234567
+No line 99999 (lines are 0 to 3)
+     ^
+Value Error
+
+     )LIST NOSUCH 1
+     ^
+File Not Found
+
+     )LIST F1
+     ∇ F1
+[1]  10
+[2]  20
+     )LIST F1 2
+[2]  20
+     )LIST F1 0 1
+     ∇ F1
+[1]  10
+     

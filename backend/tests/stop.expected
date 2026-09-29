@@ -1,0 +1,70 @@
+Clear WS
+     )ENTER ST
+     )ENTER SC
+     )LIST ST
+     ∇ ST
+[1]  1
+[2]  2
+[3]  3
+     )LIST SC
+     ∇ SC
+[1]  0
+[2]  ST
+[3]  9
+     )STOP ST 2
+Now: ST[2]
+     ST
+1
+
+ST [2] *
+     )SI
+ST [2] * 
+     →0
+2
+3
+     )SI
+     )STOP ST 1
+Now: ST[1 2]
+     ST
+
+ST [1] *
+     →0
+1
+
+ST [2] *
+     →0
+2
+3
+     )SI
+     )STOP ST OFF
+Now: ST[]
+     )STOP ST 1
+Now: ST[1]
+     SC
+0
+
+ST [1] *
+     )SI
+ST [1] * 
+SC [2] * 
+     →0
+1
+2
+3
+9
+     )SI
+     SC
+0
+
+ST [1] *
+     →
+     )SI
+     )STOP OFF
+Now: None
+     SC
+0
+1
+2
+3
+9
+     

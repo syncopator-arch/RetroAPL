@@ -1,0 +1,25 @@
+Clear WS
+     ⎕IO ⍴4 7 9
+     ^
+Domain Error
+     ⎕IO ⍳1
+1
+     ⎕IO
+1
+     X←5
+     ⎕RL (⍴X)
+     ^
+Length Error
+     ⎕RL ⍴X
+     ^
+Length Error
+     ⎕RL ⍳0
+     ^
+Length Error
+     ⎕IO ,1
+1
+     ⎕IO+1
+2
+     1+⎕IO
+2
+     

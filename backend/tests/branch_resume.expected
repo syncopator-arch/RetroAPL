@@ -1,0 +1,64 @@
+Clear WS
+     )ENTER ST
+     )ENTER SC
+     )STOP ST 2
+Now: ST[2]
+     ST
+1
+
+ST [2] *
+     →3
+3
+     )SI
+     ST
+1
+
+ST [2] *
+     →1
+1
+
+ST [2] *
+     →2
+2
+3
+     )SI
+     ST
+1
+
+ST [2] *
+     →9
+     )SI
+     )STOP ST OFF
+Now: ST[]
+     )STOP ST 1
+Now: ST[1]
+     SC
+0
+
+ST [1] *
+     )SI
+ST [1] * 
+SC [2] * 
+     →9
+9
+     )SI
+     SC
+0
+
+ST [1] *
+     →¯1
+     ^
+Domain Error
+     )SI
+ST [1] * 
+SC [2] * 
+     →2
+2
+3
+9
+     )SI
+     )STOP OFF
+Now: None
+     →5
+     )SI
+     

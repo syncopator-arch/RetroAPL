@@ -1,0 +1,67 @@
+# .gitignore -- whitelist style, matching package-source.sh:
+# everything is ignored unless a pattern below lets it back in.
+# If a new file doesn't show up in `git status`, it's because it
+# didn't match a pattern here -- add a pattern (or `git add -f` it).
+
+# Ignore everything at the top level...
+/*
+
+# ...then let back in the repo's own files and top-level scripts.
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/LICENSE
+!/package-source.sh
+!/package-install-linux.sh
+!/package-install-windows.bat
+
+# New folders meant to be tracked in full.
+!/docs/
+!/examples/
+!/.github/
+
+# Runtime files for a fresh $APLHOME, laid out as in a real $APLHOME
+# (help.dat, resources/*_help.md, and later sample fns/ and ws/).
+# The font stays in fonts/ below, where build.sh expects it.
+!/aplhome/
+
+# --- fonts/ -------------------------------------------------------------
+!/fonts/
+/fonts/*
+!/fonts/kapl.ttf
+!/fonts/README.md
+
+# --- backend/ -----------------------------------------------------------
+# Source, build files and test tooling only. Subfolders (lib_objs/,
+# cli_objs/, san_objs/, stub_objs/, kapltest/, archive/) and built
+# binaries (apl_cli, libapl.a, stub_test, ...) stay ignored.
+!/backend/
+/backend/*
+!/backend/*.c
+!/backend/*.h
+!/backend/makefile
+!/backend/Makefile
+!/backend/run_tests.sh
+
+# Regression tests: inputs, recorded transcripts, .fn fixtures.
+# tests/*.out (run output) stays ignored.
+!/backend/tests/
+/backend/tests/*
+!/backend/tests/*.apl
+!/backend/tests/*.expected
+!/backend/tests/fns/
+/backend/tests/fns/*
+!/backend/tests/fns/*.fn
+
+# --- frontend/ ----------------------------------------------------------
+# build/ (CMake output) stays ignored.
+!/frontend/
+/frontend/*
+!/frontend/*.cpp
+!/frontend/*.h
+!/frontend/*.hpp
+!/frontend/CMakeLists.txt
+!/frontend/build.sh
+!/frontend/*.bat
+!/frontend/README.md
+!/frontend/kapl_unicode_mapping.md

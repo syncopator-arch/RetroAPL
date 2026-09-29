@@ -1,0 +1,7 @@
+Clear WS
+     )ENTER CSTAR
+     )LIST CSTAR
+     ∇ Z←CSTAR ;A;V;B ⍝ APL/KD V4.0
+[1]  Z←' *'[1+V∘.≤-V←B,0,⌽B←A,-A←⌽⍳4]
+[2]  
+     

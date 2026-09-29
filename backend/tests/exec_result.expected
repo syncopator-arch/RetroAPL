@@ -1,0 +1,36 @@
+Clear WS
+     )ENTER DZ
+     )ENTER LV
+     ^
+Syntax Error
+
+     X←42
+     ⍎'X'
+42
+     Y←⍎'X'
+     Y
+42
+     ⍎'NOSUCH'
+     ^
+Value Error
+     ⍎'1+2'
+3
+     ⍎'⍳3'
+1 2 3
+     ⍎'1÷0'
+     ^
+Domain Error
+     )SI
+     ⍎'DZ'
+In execute: DZ [1]
+     ^
+Domain Error
+     )SI
+     Q←7
+     ⍎'LV'
+     ^
+Value Error
+     Q
+7
+     )SI
+     

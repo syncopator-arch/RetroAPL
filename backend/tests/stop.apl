@@ -1,0 +1,25 @@
+)ENTER ST
+)ENTER SC
+)LIST ST
+)LIST SC
+)STOP ST 2
+ST
+)SI
+→0
+)SI
+)STOP ST 1
+ST
+→0
+→0
+)SI
+)STOP ST OFF
+)STOP ST 1
+SC
+)SI
+→0
+)SI
+SC
+→
+)SI
+)STOP OFF
+SC
