@@ -122,6 +122,10 @@ What goes where:
 
 ## Typing APL
 
+   ![IBM 2741 terminal with APL keyboard](docs/images/IBM_2741_Communications_Terminal.jpg)
+
+   *Photo: [Oscar.nierstrasz](https://commons.wikimedia.org/wiki/File:IBM_2741_Communications_Terminal.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)*
+
 APL symbols are typed with the 2741 keyboard layout; choose between the
 original and altered layouts under **Settings**. Composite symbols are
 made the way they were on the 2741: type one symbol, press
