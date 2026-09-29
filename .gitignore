@@ -14,6 +14,8 @@
 !/package-source.sh
 !/package-install-linux.sh
 !/package-install-windows.bat
+!/setup-aplhome.sh
+!/setup-aplhome.bat
 
 # New folders meant to be tracked in full.
 !/docs/

@@ -89,20 +89,22 @@ the Qt libraries next to the program.
 
 ## Setting up `$APLHOME`
 
-RetroAPL keeps its font, help files, workspaces and functions in one
-folder, named by the `APLHOME` environment variable. A setup script
-creates it from this repository.
+RetroAPL keeps everything in one folder, named by the `APLHOME`
+environment variable: the program itself (in `bin`), the font, help
+files, workspaces, functions and images. A setup script creates it
+from this repository.
 
-On Linux (the default folder is `~/aplhome`):
+On Linux (the default folder is `~/aplhome`), after building:
 
 ```bash
 ./setup-aplhome.sh
 ```
 
-It then shows the `export APLHOME=...` line to add to your `~/.profile`.
-Then run `frontend/build/APLTerminal`.
+This also copies the program into `$APLHOME/bin` and adds RetroAPL to
+your applications menu. To run it from a terminal too, add the
+`export APLHOME=...` line the script shows to your `~/.bashrc`.
 
-On Windows (the default folder is `%USERPROFILE%\aplhome`):
+On Windows (the default folder is `C:\aplhome`):
 
 ```bat
 setup-aplhome.bat
@@ -111,13 +113,15 @@ setup-aplhome.bat
 It also sets `APLHOME` for your account if it isn't set yet.
 
 Either script takes a different folder as an argument, and is safe to
-run again after updating: it refreshes the font and help files, but
-never replaces your own workspaces, functions or images.
+run again after updating or rebuilding: it refreshes the program, font
+and help files, but never replaces your own workspaces, functions or
+images.
 
 What goes where:
 
 | Path                         | What it is                                                    |
 |------------------------------|---------------------------------------------------------------|
+| `bin/`                       | The program (and on Windows, the Qt libraries).               |
 | `fonts/kapl.ttf`             | The APL font. **Required**; this is the only place it's loaded from. |
 | `resources/*.md`             | The reference pages shown by the Help menu.                   |
 | `help.dat`                   | Help text used by the interpreter.                            |
