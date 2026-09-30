@@ -52,6 +52,7 @@
 !/backend/tests/*.apl
 !/backend/tests/*.expected
 !/backend/tests/fns/
+!/backend/tests/images/
 /backend/tests/fns/*
 !/backend/tests/fns/*.fn
 
