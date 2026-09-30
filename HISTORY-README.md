@@ -70,7 +70,7 @@ I didn't want to write a whole decompiler. And line-by-line function editing did
 
 That's how functions get created and why RetroAPL works the way it does. It doesn't use line-oriented function editing. You edit visually, it saves to disk and then you enter it, or the editor does that for you automatically. Then you can run it from the workspace.
 
-So this RetroAPL isn't quite trying to be 100% emulation of every aspect of the classic early days of working wiht APL.  It reproduces many of the features I remember and value while also embracing some more modern conveniences as well as practical characteristics given more modern hardware.
+So this RetroAPL isn't quite trying to be 100% emulation of every aspect of the classic early days of working with APL.  It reproduces many of the features I remember and value while also embracing some more modern conveniences as well as practical characteristics given more modern hardware.
 
 ## Extensions: music and graphics
 
