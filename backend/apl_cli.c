@@ -48,6 +48,7 @@
 extern int  dll_startup(int debug, int xflag, char *wsname, int argc, char **argv);
 extern int  exec_apl_line(UCHAR *linebuf);
 extern void dll_cleanup(void);
+extern int  crash_log_pending(char *path, size_t pathsz, char *summary, size_t sumsz);	/* crashlog.c */
 
 #define PROMPT		"     "		/* matches the GUI's INDENT */
 #define RAW_SIZE	(LINE_SIZE * 4)	/* UTF-8 is up to 4 bytes per character */
@@ -256,6 +257,30 @@ usage(const char *prog)
 	exit(2);
 }
 
+/*
+	An earlier session's fatal error (or, failing that, internal warning)
+	that nobody has acknowledged (see crashlog.c): one line on stderr,
+	informational only. Acknowledging
+	is left to the GUI's startup notice, so this repeats until then.
+	The session transcript is always on here (crashlog.c's default;
+	apl_cli has no setting for it).
+*/
+static void
+report_pending_crash(void)
+{
+	char path[PATHBUF_SIZE];
+	char summary[256];
+
+	int kind = crash_log_pending(path, sizeof path, summary, sizeof summary);
+
+	if (kind) {
+		fflush(stdout);
+		fprintf(stderr, "apl_cli: an earlier session %s (%s) -- see %s\n",
+			kind == 1 ? "ended with a fatal error" : "reported an internal warning",
+			summary, path);
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -289,6 +314,7 @@ main(int argc, char **argv)
 
 	platform_register(&cli_funcs);
 	platform_defaults();
+	report_pending_crash();
 
 	rc = dll_startup(0, 1 /* run boot fn if present */, wsname, argc, argv);
 	if (rc < 0) {

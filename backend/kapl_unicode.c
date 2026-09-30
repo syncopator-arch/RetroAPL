@@ -2,7 +2,8 @@
 	kapl_unicode.c
 
 	KAPL.ttf font-index <-> Unicode translation for the command-line
-	front end. Plain C, self-contained.
+	front end, and for the session transcript in crash.log (crashlog.c,
+	so it's in the backend library now as well). Plain C, self-contained.
 
 	Behavior deliberately matches the Qt front end's clipboard
 	translation (APLTerminalWidget.cpp: translateClipboardTextToKapl()

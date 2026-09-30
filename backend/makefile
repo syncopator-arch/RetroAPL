@@ -59,10 +59,17 @@ CFLAGS_LIB  = $(CFLAGS_COMMON) -DNO_INPUT_PROC -DAS_DLL
 
 
 # Source files shared by both targets
+#
+# crashlog.c writes $APLHOME/crash.log on a fatal error, with the session
+# transcript converted to UTF-8 by kapl_unicode.c -- which is why
+# kapl_unicode.c is here now rather than only in CLI_SRCS: the Qt app
+# needs it too. (Listed once: apl_cli links SRCS' objects plus CLI_SRCS',
+# so having it in both would be a duplicate symbol.)
 SRCS = commands.c dyop.c exec.c filfuncs.c fn.c globals.c index.c \
        interfac.c lineproc.c links.c $(PLATFORM_SRC) \
        main.c monop.c mplmem.c msgs.c parse.c rndsrc.c sort.c \
-       sys.c sysfuncs.c terminal.c vprint.c platform_translate.c inprod.c
+       sys.c sysfuncs.c terminal.c vprint.c platform_translate.c inprod.c \
+       crashlog.c kapl_unicode.c
 
 # grfuncs.c calls gw_open()/gw_close()/gw_nums()/gw_size()/gw_title(),
 # which are only ever defined in the Qt frontend (graph_bridge.cpp) --
@@ -97,7 +104,8 @@ STATIC_LIB = libapl.a
 # LIB_ONLY_SRCS. apl_cli.c supplies the graphics placeholders that the
 # platform files' #ifndef AS_DLL block supplies for stub_test.
 CLI_OBJDIR = cli_objs
-CLI_SRCS   = apl_cli.c kapl_unicode.c
+# kapl_unicode.c used to be here too; it's in SRCS now (see there).
+CLI_SRCS   = apl_cli.c
 CLI_OBJS   = $(addprefix $(CLI_OBJDIR)/,$(CLI_SRCS:.c=.o))
 CLI_LIB_OBJS = $(addprefix $(LIB_OBJDIR)/,$(SRCS:.c=.o))
 APL_CLI    = apl_cli

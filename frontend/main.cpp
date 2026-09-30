@@ -546,6 +546,11 @@ public:
             way -- see GRAPHICS_NOTES.md). Defaults to false to match
             what's already shipped and confirmed working; native is
             opt-in, not the default, per "additive over breaking." */
+        bool crashTranscript = true;   /* keep the last 32 KB of the session
+            (output and entered lines) in memory, for crash.log if a fatal
+            internal error ends the session -- see crashlog.c. Nothing is
+            written to disk unless that happens. On by default: the first
+            crash is the one that can't be reproduced without it. */
     };
 
     APLSettingsDialog(APLTerminalWidget *terminal,
@@ -623,6 +628,17 @@ public:
             "files), but on some desktops (confirmed on GNOME) it renders "
             "oversized and is awkward to move out of the way.");
 
+        /* Crash-log session transcript */
+        m_crashTranscriptCheck = new QCheckBox(
+            "Keep recent session for the crash log");
+        m_crashTranscriptCheck->setChecked(current.crashTranscript);
+        m_crashTranscriptCheck->setToolTip(
+            "When on (default), the last 32 KB of the session -- output and "
+            "the lines you entered -- is kept in memory. If APL ever stops "
+            "with a fatal internal error, it goes into crash.log in $APLHOME "
+            "along with the error, to help work out what led to it.\n"
+            "Nothing is written to disk unless that happens.");
+
         /* Buttons */
         QDialogButtonBox *buttons = new QDialogButtonBox(
             QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel);
@@ -635,6 +651,7 @@ public:
         mainLay->addWidget(m_darkModeCheck);
         mainLay->addWidget(m_unicodeClipboardCheck);
         mainLay->addWidget(m_nativeFileDialogCheck);
+        mainLay->addWidget(m_crashTranscriptCheck);
         mainLay->addSpacing(8);
         mainLay->addWidget(buttons);
 
@@ -659,6 +676,7 @@ public:
         s.darkMode   = m_darkModeCheck->isChecked();
         s.unicodeClipboard = m_unicodeClipboardCheck->isChecked();
         s.nativeFileDialog = m_nativeFileDialogCheck->isChecked();
+        s.crashTranscript  = m_crashTranscriptCheck->isChecked();
         return s;
     }
 
@@ -686,6 +704,7 @@ private:
     QCheckBox         *m_darkModeCheck;
     QCheckBox         *m_unicodeClipboardCheck;
     QCheckBox         *m_nativeFileDialogCheck;
+    QCheckBox         *m_crashTranscriptCheck;
 };
 
 /* ── Print options dialog ───────────────────────────────────────────────
@@ -1296,6 +1315,55 @@ public:
         m_engineThread->start();
     }
 
+    /*
+     * If an earlier session ended with a fatal internal error that hasn't
+     * been acknowledged (crashlog.c's crash_log_pending()), say so -- or,
+     * if only warnings are pending (an inconsistency the session survived,
+     * e.g. GarbCollect()'s bad reference), say that instead. Called
+     * from main() after show() and before startEngine(), so it runs on the
+     * GUI thread with no engine running -- the crash itself did nothing on
+     * this side; this is where the user hears about it.
+     *
+     * Acknowledge appends the "*** acknowledged ***" line to crash.log (the
+     * log itself is the only record; nothing goes in settings.ini) and
+     * stops the notice. "Remind Me Next Time" (also Escape, or closing the
+     * box) leaves it pending. The log is never removed or rewritten here.
+     * The text is selectable so the path can be copied.
+     */
+    void reportPendingCrash()
+    {
+        char path[PATHBUF_SIZE];
+        char summary[512];
+
+        int kind = crash_log_pending(path, sizeof path, summary, sizeof summary);
+        if (!kind)
+            return;
+
+        QMessageBox box(this);
+        box.setIcon(QMessageBox::Warning);
+        if (kind == 1) {
+            box.setWindowTitle("APL - previous session crashed");
+            box.setText("An earlier APL session ended with a fatal internal error.");
+        } else {
+            box.setWindowTitle("APL - internal warning");
+            box.setText("An earlier APL session reported a problem in its "
+                        "workspace memory and kept running.");
+        }
+        box.setInformativeText(
+            QString("%1\n\nThe details (the message, the recent session and the "
+                    "SI stack) are in:\n%2")
+                .arg(QString::fromUtf8(summary), QString::fromLocal8Bit(path)));
+        box.setTextInteractionFlags(Qt::TextSelectableByMouse);
+        QPushButton *ackBtn = box.addButton("Acknowledge", QMessageBox::AcceptRole);
+        box.addButton("Remind Me Next Time", QMessageBox::RejectRole);
+        box.setDefaultButton(ackBtn);
+        box.exec();
+
+        if (box.clickedButton() == ackBtn && crash_log_acknowledge() != 0)
+            statusBar()->showMessage(
+                "Could not write to crash.log -- the notice will appear again", 5000);
+    }
+
 private slots:
     /*
      * Called on the main thread when the user presses Enter in terminal mode.
@@ -1646,6 +1714,7 @@ private slots:
         m_settings.darkMode   = cfg.value("darkmode",   false).toBool();
         m_settings.unicodeClipboard = cfg.value("unicodeclipboard", true).toBool();
         m_settings.nativeFileDialog = cfg.value("nativefiledialog", false).toBool();
+        m_settings.crashTranscript  = cfg.value("crashtranscript", true).toBool();
 
         m_printLandscape   = cfg.value("print_landscape",   true).toBool();
         m_printShrinkToFit = cfg.value("print_shrinktofit", true).toBool();
@@ -1679,6 +1748,7 @@ private slots:
         terminal->setClipboardUnicodeTranslationEnabled(m_settings.unicodeClipboard);
         applyDarkMode(m_settings.darkMode);
         m_graphManager->setUseNativeFileDialog(m_settings.nativeFileDialog);
+        crash_set_transcript(m_settings.crashTranscript ? 1 : 0);   /* crashlog.c */
     }
 
     /* Write all settings + current geometry to INI file */
@@ -1692,6 +1762,7 @@ private slots:
         cfg.setValue("darkmode",   m_settings.darkMode);
         cfg.setValue("unicodeclipboard", m_settings.unicodeClipboard);
         cfg.setValue("nativefiledialog", m_settings.nativeFileDialog);
+        cfg.setValue("crashtranscript",  m_settings.crashTranscript);
         cfg.setValue("print_landscape",   m_printLandscape);
         cfg.setValue("print_shrinktofit", m_printShrinkToFit);
         cfg.setValue("print_topdf",       m_printToPdf);
@@ -1743,6 +1814,10 @@ private slots:
         terminal->setClipboardUnicodeTranslationEnabled(s.unicodeClipboard);
         applyDarkMode(s.darkMode);                     /* uses m_settings.brightness */
         m_graphManager->setUseNativeFileDialog(s.nativeFileDialog);
+        /* Plain flag, read by the engine thread -- the same arrangement as
+         * ABORTSIG. Turning it off and on again starts the transcript
+         * afresh (crashlog.c). */
+        crash_set_transcript(s.crashTranscript ? 1 : 0);
         saveSettings();
         statusBar()->showMessage("Settings saved", 2000);
     }
@@ -2203,6 +2278,8 @@ int main(int argc, char *argv[])
     APLMainWindow window(enableLogging);
     window.setWindowTitle(g_appTitle);
     window.show();
+
+    window.reportPendingCrash();   /* before the engine: see its comment */
 
     if (!testMode)
         window.startEngine();

@@ -47,6 +47,79 @@ char *cp;
 	NL();
 }
 
+/*
+	fatal_error() -- an internal inconsistency the interpreter can't
+	continue from (a damaged workspace). Writes a crash entry to
+	$APLHOME/crash.log (crashlog.c), shows the message in the session
+	window / on apl_cli's stdout, and ends the process with
+	FATAL_EXIT_CODE. Never returns.
+
+	msg may run to several lines ('\n'-separated); callers include the
+	specifics (offsets, sizes) that would help diagnose it.
+
+	Order: the log first, since the file outlives the process and the
+	window doesn't; then the terminal, which is what apl_cli and test
+	transcripts see. In the GUI the window closes right after, and the
+	next startup reports the crash (main.cpp).
+
+	Exits with _Exit() after fflush(NULL): no atexit handlers or static
+	destructors, which in the Qt build would run on this (engine) thread
+	while the GUI thread is still live -- tested V70: exit() from the
+	engine thread tears Qt objects down from the wrong thread. fflush(NULL)
+	keeps what a normal exit would: open files' buffered data and stdout.
+	A second fatal error while this one is being handled (the SI walk
+	tripping over the damage, say) exits at once.
+
+	Not die(): die(short) stays the normal-shutdown call, and has no
+	message to give.
+*/
+#define FATAL_EXIT_CODE 70	/* EX_SOFTWARE (sysexits.h): internal software error */
+
+void
+fatal_error(const char *msg)
+{
+static int in_fatal = 0;
+char path[PATHBUF_SIZE];
+char line[LINE_SIZE];
+const char *p, *e;
+size_t n;
+int logged;
+
+	if (in_fatal)
+	{
+		fflush(NULL);
+		_Exit(FATAL_EXIT_CODE);
+	}
+	in_fatal = 1;
+
+	flush_output();		/* a partial line goes into the transcript too */
+	logged = crash_log_write(msg, path, sizeof(path));
+
+	NL();
+	PRINT("FATAL INTERNAL ERROR -- APL must exit");
+	NL();
+	for (p = msg ? msg : ""; *p; p = *e ? e + 1 : e)
+	{
+		e = strchr(p, '\n');
+		if (!e) e = p + strlen(p);
+		n = (size_t)(e - p);
+		if (n >= sizeof(line)) n = sizeof(line) - 1;
+		memcpy(line, p, n);
+		line[n] = '\0';
+		PRINT(line);
+		NL();
+	}
+	if (logged)
+	{
+		PRINT("Details written to ");
+		PRINT(path);
+		NL();
+	}
+	flush_output();
+	fflush(NULL);
+	_Exit(FATAL_EXIT_CODE);
+}
+
 #ifdef AS_DLL
 
 int

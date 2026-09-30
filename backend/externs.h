@@ -98,6 +98,10 @@ extern void init_ws();
 extern short do_clearws(long a);
 extern short load_ws(char *s,int f);
 extern short do_si(short f);
+/* do_si()'s walk with a cap: newest frames from the top, oldest from the
+   bottom, a count of the rest; newest < 0 means no cap (do_si() itself).
+   Used by the crash log. */
+extern short si_walk(short f, long newest, long oldest);
 #endif
 
 #ifndef DYOP_C
@@ -150,6 +154,26 @@ extern short getin(UCHAR *b);
 #ifndef MAIN_C
 extern void cdump(UCHAR *s);
 extern int exec_nonfn_line(UCHAR *line);
+/* Internal inconsistency: write crash.log, show msg, exit 70. Never returns. */
+extern void fatal_error(const char *msg);
+#endif
+
+#ifndef CRASHLOG_C
+/* crashlog.c -- $APLHOME/crash.log and the in-memory session transcript
+   it includes. Recorders: terminal.c (output), platform_translate.c and
+   exec.c (input lines). crash_log_write() is fatal_error()'s; the front
+   ends use crash_set_transcript(), crash_log_pending() and
+   crash_log_acknowledge(). */
+extern void crash_set_transcript(int on);
+extern void crash_record_output(const char *s, int len);
+extern void crash_record_nl(void);
+extern void crash_record_input(const UCHAR *line);
+extern int  crash_log_write(const char *msg, char *path, size_t pathsz);
+/* a warning entry: survivable inconsistency, the session carries on */
+extern int  crash_log_note(const char *msg, char *path, size_t pathsz);
+/* 0 nothing pending, 1 an unacknowledged crash, 2 only warnings */
+extern int  crash_log_pending(char *path, size_t pathsz, char *summary, size_t sumsz);
+extern int  crash_log_acknowledge(void);
 #endif
 
 #ifndef MONOP_C

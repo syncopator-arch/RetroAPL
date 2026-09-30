@@ -1876,15 +1876,34 @@ int i,j;
 }
 
 
+/*
+	do_purge() -- clear the SI completely: )PURGE, and init_ws() for
+	)CLEAR. Pops frames until pop_fn() reports the stack empty.
+
+	Used to stop after 1000 pops and report ERR_SI, which made a deep but
+	intact SI (runaway recursion) impossible to clear -- and fatal under
+	)CLEAR. No count is needed for the loop to end: pop_fn() removes at
+	least the 3-word frame header each time (it may push back a 2-word
+	result, which its next Adjust_Stack() clears), so MSTACK only moves
+	toward STACKMAX. The check below is what's left of the old guard: a
+	pop that doesn't move MSTACK up means a stack pop_fn() can't unwind,
+	reported as before with ERR_SI. It can't happen with pop_fn() as it
+	stands; it's there so a change to pop_fn() can't turn this into an
+	endless loop.
+*/
 short
 do_purge()
 {
 short t;
+int32_t *before;
 
 	for (t=0;t<NUM_FLOATVS;t++) FLOATVS[t] = 0;
-	t = 1000;
-	while (t--) if (pop_fn()) return(0);
-	return(SET_ERR(ERR_SI));
+	for (;;)
+	{
+		before = MSTACK;
+		if (pop_fn()) return(0);		/* SI empty */
+		if (MSTACK <= before) return(SET_ERR(ERR_SI));	/* no progress */
+	}
 }
 
 void
@@ -1892,11 +1911,13 @@ init_ws()
 {
 REG short i;
 
-	if (do_purge()) 
-	{
-		message(SET_ERR(ERR_SYSTEM));
-		die(1);
-	}
+	/* do_purge() fails only if the stack won't unwind (see there) -- a
+	   damaged stack. The symbol table may then still hold a suspended
+	   function's locals, and clearing on top of that isn't safe. (Was
+	   message() + die(1); die() is an empty stub, so it carried on.) */
+	if (do_purge())
+		fatal_error("init_ws(): do_purge() could not clear the SI stack "
+			"(a pop made no progress -- stack damaged)");
 	wspace->water = wspace->begin;
 	wspace->origin = 1;
 	wspace->bootfn = -1;
@@ -2789,57 +2810,148 @@ ws_off_t symt_lo,symt_hi;
 }
 
 
+/*
+	do_si() -- )SI (f 0) and )SIV (f 1). Unchanged; the walk is
+	si_walk()'s, with no cap.
+*/
+short si_walk(short f, long newest, long oldest);
+
 short
 do_si(f)
 short f;
 {
+	return(si_walk(f, -1L, -1L));
+}
+
+/*
+	si_walk() -- print the SI, newest frame first (MSTACK up to
+	STACKMAX), as )SI/)SIV always have. With newest >= 0 the listing is
+	capped for the crash log (crashlog.c): the first `newest` frames and
+	the last `oldest`, with "... n frames omitted ..." between, when there
+	are more than that -- a runaway recursion may be exactly what went
+	wrong, and thousands of identical lines would bury the rest. The cap
+	needs the total first, so a capped walk makes a counting pass. A
+	frame is a function frame -- one that prints -- when its fnline is
+	nonzero; only those are counted.
+
+	)SI/)SIV start with Adjust_Stack(), as they always have: it zeroes
+	whatever sits above the top frame mark, harmless at the prompt. A
+	capped walk must not: the crash log can be written while the session
+	carries on (a warning entry, from inside GarbCollect()), and then
+	those words are the operands of the operation under way. So a capped
+	walk writes nothing -- it steps over them, the same way the frame
+	scan below steps over temporaries, to reach the first frame mark.
+
+	Both passes also stop at STACKMAX in the inner scan for the next
+	frame mark. On an intact stack that changes nothing (the scan finds
+	a mark no later than STACKMAX, which Adjust_Stack() relies on too),
+	but the crash log walks a stack that may be damaged, and a missing
+	mark would otherwise run the scan off the end. The "no room for a
+	frame" check is made only on a capped walk, so )SI/)SIV are
+	untouched even there.
+*/
+short
+si_walk(short f, long newest, long oldest)
+{
 int32_t *sp,l,t;
 short fline,fnum,locals,j;
 struct Func0Ent *f0e;
-	
-	Adjust_Stack();
-	sp = MSTACK;
-	while (sp < STACKMAX) 
+long total,k,omitted;
+char cb[48];
+int32_t *start;
+
+	start = MSTACK;
+	if (newest < 0)
 	{
+		Adjust_Stack();		/* )SI / )SIV, as always */
+		start = MSTACK;
+	}
+	else			/* capped: read-only, see above */
+		while (start < STACKMAX && *start != STACK_EMARK)
+		{
+			if (*start == STACK_TEMP_VAL) start++;
+			start++;
+		}
+
+	omitted = 0;
+	if (newest >= 0)
+	{
+		if (oldest < 0) oldest = 0;
+		total = 0;
+		sp = start;
+		while (sp < STACKMAX && sp + 2 < STACKMAX)
+		{
+			sp++;			/* emark */
+			l = *sp++;		/* fnline */
+			sp++;			/* CURFUNC or fnhead */
+			if ((short)((l >> FLINE_SHIFT) & FLINE_MASK))
+			{
+				sp += (short)((l >> LVAR_SHIFT) & LVAR_MASK);
+				total++;
+			}
+			while (sp < STACKMAX && *sp != STACK_EMARK)
+			{
+				if (*sp == STACK_TEMP_VAL) sp++;
+				sp++;
+			}
+		}
+		if (total > newest + oldest) omitted = total - newest - oldest;
+	}
+
+	k = 0;
+	sp = start;
+	while (sp < STACKMAX)
+	{
+		if (newest >= 0 && sp + 2 >= STACKMAX) break;	/* damaged: no room for a frame */
 		sp++;	/* skip over emark */
 		l = *sp++;	/* get fnline */
 		t = *sp++;	/* get CURFUNC or fnhead */
 		fline = (short)((l >> FLINE_SHIFT) & FLINE_MASK);
 		fnum = -1;
 		locals = 0;
-		if (fline) 
+		if (fline)
 		{
-			fnum = (short)((t >> FNUM_SHIFT) & FNUM_MASK);	
+			fnum = (short)((t >> FNUM_SHIFT) & FNUM_MASK);
 			f0e = (struct Func0Ent *)WS_PTR(SYMT[fnum].value);
 			locals = f0e->f0e_MemEnt.me_rank;
 			j = (short)((l >> LVAR_SHIFT) & LVAR_MASK);	/* act locs */
 			sp += j;
-			print_name(fnum);
-			PRINT(" [");
-			print_num((long)fline);
-			PRINT("] ");
-			if (f) 
+			if (omitted && k == newest)
 			{
-				while (locals--) {
-					print_name(f0e->f0e_locals[locals]);
-					PRINT(" ");
-				}
-				if (f0e->f0e_left != -1) {
-					print_name(f0e->f0e_left);
-					PRINT(" ");
-				}
-				if (f0e->f0e_right != -1) {
-					print_name(f0e->f0e_right);
-					PRINT(" ");
-				}
-				if (f0e->f0e_result != -1) {
-					print_name(f0e->f0e_result);
-					PRINT(" ");
-				}
-			} else PRINT("* ");
-			NL();
+				snprintf(cb, sizeof(cb), "... %ld frames omitted ...", omitted);
+				PRINT(cb);
+				NL();
+			}
+			if (!omitted || k < newest || k >= newest + omitted)
+			{
+				print_name(fnum);
+				PRINT(" [");
+				print_num((long)fline);
+				PRINT("] ");
+				if (f)
+				{
+					while (locals--) {
+						print_name(f0e->f0e_locals[locals]);
+						PRINT(" ");
+					}
+					if (f0e->f0e_left != -1) {
+						print_name(f0e->f0e_left);
+						PRINT(" ");
+					}
+					if (f0e->f0e_right != -1) {
+						print_name(f0e->f0e_right);
+						PRINT(" ");
+					}
+					if (f0e->f0e_result != -1) {
+						print_name(f0e->f0e_result);
+						PRINT(" ");
+					}
+				} else PRINT("* ");
+				NL();
+			}
+			k++;
 		}
-		while (*sp != STACK_EMARK) 
+		while (sp < STACKMAX && *sp != STACK_EMARK)
 		{
 			if (*sp == STACK_TEMP_VAL) sp++;
 			sp++;

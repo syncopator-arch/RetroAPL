@@ -1,0 +1,21 @@
+Clear WS
+     )ENTER DEEP
+     )LIST DEEP
+     ∇ DEEP N ⍝ RETROAPL V4.3
+[1]  →(N>0)/3
+[2]  1÷0
+[3]  DEEP N-1
+     DEEP 1200
+     ^
+Domain Error
+DEEP [2] *
+     )PURGE
+     )SI
+     DEEP 1200
+     ^
+Domain Error
+DEEP [2] *
+     )CLEAR
+Clear WS
+     )SI
+     

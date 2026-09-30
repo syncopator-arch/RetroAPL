@@ -405,6 +405,8 @@ REG struct MemEnt *me;
 struct MemEnt *md, *te;
 struct FuncEnt *fe;
 struct ValEnt  *ve;
+static char badref_msg[160];	/* for crash.log, see after the loop */
+int badref_note = 0;
 
 	/* Sentinel: one past the last live byte in the pool. */
 	md  = (struct MemEnt *)((char *)wspace + wspace->water);
@@ -417,6 +419,39 @@ struct ValEnt  *ve;
 	ws_off_t me_ref = me->me_reference;
 	int me_is_live = 0;
 	int ref_bad = 0;	/* me_ref can't even be dereferenced */
+
+		/*
+		 * The walk steps by me_size, so a wrong size throws it off:
+		 * 0 loops forever, too small lands inside an entry and reads
+		 * its data as a header, too large jumps past the watermark and
+		 * the memmove() below copies bytes from beyond the pool. Every
+		 * entry MakeEnt() makes is at least a header long, even, and
+		 * inside [begin, water) -- anything else means the pool is
+		 * damaged. Checked before anything is done with the entry.
+		 *
+		 * This replaces the old "NAB pointer out of sync" test after
+		 * the loop, which compared md with water + adj after
+		 * water -= adj -- the same value, since nothing in the loop
+		 * changes water -- and so could never fire.
+		 */
+		s = me->me_size;
+		if (s < (int32_t)sizeof(struct MemEnt) || (s & 1) ||
+		    s > (int32_t)((char *)md - (char *)me))
+		{
+			char msg[256];
+
+			snprintf(msg, sizeof(msg),
+				"GarbCollect(): pool entry with a bad size"
+				" -- workspace memory is damaged\n"
+				"entry off=%08lx size=%08lx flags=%02x ref=%08lx\n"
+				"pool begin=%08lx water=%08lx, %ld bytes reclaimed so far",
+				(unsigned long)((char *)me - (char *)wspace),
+				(unsigned long)(uint32_t)s, (unsigned)me->me_flags,
+				(unsigned long)(uint32_t)me_ref,
+				(unsigned long)(uint32_t)wspace->begin,
+				(unsigned long)(uint32_t)wspace->water, (long)adj);
+			fatal_error(msg);
+		}
 
 		if (me_ref)
 		{
@@ -440,7 +475,8 @@ struct ValEnt  *ve;
 			 * trackers are adjusted, but its owner slot is never
 			 * written through. It is never reclaimed. Reported once
 			 * per session, since with garb_debug this runs on every
-			 * allocation.
+			 * allocation -- on screen here, and (V70) as a warning
+			 * entry in crash.log after the walk, see there.
 			 */
 			if (me_ref < 0 ||
 			    me_ref > wspace->wssize - (int32_t)sizeof(ws_off_t))
@@ -451,16 +487,20 @@ struct ValEnt  *ve;
 				me_is_live = 1;
 				if (!reported)
 				{
-					char dbgbuf[160];
-
 					reported = 1;
+					badref_note = 1;
 					NL();
-					snprintf(dbgbuf, sizeof(dbgbuf),
+					/* The )SAVE advice is for the screen only: the
+					   session is still running there. The log entry's
+					   first line becomes the next startup's notice,
+					   when it's too late to save. */
+					snprintf(badref_msg, sizeof(badref_msg),
 						"GarbCollect(): bad reference off=%08lx ref=%08lx"
-						" -- workspace may be damaged, )SAVE under a new name",
+						" -- workspace may be damaged",
 						(long)((char *)me - (char *)wspace),
 						(unsigned long)(uint32_t)me_ref);
-					PRINT(dbgbuf);
+					PRINT(badref_msg);
+					PRINT(", )SAVE under a new name");
 					NL();
 				}
 			}
@@ -525,7 +565,7 @@ struct ValEnt  *ve;
 		}
 #endif /* SANITY_CHECK */
 
-		s = me->me_size;	/* size of this entry (bytes) */
+		/* s: this entry's size in bytes, read and checked above */
 
 		if (!me_ref || !me_is_live)
 		{
@@ -610,17 +650,26 @@ struct ValEnt  *ve;
 		me = (struct MemEnt *)((char *)me + s);
 	}
 
+	/* The size check at the top of the loop means the walk ends exactly
+	   at md -- the old after-the-loop test is gone, see there. */
 	wspace->water -= adj;
 
-	if (md != (struct MemEnt *)((char *)wspace + wspace->water + adj))
+	/* A bad reference found above goes into crash.log as a warning entry
+	   (crashlog.c) -- the session carries on, as it always has, but the
+	   message, the recent session and the SI are kept, and the next
+	   startup says so. Written here rather than where it was found: the
+	   pool is consistent again now, and the entry's SI section reads
+	   function headers through it. */
+	if (badref_note)
 	{
-		/* System error: watermark doesn't match entry traversal. */
-		message(SET_ERR(ERR_SYSTEM));
-		NL();
-		PRINT("NAB pointer out of sync");
-		NL();
-		do_si(0);
-		die(1);
+		char path[PATHBUF_SIZE];
+
+		if (crash_log_note(badref_msg, path, sizeof(path)))
+		{
+			PRINT("Details written to ");
+			PRINT(path);
+			NL();
+		}
 	}
 
 	return((long)adj);

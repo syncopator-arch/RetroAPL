@@ -90,13 +90,20 @@ platform_register(const PlatformFuncs *fns)
 /*  flush_output -- push buffered text to the frontend.               */
 /*  Called by NL() before the newline, and by exec_apl_line() on      */
 /*  return to catch any trailing output that has no newline.           */
+/*                                                                     */
+/*  Crash-log transcript (crashlog.c): everything that reaches the     */
+/*  frontend is recorded on the way -- here, in sys_puts()'s long-     */
+/*  string path, and a newline in NL()/sys_nl(). Those are the only    */
+/*  places text leaves this file (sys_pchar() buffers; nothing here    */
+/*  calls platform_pchar_fn).                                          */
 /* ------------------------------------------------------------------ */
 
-void 
+void
 flush_output(void)
 {
     if (s_outlen > 0 && platform_puts_fn) {
         s_outbuf[s_outlen] = '\0';
+        crash_record_output(s_outbuf, s_outlen);
         platform_puts_fn(s_outbuf);
         s_outlen = 0;
     }
@@ -125,6 +132,7 @@ sys_puts(const char *s)
     if (s_outlen + seglen >= OUTBUF_SIZE - 1)
         flush_output();
     if (seglen >= OUTBUF_SIZE - 1) {
+        crash_record_output(seg, seglen);
         platform_puts_fn(seg);
     } else {
         memcpy(s_outbuf + s_outlen, seg, seglen);
@@ -150,6 +158,7 @@ void sys_nl(void)
 {
     /* sys_nl() is retained for any direct callers but routes through NL() logic */
     flush_output();
+    crash_record_nl();
     if (platform_nl_fn) platform_nl_fn();
 }
 
@@ -255,6 +264,7 @@ void
 NL(void)
 {
     flush_output();
+    crash_record_nl();
     if (platform_nl_fn) platform_nl_fn();
     CURSX = 0;
     /* Qt frontend handles actual scrolling and display */

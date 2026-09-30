@@ -24,6 +24,14 @@
 /* use this in debugger to determine source of error */
 #define TRACK_ERRS
 
+/* trig functions (monadic and dyadic circle): dyop.c and monop.c keep
+   them under #ifdef TRIG, one of the conditionals the ifdef cleanup
+   deliberately kept (CLEANUP_STATUS.md). Its define was lost somewhere
+   along the way -- found V70, when circle gave Syntax Error in both
+   forms -- so it lives here now, beside TRACK_ERRS, where every backend
+   file picks it up. tests/trig.apl covers it. */
+#define TRIG
+
 /* this was once intended to flag to move all globals into wspace */
 /* left here as a reminder of the idea which may someday make sense with TURNK */
 /* remaining loose ends are now removed from globals.h */

@@ -224,10 +224,32 @@ static void ensure_translate_init(void)
 /* ============================================================
    3. alt_input_proc() - Second stage of .fn file translation
    Direct port of msdos.c alt_input_proc()
-   Used by: file_translate() and exec.c proc_quad()
+   Used by: file_translate(), exec.c proc_quad(), and both front
+   ends (main.cpp EngineThread::run(), apl_cli.c) for every line
+   typed at the prompt
+
+   The translation itself is input_translate(). alt_input_proc() is
+   the entry for typed input: it records the line in the crash log's
+   session transcript (crashlog.c), then translates it.
+   file_translate() calls input_translate() directly, so .fn file
+   lines read by )ENTER are not recorded -- they would crowd the
+   typed session out of the transcript.
+
+   What arrives here is a whole line, sent when Enter was pressed,
+   with any backspace-overstrike composition and line editing already
+   done by the front end (there is no backspace handling below), so
+   the transcript shows lines as entered, not keystrokes.
    ============================================================ */
 
+static int input_translate(UCHAR *cp, UCHAR *outs);
+
 int alt_input_proc(UCHAR *cp, UCHAR *outs)
+{
+    crash_record_input(cp);
+    return input_translate(cp, outs);
+}
+
+static int input_translate(UCHAR *cp, UCHAR *outs)
 {
     UCHAR *sp = outs;
     UCHAR *cpt;
@@ -331,5 +353,5 @@ file_translate(UCHAR *cp, UCHAR *outs)
         *px-- = '\0';
     }
 
-    return alt_input_proc(pxbuf, outs);
+    return input_translate(pxbuf, outs);	/* not recorded: see section 3 */
 }

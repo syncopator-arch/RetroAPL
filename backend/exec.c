@@ -559,6 +559,12 @@ int32_t sca;
 	return upsizef(te,acc,sca,0.0);
 }
 
+/*
+	proc_quad() -- quad (evaluated) and quote-quad (character) input.
+	Quad input reaches the crash log's transcript through
+	alt_input_proc(); quote-quad input never passes through that, so it
+	is recorded here, as the line the user entered.
+*/
 void
 proc_quad(n)
 short n;
@@ -570,7 +576,7 @@ UCHAR bf[4];
 UCHAR qbuf[LINE_SIZE];		/* local: getin()'s real contract is a LINE_SIZE buffer */
 
 	cp = qbuf;				/* was LSCRATCH, but that's not big enough */
-	
+
 	switch (n) {
 		case QUAD_CODE:	/* quad */
 			bf[0] = QUAD_CHR;
@@ -589,10 +595,11 @@ UCHAR qbuf[LINE_SIZE];		/* local: getin()'s real contract is a LINE_SIZE buffer 
 			ERROR_CODE = exec_lineb();	/* this is insecure in a closed application */
 			return;
 
-			// break;	
+			// break;
 		case QQUAD_CODE:
-			APL_CASE = 0;	
+			APL_CASE = 0;
 			getin(cp);
+			crash_record_input(cp);
 			sl = strlen(cp);
 			break;
 		default:
