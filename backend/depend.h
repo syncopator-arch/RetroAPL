@@ -20,8 +20,8 @@
 // Composite title shown to the user is "RetroAPL <BACKEND_VERSION>.<FRONTEND_VERSION>".
 // frontend 2.2 and backend 4.2 adds graphics functionality
 // backend 4.3 adds ifdef cleanup for float & turnk
-#define BACKEND_VERSION  "4.3"
-#define FRONTEND_VERSION "2.3"
+#define BACKEND_VERSION  "4.4"
+#define FRONTEND_VERSION "2.4"
 #define APL_PRODUCT_NAME "retroapl"
 
 #define VERSION BACKEND_VERSION   // legacy alias -- kept in case anything else references VERSION directly
