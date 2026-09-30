@@ -1,0 +1,9 @@
+S←⎕STRUCT 3
+S[1]←'AB'
+S[2]←⍳4
+S[1]
+S[2]
+)ERASE S
+X←1
+X
+S

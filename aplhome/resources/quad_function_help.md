@@ -112,8 +112,14 @@ stack (state-indicator equivalent, like `)SI`), capped at 100 entries.
 
 `⎕STRUCT dims`
 
-Allocates a new zero-filled array with the given shape vector.
-`Rank Error` if the shape vector exceeds the interpreter's max rank.
+Creates an empty nested ("struct") array with the shape given by
+`dims`. Each cell starts out empty. Assign any value to a cell by
+indexing (`S[2]←'TEXT'`, `S[3]←⍳5`) and read it back the same way
+(`S[2]`). The cell then holds its own value, the way a variable name
+does, and that value can be indexed and assigned into further
+(`S[2][3]`, `S[2][3]←0`). Reading a cell that was never assigned is a
+`Value Error`. `Rank Error` if `dims` has more elements than the
+interpreter's maximum rank.
 
 `⎕EXEC command`
 

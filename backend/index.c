@@ -162,17 +162,33 @@ double dacc = 0.0,*dpp;
 			re = WSVAL_PTR(*VRIGHT);
 			if ((re->ve_vtype & BYTES_MASK) > (ve->ve_vtype & BYTES_MASK)) {
 				/* Destination is narrower than the assigned value's type.
-				   Widen ve's storage in place rather than rejecting the
-				   assignment -- allocate a new ValEnt at the wider width,
-				   up-convert every existing element into it, then repoint
-				   the sole owner slot (*VLEFT) at the new entry. The old
-				   entry is left for GarbCollect: once *VLEFT no longer
-				   points back at it, its me_reference no longer matches,
-				   so the next GC pass reclaims it automatically. */
+				   Widen ve's storage rather than rejecting the assignment
+				   -- allocate a new ValEnt at the wider width, up-convert
+				   every existing element into it, then repoint ve's OWNER
+				   slot at the new entry.
+
+				   The owner is whatever ve->ve_reference names, NOT
+				   necessarily VLEFT. For a plain variable they're the
+				   same slot (SYMT[].value). For an array held in a
+				   #STRUCT cell (S[2][3] assigned 300), the owner is the cell
+				   inside the struct array, and VLEFT is only the FLOATVS
+				   handle the element arrived through -- FLOATVS lives
+				   outside wspace, so WS_OFF(VLEFT) is not a valid
+				   me_reference at all. Using VLEFT as the owner there
+				   left the struct cell on the old entry (write silently
+				   lost) and gave the new entry an out-of-range
+				   reference that GarbCollect() then dereferenced
+				   (crash). *VLEFT is still updated too, so the rest of
+				   do_index() works on the widened entry.
+
+				   The old entry is left for GarbCollect: once its owner
+				   slot no longer points back at it, the next GC pass
+				   reclaims it. */
 				short new_w, old_w, jj;
 				long tot2, l2;
 				struct ValEnt *ne;
 				union MultiP op, np;
+				ws_off_t owner_off;
 
 				new_w = re->ve_vtype & BYTES_MASK;
 				old_w = ve->ve_vtype & BYTES_MASK;
@@ -192,7 +208,15 @@ double dacc = 0.0,*dpp;
 				ve = WSVAL_PTR(*VLEFT);
 				re = WSVAL_PTR(*VRIGHT);
 
-				ne->ve_vtype  = (ve->ve_vtype & ~BYTES_MASK) | new_w;
+				/* Always a plain numeric type at the new width: build
+				   it from CONST_CODE, not from ve's own upper bits, so
+				   a widened char array (QUOT_CODE 0xb1, stored 0x31)
+				   becomes an ordinary short (0x22) rather than a
+				   char-flagged 2-byte type (0x32) nothing else
+				   produces. VARIABLE_BIT carries over unchanged. For a
+				   numeric source this gives the same code as before. */
+				ne->ve_vtype  = ((CONST_CODE | new_w) & ~VARIABLE_BIT) |
+						(ve->ve_vtype & VARIABLE_BIT);
 				ne->ve_rank   = ve->ve_rank;
 				for (jj = 0; jj < ve->ve_rank; jj++)
 					ne->ve_rho[jj] = ve->ve_rho[jj];
@@ -233,8 +257,19 @@ double dacc = 0.0,*dpp;
 					}
 				}
 
-				*VLEFT = WS_OFF(ne);
-				ne->ve_reference = WS_OFF(VLEFT);
+				/* Read the owner only now: MakeEnt() above may have
+				   collected, and GarbCollect() keeps ve_reference
+				   current when a parent struct array moves (its
+				   step 3), and keeps FLOATVS/owner slots current when
+				   ve itself moves -- so both *VLEFT (refreshed above)
+				   and ve->ve_reference are valid at this point. */
+				owner_off = ve->ve_reference;
+				if (owner_off) {
+					*(ws_off_t *)((char *)wspace + owner_off) = WS_OFF(ne);
+				}
+				ne->ve_reference = owner_off;
+				debug_check_ref("index.c/widen", (struct MemEnt*)ne, ne->ve_reference); /* %%% DBG */
+				*VLEFT = WS_OFF(ne);	/* no-op when VLEFT is the owner */
 				ve = ne;	/* continue with the widened destination */
 			}
 			rend = re->ve_length;

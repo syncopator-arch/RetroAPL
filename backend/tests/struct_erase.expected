@@ -1,0 +1,16 @@
+Clear WS
+     S←⎕STRUCT 3
+     S[1]←'AB'
+     S[2]←⍳4
+     S[1]
+AB
+     S[2]
+1 2 3 4
+     )ERASE S
+     X←1
+     X
+1
+     S
+     ^
+Value Error
+     

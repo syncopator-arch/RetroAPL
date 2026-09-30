@@ -291,7 +291,18 @@ ws_off_t me_off;
 				/*
 				 * A struct value contains a series of ws_off_t links to
 				 * child ValEnts.  Walk them and recursively delete any
-				 * child that still considers us its owner.
+				 * child that still considers its cell its owner.
+				 *
+				 * A child's ve_reference is the offset of its CELL
+				 * (the int32_t slot here holding the child's offset,
+				 * set in index.c's struct store path), not of this
+				 * struct entry -- GarbCollect()'s liveness test and its
+				 * step-3 child adjustment both depend on that. This
+				 * used to compare against me_off (the struct's own
+				 * offset), which never matched a live child: every
+				 * delete printed "Sync error" and left the child to a
+				 * later pass, holding a reference into this entry's
+				 * freed (and possibly already reused) space.
 				 */
 				ve  = (struct ValEnt *)me;
 				rp.cp = DATA_AD(ve);
@@ -302,7 +313,7 @@ ws_off_t me_off;
 					if (child_off)
 					{
 						te = (struct ValEnt *)WS_PTR(child_off);
-						if (te->ve_reference == me_off)
+						if (te->ve_reference == WS_OFF(rp.lp))
 						{
 							me_delete((struct MemEnt *)te);
 						}
@@ -405,11 +416,59 @@ struct ValEnt  *ve;
 	{
 	ws_off_t me_ref = me->me_reference;
 	int me_is_live = 0;
+	int ref_bad = 0;	/* me_ref can't even be dereferenced */
 
 		if (me_ref)
 		{
-			me_is_live = (me == (struct MemEnt *)((char *)wspace +
-				*(ws_off_t *)((char *)wspace + me_ref)));
+			/*
+			 * The liveness test reads through me_ref, so first make
+			 * sure it lands inside the wspace allocation at all --
+			 * otherwise that read is what crashes (V69: a struct-cell
+			 * widening once stored an offset to FLOATVS, which is not
+			 * in wspace). This is only "can it be read safely", not
+			 * the finer pool/SYMT/header/stack test under SANITY_CHECK
+			 * below: a dead temp whose owning stack slot has been
+			 * popped points below MSTACK, outside that test's stack
+			 * band, but still inside wspace -- it must stay ordinary
+			 * garbage, not be flagged here.
+			 *
+			 * A bad entry is KEPT, not freed: something may still be
+			 * using it (in the V69 case, do_index() was about to write
+			 * into it), and freeing it would let the next allocation
+			 * reuse that space -- silent corruption instead of a
+			 * crash. It moves with everything else and its FLOATVS
+			 * trackers are adjusted, but its owner slot is never
+			 * written through. It is never reclaimed. Reported once
+			 * per session, since with garb_debug this runs on every
+			 * allocation.
+			 */
+			if (me_ref < 0 ||
+			    me_ref > wspace->wssize - (int32_t)sizeof(ws_off_t))
+			{
+				static int reported = 0;
+
+				ref_bad = 1;
+				me_is_live = 1;
+				if (!reported)
+				{
+					char dbgbuf[160];
+
+					reported = 1;
+					NL();
+					snprintf(dbgbuf, sizeof(dbgbuf),
+						"GarbCollect(): bad reference off=%08lx ref=%08lx"
+						" -- workspace may be damaged, )SAVE under a new name",
+						(long)((char *)me - (char *)wspace),
+						(unsigned long)(uint32_t)me_ref);
+					PRINT(dbgbuf);
+					NL();
+				}
+			}
+			else
+			{
+				me_is_live = (me == (struct MemEnt *)((char *)wspace +
+					*(ws_off_t *)((char *)wspace + me_ref)));
+			}
 		}
 
 #ifdef SANITY_CHECK
@@ -452,7 +511,7 @@ struct ValEnt  *ve;
 			/* ME_MAL entries */
 			if (!ref_ok && (me->me_flags & ME_MAL)) ref_ok = 1;
 
-			if (!ref_ok && me_is_live)
+			if (!ref_ok && me_is_live && !ref_bad)	/* bad refs reported above */
 			{
 				char dbgbuf[128];
 				NL();
@@ -493,8 +552,9 @@ struct ValEnt  *ve;
 						FLOATVS[i] -= adj;
 				}
 
-				/* 2. Adjust the owning slot: it stored WS_OFF(me), now -= adj. */
-				if (me->me_reference)
+				/* 2. Adjust the owning slot: it stored WS_OFF(me), now -= adj.
+				      Never for a bad reference -- there is no valid slot. */
+				if (me->me_reference && !ref_bad)
 				{
 					ws_off_t *owner =
 						(ws_off_t *)((char *)wspace + me->me_reference);
