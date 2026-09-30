@@ -3,8 +3,7 @@
 RetroAPL is an APL interpreter with the look and feel of the classic
 IBM 2741 APL terminal: the APL typeball font, and overstruck characters
 built by typing one symbol, backspacing and typing another on top of it.
-For more on what makes APL on the 2741 unique and memorable, read 
-HISTORY-README.md.
+For the story behind RetroAPL, see [HISTORY-README.md](HISTORY-README.md).
 
 This codebase began more than 30 years ago as a personal project on DOS 
 and Windows, with a C interpreter and a Delphi front end. It has since
