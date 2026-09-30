@@ -24,7 +24,7 @@ But IBM had an edge because they had a leading-edge typewriter at the time: the 
 
 ## Why APL looked the way it did
 
-APL came about largely because it fit that scenario. The type balls were interchangeable. It was just a little plastic ball with all the symbols on the outside, and you could pop it off and put on one with a different font or different characters. So essentially what they did with APL was sacrifice the lowercase characters and use the APL symbols instead to make a computer language.
+APL came about largely because it fit that scenario. The type balls were interchangeable. It was just a little plastic ball with all the symbols on the outside, and you could pop it off and put on one with a different font or different characters. So essentially what they did with APL was sacrifice the lowercase characters and use the APL symbols instead to make a computer language. See [README.md](README.md) for a photo of the original APL terminal.
 
 The language was designed that way mainly because typing took a long time. A complex program with a lot of text would take forever to print. Printing out an entire Fortran program would take several minutes at best, so it wasn't very interactive. They needed a very terse language, and APL is what came out of that: single symbols that could do complex operations and be combined in various ways.
 
