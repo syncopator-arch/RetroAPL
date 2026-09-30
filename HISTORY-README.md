@@ -108,7 +108,7 @@ I haven't followed the evolution of APL much since those early days, and I didn'
 
 ## Learning it
 
-To learn RetroAPL's flavor of APL, a good resource is one of the classic texts, *APL: An Interactive Approach* by Gilman and Rose. The first edition is what I learned on. Later editions are good too, though they cover APL2 features like nested arrays that RetroAPL doesn't support. Then again, if you're looking to extend the codebase with those features they could come in handy.
+To learn RetroAPL's flavor of APL, a good resource is one of the classic texts, *APL: An Interactive Approach* by Gilman and Rose. The first edition is what I learned on. Later editions are good too, though they cover APL2 features like nested arrays that RetroAPL doesn't support. Then again, if you're looking to extend the codebase with those features later editions could come in handy. I've got a copy of the third edition as well which would also be a good choice. I added the squad glyph after I saw it in the third edition and realized it'd be easy to add and potentially useful.
 
 ## Open source
 
