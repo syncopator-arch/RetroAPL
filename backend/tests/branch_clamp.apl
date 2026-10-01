@@ -1,0 +1,11 @@
+)ENTER BH
+)LIST BH
+BH
+)ENTER BK
+)LIST BK
+BK
+)ENTER BM
+)LIST BM
+BM
+)SI
+'done'

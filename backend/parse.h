@@ -269,6 +269,16 @@ typedef short (*PTF)();
 #define OP_QX 31	/* execute character vector as APL, returns a value (real Execute) */
 #define OP_FMT 32	/* format numeric value as a character vector (real Format) */
 
+/* Logarithm (⍟, circle-star, font byte 0xF0). Monadic ⍟R is the natural
+ * log, dyadic L⍟R the log of R to base L; both always return float and
+ * give Domain Error outside the real domain (R<=0; L<=0 or L=1). Takes
+ * slot 33, the last of the 31/32/33 gap above. Replaces the old non-
+ * standard 10○/11○ (log10/ln) circle functions, removed in V72 along
+ * with ¯11○. This header defines nothing for 29 or 40 either, but parse.c
+ * and the translate tables haven't been audited for those two, so check
+ * before claiming them. */
+#define OP_LOG 33	/* logarithm */
+
 #define OP_OH 34	/* trig */
 #define OP_DRP 35	/* drop */
 #define OP_TAK 36	/* take */
@@ -379,6 +389,10 @@ typedef short (*PTF)();
  * Format. Monadic only, same as the ⎕X/⎕NTA quad functions they mirror. */
 #define CHAR_QX 0xE2	/* Execute -- Cap + Circle overstrike */
 #define CHAR_FMT 0xEE	/* Format -- Decode + Circle overstrike */
+
+/* Logarithm (⍟) -- Circle + Star overstrike; font byte per the
+ * overstrike table, and kapl_unicode.c maps it to U+235F. */
+#define CHAR_LOG 0xF0	/* logarithm, circle-star */
 
 /* Overstrike-produced
  * byte for compress-first-axis (⌿); value per prior observation of the

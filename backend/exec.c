@@ -236,10 +236,17 @@ short count;
 		count = (short)ve->ve_rho[0];
 	} else count = 1;
 	for (i=0;i<count;i++) {
-		acc = ((int32_t)*IP++) << 24;
-		acc += ((int32_t)*IP++) << 16;
-		acc += ((int32_t)*IP++) << 8;
-		*lp++ = acc + (int32_t)*IP++;
+		/* Assembled unsigned, converted once (V75): shifting a top
+		   byte of 128 or more left 24 places in a signed int is
+		   undefined (UBSan, on -2000000000's 0x88), though it gave
+		   the right bits. */
+		uint32_t u;
+		u  = (uint32_t)*IP++ << 24;
+		u |= (uint32_t)*IP++ << 16;
+		u |= (uint32_t)*IP++ << 8;
+		u |= (uint32_t)*IP++;
+		acc = (int32_t)u;
+		*lp++ = acc;
 		ILEN -= 4;
 	}
 	return(0);	/* ok exit */
@@ -1142,7 +1149,12 @@ char *cp;
 		{
 			FNLINE = NEXTLINE;
 			NEXTLINE++;
-			if (FNLINE) 
+			/* > 0, not just nonzero (V74): a negative target is no line
+			   of the function, so it leaves, as 0 and a line past the
+			   end do (standard APL). It used to fall into the line walk
+			   below, which stops at once for any FNLINE < 1, and run
+			   line 1 -- ->¯1 looped forever if line 1 was the branch. */
+			if (FNLINE > 0) 
 			{
 				f0ep = &SYMT[FUNC_NUM].value;
 				f0e = (struct Func0Ent *)WS_PTR(*f0ep);
@@ -1272,7 +1284,7 @@ struct FuncEnt *fe;
 			TRACEFLAG = 0;
 			FNLINE = NEXTLINE;
 			NEXTLINE++;
-			if (FNLINE)
+			if (FNLINE > 0)		/* negative leaves too -- see do_exec() (V74) */
 			{
 				f0e = (struct Func0Ent *)WS_PTR(SYMT[FUNC_NUM].value);
 				fe = (struct FuncEnt *)WS_PTR(f0e->f0e_Line1);
@@ -1287,7 +1299,7 @@ struct FuncEnt *fe;
 					exec_setup(fe->fe_exec,0);
 					TRACEFLAG = line_start_trace(fe->fe_MemEnt.me_flags);
 				} else end_fn();	/* past the end: back to the caller */
-			} else end_fn();		/* ->0 in the function */
+			} else end_fn();		/* ->0 or negative in the function */
 			debug_report();
 			if (!ERROR_CODE) lexec();
 			if (ABORTSIG)

@@ -376,8 +376,18 @@ double dacc = 0.0,*dpp;
 					m = (long)(*sp.lp++);
 					break;
 				case FLOATSIZE:
-					m = (long)(*sp.dp++);
+				{
+					/* V74: an index beyond int32 is out of range
+					   anyway -- and converting it directly was
+					   undefined. This pass checks every explicit
+					   index before the gather/scatter below reads
+					   them again. */
+					int32_t i32;
+					if (!dbl_to_i32(*sp.dp++, &i32))
+						return(SET_ERR(ERR_INDEX));
+					m = i32;
 					break;
+				}
 				default:	/* not a valid element size -- never pick an element */
 					return(SET_ERR(ERR_SYSTEM));
 			}
@@ -416,8 +426,13 @@ double dacc = 0.0,*dpp;
 							m = (long)(*sp.lp++);
 							break;
 						case FLOATSIZE:
-							m = ((long)*sp.dp++);
+						{
+							int32_t i32;	/* V74; checked above already */
+							if (!dbl_to_i32(*sp.dp++, &i32))
+								return(SET_ERR(ERR_INDEX));
+							m = i32;
 							break;
+						}
 						default:	/* not a valid element size -- never pick an element */
 							return(SET_ERR(ERR_SYSTEM));
 					}
@@ -461,8 +476,13 @@ double dacc = 0.0,*dpp;
 					   (the only axis of a vector) came out as garbage
 					   after passing the validation pass above, which
 					   reads them correctly through dp. */
-					m = ((long)*ip.dp++);
+				{
+					int32_t i32;	/* V74; checked above already */
+					if (!dbl_to_i32(*ip.dp++, &i32))
+						return(SET_ERR(ERR_INDEX));
+					m = i32;
 					break;
+				}
 				default:	/* not a valid element size -- never pick an element */
 					return(SET_ERR(ERR_SYSTEM));
 			}

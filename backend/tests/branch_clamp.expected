@@ -1,0 +1,27 @@
+Clear WS
+     )ENTER BH
+     )LIST BH
+     ∇ BH ⍝ RETROAPL V4.4
+[1]  'ONE'
+[2]  →65539
+[3]  'THREE'
+     BH
+ONE
+     )ENTER BK
+     )LIST BK
+     ∇ BK ⍝ RETROAPL V4.4
+[1]  →1E20
+[2]  'TWO'
+     BK
+     )ENTER BM
+     )LIST BM
+     ∇ BM ⍝ RETROAPL V4.4
+[1]  'ONE'
+[2]  →¯1
+[3]  'THREE'
+     BM
+ONE
+     )SI
+     'done'
+done
+     

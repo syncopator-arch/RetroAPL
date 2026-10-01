@@ -75,6 +75,7 @@ UCHAR op_table[] = {
 	CHAR_DEC,OP_DEC,
 	CHAR_QX,OP_QX,		/* real Execute -- distinct from 'x'-key OP_EXEC system-command dispatch */
 	CHAR_FMT,OP_FMT,	/* real Format */
+	CHAR_LOG,OP_LOG,	/* logarithm, monadic and dyadic */
 	0
 };
 
@@ -597,6 +598,7 @@ short isfloat;
 									case OP_TRA:  case OP_HROT:
 									case OP_VROT: case OP_CE:
 									case OP_FL:   case OP_FMT:
+									case OP_POW:  case OP_LOG:
 									case OP_QDAS: case OP_QTAS:
 										LASTOP = 1;
 										break;

@@ -108,9 +108,19 @@ extern short si_walk(short f, long newest, long oldest);
 extern short do_dtrans();
 extern short do_ocat(void);
 /* shared with inprod.c: do_iprod()'s Stage 5b pairwise (g) step reuses
-   this exact per-element dispatch instead of duplicating it. */
-extern short apply_scalar_dyop(UCHAR c, short csize, short i, short t, long *accp, long *acc2p, double *daccp, double *dacc2p);
+   this exact per-element dispatch instead of duplicating it.
+   accp/acc2p are int64_t*, matching the definition since V50; this
+   prototype still said long* until V73 -- the same type on Linux, but
+   32 bits on Windows, so it agreed with inprod.c's old long variables
+   and kept the compiler from flagging the mismatch there. */
+extern short apply_scalar_dyop(UCHAR c, short csize, short i, short t, int64_t *accp, int64_t *acc2p, double *daccp, double *dacc2p);
 #endif
+/* float -> int32_t without undefined behavior (dyop.c): 1 and *out set if
+   d fits (truncated toward zero), 0 if out of range or NaN -- the caller
+   picks the error. Used wherever a float is read as a count, index or
+   axis (V74). Outside the DYOP_C guard on purpose: dyop.c itself uses it
+   above its definition, and a matching prototype can't conflict. */
+extern short dbl_to_i32(double d, int32_t *out);
 
 #ifndef EXEC_C
 extern void push_valent(struct ValEnt *ve);

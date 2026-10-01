@@ -35,7 +35,7 @@ Windows from the same source.
   symbols, and pasting Unicode APL converts back, so code moves easily
   between RetroAPL and documents, email or other APLs.
 - **Printing** of the session or a function, to a printer or PDF.
-- **Supports most classic APL\360 glyphs and syntax, with only two exceptions,
+- **Supports most classic APL\360 glyphs and syntax, with two notable exceptions,
   domino and bracket dimension syntax-- the latter mitigated by the fact it 
   supports the first dimension variations of dyadic / \ and , (⌿ ⍀ ⍪)
 - **A few later APL features have been added, including quad functions,

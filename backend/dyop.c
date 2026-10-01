@@ -65,13 +65,23 @@ double *dp;
 				acc = *(ts.lp + j);
 				break;
 			case FLOATSIZE:
-				acc = (long)*(ts.dp + j);
+			{
+				int32_t a32;
+				if (!dbl_to_i32(*(ts.dp + j), &a32))
+					return(SET_ERR(ERR_DOMAIN));	/* V74 */
+				acc = a32;
 				break;
+			}
 			default:		/* not a valid element size */
 				acc = 0;
 				break;
 		}
 		acc -= wspace->origin;
+		/* each axis must name one of R's b axes (V74): an out-of-range
+		   one was stored through (char) and then used to index
+		   rho_larray[], which only has b entries set -- a negative one
+		   wrote before the start of LSCRATCH */
+		if (acc < 0 || acc >= b) return(SET_ERR(ERR_DOMAIN));
 		rho_tarray[j] = (char)acc;
 	}
 
@@ -1453,8 +1463,13 @@ struct TakeScan *tscan;
 				acc = *rs.lp++;
 				break;
 			case FLOATSIZE:
-				acc = (long)*rs.dp++;
+			{
+				int32_t a32;
+				if (!dbl_to_i32(*rs.dp++, &a32))
+					return(SET_ERR(ERR_DOMAIN));	/* V74: count beyond int32 */
+				acc = a32;
 				break;
+			}
 			default:		/* not a valid element size */
 				acc = 0;
 				break;
@@ -1711,8 +1726,17 @@ int ii;
 					sv = abs((int)*ts.lp);
 					break;
 				case FLOATSIZE:
-					sv = (long)*ts.dp;
+				{
+					/* V74: abs() like the integer cases -- without
+					   it a negative float count (fill elements)
+					   sized the result negative -- and a safe
+					   conversion */
+					int32_t c32;
+					if (!dbl_to_i32(*ts.dp, &c32))
+						return(SET_ERR(ERR_DOMAIN));
+					sv = labs((long)c32);
 					break;
+				}
 			}
 			oscan = sv * rlen;
 		} else {
@@ -1730,8 +1754,17 @@ int ii;
 						oscan += abs((int)*ts.lp++);
 						break;
 					case FLOATSIZE:
-						oscan += ((int)*ts.dp++);
+					{
+						/* V74: abs() was missing here too, so
+						   1 ¯2.0 1/'abc' sized the result at 0 and
+						   the copy loop below wrote 4 elements past
+						   it into the workspace */
+						int32_t c32;
+						if (!dbl_to_i32(*ts.dp++, &c32))
+							return(SET_ERR(ERR_DOMAIN));
+						oscan += labs((long)c32);
 						break;
+					}
 				}
 			}
 		}
@@ -1808,7 +1841,19 @@ int ii;
 				ii = (int)*ls.lp++;
 				break;
 			case FLOATSIZE:
-				ii = (int)*ls.dp++;
+				if (f) {
+					/* expand: only zero/nonzero matters -- same
+					   test as the nzcount pass above (V74; 0.5
+					   used to count as nonzero there, zero here) */
+					ii = (*ls.dp++ != 0.0);
+				} else {
+					/* replicate count; already range-checked by
+					   the sizing pass above, so this can't fail */
+					int32_t c32;
+					if (!dbl_to_i32(*ls.dp++, &c32))
+						return(SET_ERR(ERR_DOMAIN));	/* V74 */
+					ii = (int)c32;
+				}
 				break;
 		}
 		if (!--lsc) 
@@ -1916,6 +1961,8 @@ union MultiP rp,lp,tp;
 short b;
 REG short j,k;
 long acc,l;
+double dl = 0.0, dacc = 0.0;	/* the values compared when usefloat */
+short usefloat;
 
 	VTEMP = (ws_off_t*)0;
 	if (!*VLEFT) return(SET_ERR(ERR_VALUE));
@@ -1942,6 +1989,16 @@ long acc,l;
 	j = re->ve_vtype & BYTES_MASK;
 	k = le->ve_vtype & BYTES_MASK;
 	b = te->ve_vtype & BYTES_MASK;
+	/* V75: same rule as do_depsilon() (L∊R): if either side is float,
+	   compare both as doubles, exactly, so 1 2 3⍳2.5 doesn't find the
+	   2 and 0.1 0.2 0.3⍳0.3 finds the 3 -- both used to be truncated to
+	   integers first, which matched wrong elements (and, before V74,
+	   converted out-of-range floats with undefined behavior). A float
+	   holding a whole number still matches the integer. Otherwise
+	   integers (and characters, by byte value) compare as before. No
+	   comparison tolerance yet (no ⎕CT -- see apl_backend_ideas_v1.md),
+	   the same as = and ∊. */
+	usefloat = (j == FLOATSIZE || k == FLOATSIZE) ? 1 : 0;
 	tp.cp = DATA_AD(te);
 	rp.cp = DATA_AD(re);
 	while (rscan) {
@@ -1956,12 +2013,14 @@ long acc,l;
 				l = *rp.lp++;
 				break;
 			case FLOATSIZE:
-				l = (long)*rp.dp++;			
+				l = 0;
+				dl = *rp.dp++;
 				break;
 			default:		/* not a valid element size */
 				l = 0;
 				break;
 		}
+		if (usefloat && j != FLOATSIZE) dl = (double)l;
 		lp.cp = DATA_AD(le);
 		lend = 0L;
 		while (lend < lscan) {
@@ -1976,13 +2035,17 @@ long acc,l;
 					acc = *lp.lp++;
 					break;
 				case FLOATSIZE:
-					acc = (long)*lp.dp++;
+					acc = 0;
+					dacc = *lp.dp++;
 					break;
 				default:		/* not a valid element size */
 					acc = 0;
 					break;
 			}
-			if (acc == l) break;
+			if (usefloat) {
+				if (k != FLOATSIZE) dacc = (double)acc;
+				if (dacc == dl) break;
+			} else if (acc == l) break;
 			lend++;
 		}
 		lend += wspace->origin;
@@ -2225,8 +2288,13 @@ long i,a,N,ncols,idx,offset,axsize,origin;
 					idx = *lp.lp++;
 					break;
 				case FLOATSIZE:
-					idx = (long)*lp.dp++;
+				{
+					int32_t i32;
+					if (!dbl_to_i32(*lp.dp++, &i32))
+						return(SET_ERR(ERR_INDEX));	/* V74 */
+					idx = i32;
 					break;
+				}
 				default:		/* not a valid element size */
 					idx = 0;
 					break;
@@ -2333,8 +2401,16 @@ union MultiP ts,rs,ls;
 				sv = abs((int)*ls.lp);
 				break;
 			case FLOATSIZE:
-				sv = (long)*ls.dp;
+			{
+				/* V74: abs() like the integer cases (a negative
+				   float count sized the result negative) and a
+				   safe conversion */
+				int32_t c32;
+				if (!dbl_to_i32(*ls.dp, &c32))
+					return(SET_ERR(ERR_DOMAIN));
+				sv = labs((long)c32);
 				break;
+			}
 		}
 		oscan = sv * rlen;
 	} else {
@@ -2353,8 +2429,16 @@ union MultiP ts,rs,ls;
 					oscan += abs((int)*ls.lp++);
 					break;
 				case FLOATSIZE:
-					oscan += ((int)*ls.dp++);
+				{
+					/* V74: abs() was missing -- a negative float
+					   count undersized the result and the copy
+					   loop overran it */
+					int32_t c32;
+					if (!dbl_to_i32(*ls.dp++, &c32))
+						return(SET_ERR(ERR_DOMAIN));
+					oscan += labs((long)c32);
 					break;
+				}
 			}
 		}
 	}
@@ -2399,8 +2483,13 @@ union MultiP ts,rs,ls;
 				ii = *ls.lp;
 				break;
 			case FLOATSIZE:
-				ii = (long)*ls.dp;
+			{
+				int32_t c32;
+				if (!dbl_to_i32(*ls.dp, &c32))
+					return(SET_ERR(ERR_DOMAIN));	/* V74 */
+				ii = c32;
 				break;
+			}
 		}
 	}
 	for (row = 0; row < lsc; row++) 
@@ -2419,8 +2508,13 @@ union MultiP ts,rs,ls;
 					ii = *ls.lp++;
 					break;
 				case FLOATSIZE:
-					ii = (long)*ls.dp++;
+				{
+					int32_t c32;
+					if (!dbl_to_i32(*ls.dp++, &c32))
+						return(SET_ERR(ERR_DOMAIN));	/* V74 */
+					ii = c32;
 					break;
+				}
 			}
 		}
 		if (ii > 0) 
@@ -2607,7 +2701,11 @@ union MultiP ts,rs,ls;
 				ii = *ls.lp++;
 				break;
 			case FLOATSIZE:
-				ii = (long)*ls.dp++;
+				/* V74: only zero/nonzero matters here, so test it
+				   directly, the same test the nzcount pass above
+				   uses -- no conversion to overflow, and 0.5 no
+				   longer counts as nonzero there but zero here */
+				ii = (*ls.dp++ != 0.0);
 				break;
 		}
 		if (ii) 
@@ -2838,6 +2936,43 @@ short vt,e;
 }
 
 /*
+	dbl_to_i64() -- convert a double to int64_t without undefined
+	behavior: out-of-range values saturate, NaN gives 0. Converting an
+	out-of-range double straight to an integer type is undefined in C
+	(caught by check_san once V73 sent every dyadic * through the float
+	branch: 10*20). Saturating keeps an out-of-range value out of range,
+	so any later width check on acc still sees it as too big.
+*/
+static int64_t
+dbl_to_i64(double d)
+{
+	if (d >= 9223372036854775808.0) return(INT64_MAX);
+	if (d < -9223372036854775808.0) return(INT64_MIN);
+	if (d != d) return(0);		/* NaN */
+	return((int64_t)d);
+}
+
+/*
+	dbl_to_i32() -- convert a float count, index, axis or other
+	whole-number argument to int32_t, truncating toward zero as the
+	plain casts it replaces did (V74). Returns 1 with *out set if d is
+	finite and fits; 0, leaving *out alone, if not (out of range,
+	infinite, NaN), so the caller picks the error: Domain Error for a
+	count or axis, Index Error for an index, "not found" for a lookup.
+	Same idea as deal_arg() above, which already range-checked before
+	converting. Converting an out-of-range double straight to an
+	integer type is undefined in C, and long is 32 bits on Windows.
+	Shared with monop.c and index.c through externs.h.
+*/
+short
+dbl_to_i32(double d, int32_t *out)
+{
+	if (!(d > -2147483649.0 && d < 2147483648.0)) return(0);	/* also NaN */
+	*out = (int32_t)d;
+	return(1);
+}
+
+/*
 	apply_scalar_dyop()
 
 	Applies dyadic op c to a single (left,right) scalar pair.
@@ -2900,6 +3035,9 @@ double dacc,dacc2;
 				case OP_POW:
 					if (dacc < 0.0 && dacc2 != floor(dacc2)) return(SET_ERR(ERR_DOMAIN));
 					dacc = pow(dacc,dacc2);
+					/* overflow (10*400) or 0 to a negative power:
+					   infinity, so Domain Error -- as monadic * */
+					if (!isfinite(dacc)) return(SET_ERR(ERR_DOMAIN));
 					break;
 				case OP_AB:	/* modulo ! */
 					dacc = dacc2 - (dacc * floor(dacc2 / dacc));
@@ -2966,49 +3104,94 @@ double dacc,dacc2;
 					break;
 #ifdef TRIG
 				case OP_OH:
-					switch ((short)dacc) 
+					/* L○R, the APL\360 table: L a whole number
+					   from ¯7 to 7. The old non-standard 10○ (log10),
+					   11○ (ln) and ¯11○ were removed in V72 -- ⍟
+					   covers them. Anything outside R's real domain,
+					   or a result that overflows, is a Domain Error. */
+					if (dacc != floor(dacc) || dacc < -7.0 || dacc > 7.0)
+						return(SET_ERR(ERR_DOMAIN));
+					switch ((int)dacc)
 					{
-						case 1:	/* sin */
+						case 0:		/* (1-R*2)*.5 */
+							if (fabs(dacc2) > 1.0)
+								return(SET_ERR(ERR_DOMAIN));
+							dacc = sqrt((1.0 - dacc2) * (1.0 + dacc2));
+							break;
+						case 1:		/* sin */
 							dacc = sin(dacc2);
-							break;	
-						case 2:	/* cos */
+							break;
+						case 2:		/* cos */
 							dacc = cos(dacc2);
 							break;
-						case 3:	/* tan */
+						case 3:		/* tan */
 							dacc = tan(dacc2);
 							break;
-						case 10:	/* log base 10 */
-							dacc = log10(dacc2);
+						case 4:		/* (1+R*2)*.5 -- hypot() can't overflow on R*2 */
+							dacc = hypot(1.0, dacc2);
 							break;
-						case 11:	/* log base e */
-							dacc = log(dacc2);
+						case 5:		/* sinh */
+							dacc = sinh(dacc2);
 							break;
-						case -11:
-							dacc = 2.7182818285 * dacc2;
+						case 6:		/* cosh */
+							dacc = cosh(dacc2);
+							break;
+						case 7:		/* tanh */
+							dacc = tanh(dacc2);
 							break;
 						case -1:	/* arcsin */
-							if (dacc2 > 1.0 || dacc2 < -1.0)
+							if (fabs(dacc2) > 1.0)
 								return(SET_ERR(ERR_DOMAIN));
 							dacc = asin(dacc2);
 							break;
 						case -2:	/* arccos */
-							if (dacc2 > 1.0 || dacc2 < -1.0)
+							if (fabs(dacc2) > 1.0)
 								return(SET_ERR(ERR_DOMAIN));
 							dacc = acos(dacc2);
 							break;
 						case -3:	/* arctan */
-							dacc = atan(dacc2);		
+							dacc = atan(dacc2);
 							break;
-						default:
-							return(SET_ERR(ERR_DOMAIN));
+						case -4:	/* (¯1+R*2)*.5, the APL\360 form (never
+								   negative); split so R*2 can't overflow */
+							if (fabs(dacc2) < 1.0)
+								return(SET_ERR(ERR_DOMAIN));
+							dacc = sqrt(fabs(dacc2) - 1.0) * sqrt(fabs(dacc2) + 1.0);
+							break;
+						case -5:	/* arcsinh */
+							dacc = asinh(dacc2);
+							break;
+						case -6:	/* arccosh */
+							if (dacc2 < 1.0)
+								return(SET_ERR(ERR_DOMAIN));
+							dacc = acosh(dacc2);
+							break;
+						case -7:	/* arctanh -- infinite at R=±1 */
+							if (fabs(dacc2) >= 1.0)
+								return(SET_ERR(ERR_DOMAIN));
+							dacc = atanh(dacc2);
+							break;
 					}
+					if (!isfinite(dacc)) return(SET_ERR(ERR_DOMAIN));
+					break;
+				case OP_LOG:
+					/* L⍟R: log of R to base L. Real logs only; base 1
+					   has none. log2 ratio rather than ln ratio: exact
+					   for 10⍟1000 and powers of 2 in a sandbox check,
+					   where ln/ln gave 2.9999999999999996 for 10⍟1000. */
+					if (dacc <= 0.0 || dacc == 1.0 || dacc2 <= 0.0)
+						return(SET_ERR(ERR_DOMAIN));
+					dacc = log2(dacc2) / log2(dacc);
 					break;
 #endif
 				default:
 					return(SET_ERR(ERR_SYNTAX));	/* syntax error */
 			}
-			acc = (long)dacc;
-			acc2 = (long)dacc2;
+			/* was (long)dacc / (long)dacc2: undefined for a result
+			   or operand beyond long's range (10*20), and long is
+			   only 32 bits on Windows -- V73 */
+			acc = dbl_to_i64(dacc);
+			acc2 = dbl_to_i64(dacc2);
 		} else {
 			switch (c) 
 			{
@@ -3029,7 +3212,7 @@ double dacc,dacc2;
 					dacc = acc;
 					dacc2 = acc2;
 					dacc = pow(dacc,dacc2);
-					acc = (long)dacc;
+					acc = dbl_to_i64(dacc);	/* not reached since V73 (* forced float) */
 					break;
 				case OP_AB:	/* modulo ! */
 /* %%%					if (!acc) return(SET_ERR(ERR_DOMAIN)); */
@@ -3211,7 +3394,7 @@ int lbitc,rbitc,tbitc;
 		lend = le->ve_vtype & BYTES_MASK;
 		rend = re->ve_vtype & BYTES_MASK;
 #ifdef TRIG
-		if (c == OP_OH) rend = FLOATSIZE;
+		if (c == OP_OH || c == OP_LOG) rend = FLOATSIZE;
 		else {
 #endif
 			rend = lend > rend ? lend : rend;	/* bytes per */
@@ -3226,6 +3409,14 @@ int lbitc,rbitc,tbitc;
 		   The input-temp reuse check below only matches when an operand
 		   is already float, so reusing it as the output stays safe. */
 		if (c == OP_DIV && wspace->floatdiv) rend = FLOATSIZE;
+		/* Dyadic * always returns float (V73). The integer branch of
+		   apply_scalar_dyop() truncated pow()'s result back to an
+		   integer, so 2*¯1 gave 0, and converting an out-of-range
+		   result (10*20) to long is undefined. Forcing float here, as
+		   for OP_OH/OP_LOG, sends every * through the float branch;
+		   its integer-branch case is no longer reached from do_dyop()
+		   or do_iprod(). */
+		if (c == OP_POW) rend = FLOATSIZE;
 		i = CONST_CODE;
 	}
 	lend = lscan > rscan ? lscan : rscan;	/* elements */

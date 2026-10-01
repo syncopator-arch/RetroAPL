@@ -5,6 +5,7 @@
 #define MONOP_C 1
 
 #include <stdlib.h>	/* malloc/free for scanredf's scan accumulator array */
+#include <math.h>	/* exp()/isfinite() for monadic * */
 #include "parse.h"
 #include "mplmem.h"
 #include "externs.h"
@@ -23,7 +24,7 @@ extern int step_resumed;	/* exec.c -- )STEP */
 extern short resume_line(int32_t n);	/* fn.c -- ->N at the prompt */
 
 #ifndef PI
-#define PI 3.1415928
+#define PI 3.14159265358979323846	/* full double precision; was 3.1415928, wrong in the 7th place */
 #endif
 
 /*
@@ -159,12 +160,17 @@ reduce_combine(short op, short sdir, UCHAR dtype, int32_t *acc, int32_t acc2, do
 		}
 		return(0);
 	}
+	/* + - x computed in 64 bits and narrowed back (V75): the int32
+	   arithmetic overflowed -- undefined in C, reported by UBSan --
+	   once a fold passed int32 (x/10000+iota10). The narrowed *acc
+	   still wraps; nothing trusts it then -- every write-out checks
+	   the shadow *dacc first and promotes to float. */
 	switch (op) {
-		case OP_MUL: *acc *= acc2; break;
-		case OP_ADD: *acc += acc2; break;
+		case OP_MUL: *acc = (int32_t)((int64_t)*acc * acc2); break;
+		case OP_ADD: *acc = (int32_t)((int64_t)*acc + acc2); break;
 		case OP_SUB:
-			if (sdir < 0) *acc = acc2 - *acc;
-			else          *acc -= acc2;
+			if (sdir < 0) *acc = (int32_t)((int64_t)acc2 - *acc);
+			else          *acc = (int32_t)((int64_t)*acc - acc2);
 			break;
 		case OP_CE:  if (*acc < acc2) *acc = acc2; break;
 		case OP_FL:  if (*acc > acc2) *acc = acc2; break;
@@ -434,9 +440,16 @@ do_ohrot(void)
 				lp.lp++;
 				break;
 			case FLOATSIZE:
-				amt = (int32_t)*lp.dp;
-				lp.dp++;
+			{
+				/* V74: reduce by the row width before converting --
+				   rotating by any amount is meaningful (1E10), and
+				   converting an out-of-range double is undefined.
+				   Only NaN/infinity is left to fail. */
+				double d = *lp.dp++;
+				d = (m > 0) ? fmod(d, (double)m) : 0.0;
+				if (!dbl_to_i32(d, &amt)) return(SET_ERR(ERR_DOMAIN));
 				break;
+			}
 			default:		/* not a valid element size */
 				amt = 0;
 				break;
@@ -445,9 +458,17 @@ do_ohrot(void)
 		/* fresh copy of the whole right array for this left element */
 		memcpy(dstp.cp, DATA_AD(re), (size_t)(rscan * elemsize));
 
-		t = m - amt;
-		while (t >= m) t -= m;
-		while (t <  0) t += m;
+		/* V74: reduce amt first, so the loops below run at most
+		   once each (a huge integer amount used to loop millions
+		   of times) and m - amt can't overflow; and guard m == 0,
+		   an empty last axis, where "while (t >= m) t -= m" never
+		   ended. */
+		if (m > 0) {
+			amt %= m;
+			t = m - amt;
+			while (t >= m) t -= m;
+			while (t <  0) t += m;
+		} else t = 0;
 		tc = m;
 		switch (elemsize) {
 			case 2: tc <<= 1; t <<= 1; break;
@@ -604,6 +625,7 @@ do_ovrot(void)
 	struct ValEnt *re, *le, *te;
 	union MultiP   rp, lp, dstp, tp;
 	int32_t        m, tl, idx, k, amt, t, rscan, lscan, elemsize;
+	int32_t        n;	/* length of the first axis -- rotation wraps by it */
 
 	if (!*VLEFT) return(SET_ERR(ERR_VALUE));
 	re = WSVAL_PTR(*VRIGHT);
@@ -619,6 +641,7 @@ do_ovrot(void)
 	j = re->ve_rank;
 	m = 1L;
 	for (i = 0; i < (j - 1); i++) m *= re->ve_rho[i];
+	n = j ? re->ve_rho[j - 1] : 1L;
 
 	elemsize = re->ve_vtype & BYTES_MASK;
 	tl = rscan - 1;
@@ -657,13 +680,23 @@ do_ovrot(void)
 				lp.lp++;
 				break;
 			case FLOATSIZE:
-				amt = (int32_t)*lp.dp;
-				lp.dp++;
+			{
+				/* V74: reduce by the first axis's length before
+				   converting, as in do_ohrot() */
+				double d = *lp.dp++;
+				d = (n > 0) ? fmod(d, (double)n) : 0.0;
+				if (!dbl_to_i32(d, &amt)) return(SET_ERR(ERR_DOMAIN));
 				break;
+			}
 			default:		/* not a valid element size */
 				amt = 0;
 				break;
 		}
+		/* V74: reduce integer amounts too, so m * amt below can't
+		   overflow (it's now under rscan) and the wrap loops run at
+		   most once */
+		if (n > 0) amt %= n;
+		else amt = 0;
 
 		rp.cp = DATA_AD(re);
 		tp    = dstp;	/* same block base, viewed through every pointer type */
@@ -938,7 +971,8 @@ do_monop(UCHAR c)
 						l = *mp.lp;
 						break;
 					case FLOATSIZE:
-						l = (int32_t)*mp.dp;
+						if (!dbl_to_i32(*mp.dp, &l))
+							return(SET_ERR(ERR_DOMAIN));	/* V74 */
 						break;
 				}
 				stack_pop(1);
@@ -998,7 +1032,8 @@ do_monop(UCHAR c)
 							l = *mp.lp++;
 							break;
 						case FLOATSIZE:
-							l = (int32_t)*mp.dp++;
+							if (!dbl_to_i32(*mp.dp++, &l))
+								return(SET_ERR(ERR_DOMAIN));	/* V74 */
 							break;
 					}
 					if (l < 0L) return(SET_ERR(ERR_DOMAIN));
@@ -1152,9 +1187,10 @@ scanred:;
 						m++;
 						switch (k) {
 							case 1:
-								if (acc > 127L || acc < -128L) {
+								if (acc > 127L || acc < -128L ||
+								    dacc > 2147483647.0 || dacc < -2147483648.0) {
 									acc2 = (int32_t)(tp.cp - (char *)DATA_AD(te));
-									if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+									if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 									ve    = WSVAL_PTR(*VRIGHT);
 									te    = WSVAL_PTR(*VTEMP);
 									k     = te->ve_vtype & BYTES_MASK;
@@ -1163,10 +1199,14 @@ scanred:;
 										tp.sp += acc2;
 										*tp.sp = (short)acc;
 										tp.sp++;
-									} else {
+									} else if (k == 4) {
 										tp.lp += acc2;
 										*tp.lp = acc;
 										tp.lp++;
+									} else {	/* FLOATSIZE: beyond int32 (V75) */
+										tp.dp += acc2;
+										*tp.dp = dacc;
+										tp.dp++;
 									}
 								} else {
 									*tp.cp = (char)acc;
@@ -1174,16 +1214,23 @@ scanred:;
 								}
 								break;
 							case 2:
-								if (acc > 32767 || acc < -32768) {
+								if (acc > 32767 || acc < -32768 ||
+								    dacc > 2147483647.0 || dacc < -2147483648.0) {
 									acc2 = (int32_t)(tp.sp - (short *)DATA_AD(te));
-									if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+									if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 									ve    = WSVAL_PTR(*VRIGHT);
 									te    = WSVAL_PTR(*VTEMP);
-									k     = 4;
+									k     = te->ve_vtype & BYTES_MASK;	/* 4, or FLOATSIZE beyond int32 (V75) */
 									tp.cp = DATA_AD(te);
-									tp.lp += acc2;
-									*tp.lp = acc;
-									tp.lp++;
+									if (k == 4) {
+										tp.lp += acc2;
+										*tp.lp = acc;
+										tp.lp++;
+									} else {
+										tp.dp += acc2;
+										*tp.dp = dacc;
+										tp.dp++;
+									}
 								} else {
 									*tp.sp = (short)acc;
 									tp.sp++;
@@ -1257,9 +1304,10 @@ scantop:;
 				m += sdir;
 				switch (k) {
 					case 1:
-						if (acc > 127L || acc < -128L) {
+						if (acc > 127L || acc < -128L ||
+						    dacc > 2147483647.0 || dacc < -2147483648.0) {
 							acc2 = (int32_t)(tp.cp - (char *)DATA_AD(te));
-							if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+							if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 							ve    = WSVAL_PTR(*VRIGHT);
 							te    = WSVAL_PTR(*VTEMP);
 							k     = te->ve_vtype & BYTES_MASK;
@@ -1268,10 +1316,14 @@ scantop:;
 								tp.sp += acc2;
 								*tp.sp  = (short)acc;
 								tp.sp  += sdir;
-							} else {
+							} else if (k == 4) {
 								tp.lp += acc2;
 								*tp.lp  = acc;
 								tp.lp  += sdir;
+							} else {	/* FLOATSIZE: beyond int32 (V75) */
+								tp.dp += acc2;
+								*tp.dp  = dacc;
+								tp.dp  += sdir;
 							}
 						} else {
 							*tp.cp  = (char)acc;
@@ -1279,16 +1331,23 @@ scantop:;
 						}
 						break;
 					case 2:
-						if (acc > 32767 || acc < -32768) {
+						if (acc > 32767 || acc < -32768 ||
+						    dacc > 2147483647.0 || dacc < -2147483648.0) {
 							acc2 = (int32_t)(tp.sp - (short *)DATA_AD(te));
-							if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+							if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 							ve    = WSVAL_PTR(*VRIGHT);
 							te    = WSVAL_PTR(*VTEMP);
-							k     = 4;
+							k     = te->ve_vtype & BYTES_MASK;	/* 4, or FLOATSIZE beyond int32 (V75) */
 							tp.cp = DATA_AD(te);
-							tp.lp += acc2;
-							*tp.lp  = acc;
-							tp.lp  += sdir;
+							if (k == 4) {
+								tp.lp += acc2;
+								*tp.lp  = acc;
+								tp.lp  += sdir;
+							} else {
+								tp.dp += acc2;
+								*tp.dp  = dacc;
+								tp.dp  += sdir;
+							}
 						} else {
 							*tp.sp  = (short)acc;
 							tp.sp  += sdir;
@@ -1419,9 +1478,10 @@ scanredf:;
 				    m++;
 				    switch (k) {
 					case 1:
-					    if (acc > 127L || acc < -128L) {
+					    if (acc > 127L || acc < -128L ||
+					        dacc > 2147483647.0 || dacc < -2147483648.0) {
 						acc2 = (int32_t)(tp.cp - (char *)DATA_AD(te));
-						if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+						if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 						ve    = WSVAL_PTR(*VRIGHT);
 						te    = WSVAL_PTR(*VTEMP);
 						k     = te->ve_vtype & BYTES_MASK;
@@ -1430,10 +1490,14 @@ scanredf:;
 						    tp.sp += acc2;
 						    *tp.sp = (short)acc;
 						    tp.sp++;
-						} else {
+						} else if (k == 4) {
 						    tp.lp += acc2;
 						    *tp.lp = acc;
 						    tp.lp++;
+						} else {	/* FLOATSIZE: beyond int32 (V75) */
+						    tp.dp += acc2;
+						    *tp.dp = dacc;
+						    tp.dp++;
 						}
 					    } else {
 						*tp.cp = (char)acc;
@@ -1441,16 +1505,23 @@ scanredf:;
 					    }
 					    break;
 					case 2:
-					    if (acc > 32767L || acc < -32768L) {
+					    if (acc > 32767L || acc < -32768L ||
+					        dacc > 2147483647.0 || dacc < -2147483648.0) {
 						acc2 = (int32_t)(tp.sp - (short *)DATA_AD(te));
-						if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+						if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 						ve    = WSVAL_PTR(*VRIGHT);
 						te    = WSVAL_PTR(*VTEMP);
-						k     = 4;
+						k     = te->ve_vtype & BYTES_MASK;	/* 4, or FLOATSIZE beyond int32 (V75) */
 						tp.cp = DATA_AD(te);
-						tp.lp += acc2;
-						*tp.lp = acc;
-						tp.lp++;
+						if (k == 4) {
+							tp.lp += acc2;
+							*tp.lp = acc;
+							tp.lp++;
+						} else {
+							tp.dp += acc2;
+							*tp.dp = dacc;
+							tp.dp++;
+						}
 					    } else {
 						*tp.sp = (short)acc;
 						tp.sp++;
@@ -1534,9 +1605,10 @@ scantopf:;
 				m += sdir;
 				switch (k) {
 					case 1:
-						if (acc > 127L || acc < -128L) {
+						if (acc > 127L || acc < -128L ||
+						    dacc > 2147483647.0 || dacc < -2147483648.0) {
 							acc2 = (int32_t)(tp.cp - (char *)DATA_AD(te));
-							if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+							if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 							ve    = WSVAL_PTR(*VRIGHT);
 							te    = WSVAL_PTR(*VTEMP);
 							k     = te->ve_vtype & BYTES_MASK;
@@ -1545,10 +1617,14 @@ scantopf:;
 								tp.sp += acc2;
 								*tp.sp  = (short)acc;
 								tp.sp  += sdir;
-							} else {
+							} else if (k == 4) {
 								tp.lp += acc2;
 								*tp.lp  = acc;
 								tp.lp  += sdir;
+							} else {	/* FLOATSIZE: beyond int32 (V75) */
+								tp.dp += acc2;
+								*tp.dp  = dacc;
+								tp.dp  += sdir;
 							}
 						} else {
 							*tp.cp  = (char)acc;
@@ -1556,16 +1632,23 @@ scantopf:;
 						}
 						break;
 					case 2:
-						if (acc > 32767 || acc < -32768) {
+						if (acc > 32767 || acc < -32768 ||
+						    dacc > 2147483647.0 || dacc < -2147483648.0) {
 							acc2 = (int32_t)(tp.sp - (short *)DATA_AD(te));
-							if (!upsize(te, acc, m)) return(SET_ERR(ERR_WSFULL));
+							if (!upsizef(te, acc, m, dacc)) return(SET_ERR(ERR_WSFULL));
 							ve    = WSVAL_PTR(*VRIGHT);
 							te    = WSVAL_PTR(*VTEMP);
-							k     = 4;
+							k     = te->ve_vtype & BYTES_MASK;	/* 4, or FLOATSIZE beyond int32 (V75) */
 							tp.cp = DATA_AD(te);
-							tp.lp += acc2;
-							*tp.lp  = acc;
-							tp.lp  += sdir;
+							if (k == 4) {
+								tp.lp += acc2;
+								*tp.lp  = acc;
+								tp.lp  += sdir;
+							} else {
+								tp.dp += acc2;
+								*tp.dp  = dacc;
+								tp.dp  += sdir;
+							}
 						} else {
 							*tp.sp  = (short)acc;
 							tp.sp  += sdir;
@@ -1983,17 +2066,20 @@ isint:;
 			return(exec_lineb());
 
 #ifdef TRIG
-		case OP_OH:
+		case OP_POW:	/* monadic * (exponential): e to the power R */
+		case OP_LOG:	/* monadic circle-star (natural log): ln R */
+		case OP_OH:	/* monadic circle (pi times): R times pi */
 			j  = ve->ve_rank;
 			l  = ve->ve_length;
 			te = make_temp(FCONST_CODE, j, l);
 			if (!te) return(SET_ERR(ERR_WSFULL));
-			ve    = WSVAL_PTR(*VRIGHT);
+			ve    = WSVAL_PTR(*VRIGHT);	/* might have moved */
+			for (i = 0; i < j; i++) te->ve_rho[i] = ve->ve_rho[i];	/* result has R's shape */
 			mp.cp = DATA_AD(ve);
 			tp.cp = DATA_AD(te);
-			j     = ve->ve_vtype & BYTES_MASK;
+			k     = ve->ve_vtype & BYTES_MASK;
 			while (l--) {
-				switch (j) {
+				switch (k) {
 					case 1:
 						dacc = (double)(signed char)*mp.cp++;
 						break;
@@ -2007,7 +2093,19 @@ isint:;
 						dacc = *mp.dp++;
 						break;
 				}
-				*tp.dp++ = dacc * PI;
+				if (c == OP_POW) {
+					dacc = exp(dacc);
+					/* overflow (R above about 709.78) gives infinity:
+					   domain error, as APL2/Dyalog do for *1000 */
+					if (!isfinite(dacc)) return(SET_ERR(ERR_DOMAIN));
+					*tp.dp++ = dacc;
+				}
+				else if (c == OP_LOG) {
+					/* real logs only: zero and negatives have none */
+					if (dacc <= 0.0) return(SET_ERR(ERR_DOMAIN));
+					*tp.dp++ = log(dacc);
+				}
+				else *tp.dp++ = dacc * PI;
 			}
 			swapdrop();
 			break;
@@ -2031,12 +2129,31 @@ isint:;
 					l = *mp.lp;
 					break;
 				case FLOATSIZE:
-					l = (int32_t)*mp.dp;
+				{
+					/* V74: clamp before converting (undefined for
+					   an out-of-range double); the clamp below then
+					   applies as for an integer target */
+					double d = *mp.dp;
+					if (d != d) return(SET_ERR(ERR_DOMAIN));	/* NaN */
+					if (d > 32767.0) d = 32767.0;
+					if (d < -32768.0) d = -32768.0;
+					l = (int32_t)d;
 					break;
+				}
 				default:		/* not a valid element size */
 					l = 0;
 					break;
 			}
+			/* V74: clamp to NEXTLINE's short range. (short)l used to
+			   wrap, so in a short function ->65541 went to line 5
+			   (confirmed by the person). A function has at most
+			   4095 lines (FLINE_MASK), so 32767 is past the end of
+			   any of them and leaves the function, as any target
+			   past the last line does; a large negative target
+			   stays negative, so whatever a negative branch does is
+			   unchanged. */
+			if (l > 32767L) l = 32767L;
+			if (l < -32768L) l = -32768L;
 			stack_pop(1);
 			NEXTLINE = (short)l;		/* branch to here */
 			if (FUNC_NUM == -1) {

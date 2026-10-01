@@ -74,11 +74,17 @@ short lbytes, rbytes, csize, gbytes, vt;
 short err;
 int32_t n, llen, rlen, totlen;
 int32_t la, ra, k, outidx, loff, roff;
-long gacc, gacc2;
+int64_t gacc, gacc2;	/* int64_t, matching apply_scalar_dyop()'s parameters
+			   since V50 -- was long, 4 bytes on Windows (LLP64),
+			   so every call there wrote 8 bytes into a 4-byte
+			   variable. Fixed V73. */
 int32_t facc;
 union MultiP lbase, rbase, tbase;
 double gdacc, gdacc2;
 double dfacc;
+double gd;		/* g's pairwise result as a double, whichever branch made it */
+short fdt;		/* width the fold runs at -- gbytes, until it can't stay
+			   inside int32 (V73), then FLOATSIZE */
 
 	VLEFT = get_vparm(0);
 	VRIGHT = get_vparm(1);
@@ -178,6 +184,11 @@ double dfacc;
 	   below follows csize (OP_DIV is not < OP_LOGIC), so the result
 	   type becomes FCONST_CODE unless f is a comparison/logic op. */
 	if (op2 == OP_DIV && wspace->floatdiv) csize = FLOATSIZE;
+	/* g = ○, ⍟ or * always computes float, mirroring do_dyop()'s rend
+	   overrides for the same three (V73). apply_scalar_dyop()'s integer
+	   branch has no ○/⍟ case (whole-number operands gave Syntax Error)
+	   and truncated *'s result. */
+	if (op2 == OP_OH || op2 == OP_LOG || op2 == OP_POW) csize = FLOATSIZE;
 
 	/* g's pairwise result byte width -- the same promotion rule
 	   do_dyop() uses for its own single elementwise op (see
@@ -279,6 +290,16 @@ double dfacc;
 	for (la = 0L; la < llen; la++) {
 		for (ra = 0L; ra < rlen; ra++) {
 
+			/* The fold runs at gbytes until it can't stay inside
+			   int32, then switches to FLOATSIZE for the rest of this
+			   output element (V73). dfacc carries the true value
+			   either way: reduce_combine()'s integer path keeps it as
+			   a double shadow, its float path keeps nothing else.
+			   Before V73, g's result was cut to 32 bits before the
+			   fold, the shadow was fed 0 for integer g, and the
+			   int32 accumulator wrapped (50000 +.× 50000 gave
+			   ¯1794967296). */
+			fdt = gbytes;
 			if (n == 0L) {
 				/* Zero-length contracted axis: no pairs to walk,
 				   seed straight from f's identity element -- same
@@ -295,6 +316,7 @@ double dfacc;
 					loff = lscalar ? 0L : la * n + k;
 					roff = rscalar ? 0L : k * rlen + ra;
 
+					gacc = gacc2 = 0;
 					gdacc = gdacc2 = 0.0;
 					/* Read L[loff] at its real width. QUOT_CODE
 					   (char data) reads as BYTES_MASK==1, same slot
@@ -304,13 +326,13 @@ double dfacc;
 					   guarantees no out-of-switch undefined read. */
 					switch (lbytes) {
 						case 1:
-							gacc = (long)(signed char)lbase.cp[loff];
+							gacc = (int64_t)(signed char)lbase.cp[loff];
 							break;
 						case 2:
-							gacc = (long)lbase.sp[loff];
+							gacc = (int64_t)lbase.sp[loff];
 							break;
 						case 4:
-							gacc = (long)lbase.lp[loff];
+							gacc = (int64_t)lbase.lp[loff];
 							break;
 						case FLOATSIZE:
 							gdacc = lbase.dp[loff];
@@ -319,13 +341,13 @@ double dfacc;
 					/* Read R[roff] at its real width. */
 					switch (rbytes) {
 						case 1:
-							gacc2 = (long)(signed char)rbase.cp[roff];
+							gacc2 = (int64_t)(signed char)rbase.cp[roff];
 							break;
 						case 2:
-							gacc2 = (long)rbase.sp[roff];
+							gacc2 = (int64_t)rbase.sp[roff];
 							break;
 						case 4:
-							gacc2 = (long)rbase.lp[roff];
+							gacc2 = (int64_t)rbase.lp[roff];
 							break;
 						case FLOATSIZE:
 							gdacc2 = rbase.dp[roff];
@@ -336,32 +358,62 @@ double dfacc;
 						&gacc, &gacc2, &gdacc, &gdacc2);
 					if (err) return(err);
 
+					/* g's true result: the float branch leaves it in
+					   gdacc, the integer branch in gacc (int64, so a
+					   product of two int32s is still exact). */
+					gd = (csize == FLOATSIZE) ? gdacc : (double)gacc;
+
 					if (k == n - 1L) {
 						/* first (highest-index) pair -- seed, no
 						   combine yet, same "don't operate first
 						   time" structure scanred uses. */
-						facc = (int32_t)gacc;
-						dfacc = gdacc;
+						if (fdt != FLOATSIZE && fabs(gd) > 2147483647.0)
+							fdt = FLOATSIZE;
+						facc = (fdt == FLOATSIZE) ? 0 : (int32_t)gacc;
+						dfacc = gd;
 					} else {
-						err = reduce_combine(op1, -1, (UCHAR)gbytes,
-							&facc, (int32_t)gacc, &dfacc, gdacc);
+						/* Leave the integer path before its int32
+						   arithmetic could overflow (that would be
+						   undefined, not just wrong). The test bounds
+						   both a sum/difference and a product, so it
+						   also trips for ⌈/⌊/comparisons on big values
+						   -- harmless: the float path is exact for
+						   integers this size. */
+						if (fdt != FLOATSIZE
+						 && (fabs(dfacc) + fabs(gd) > 2147483647.0
+						  || fabs(dfacc) * fabs(gd) > 2147483647.0))
+							fdt = FLOATSIZE;
+						err = reduce_combine(op1, -1, (UCHAR)fdt,
+							&facc, (fdt == FLOATSIZE) ? 0 : (int32_t)gacc,
+							&dfacc, gd);
 						if (err) return(err);
 					}
 				}
 			}
 
-			/* Write facc/dfacc out at te's *current* width, growing
-			   via upsize() on overflow -- same bounds-check style as
-			   scanred's/OP_AB's write-out switch. Only reachable when
-			   op1 >= OP_LOGIC: if op1 < OP_LOGIC, vt was pinned to
-			   BCONST_CODE back in 5a and reduce_combine's comparison
-			   ops always leave facc as clean 0/1, so b == 1 and the
-			   bounds check below is never true -- intentional, not
-			   an oversight. If gbytes == FLOATSIZE, b stays
-			   FLOATSIZE forever (case FLOATSIZE below never upsizes)
-			   for the same reason scanred's own FLOATSIZE case
-			   doesn't. */
+			/* Write out at te's *current* width. For any integer
+			   width, the value is taken from dfacc (V73): it is the
+			   only accumulator that's always right -- after a switch
+			   to the float fold, and when f is a comparison folding a
+			   float g into a 1-byte result (before V73, 1.0 0 ∨.× 1 0
+			   wrote the integer accumulator, never updated past the
+			   first pair, and gave 0). A value outside int32 promotes
+			   te to float through upsizef(), as scanred's case 4 does;
+			   otherwise cases 1/2 grow through upsize() as before. If
+			   te is already FLOATSIZE it stays so. */
 			b = te->ve_vtype & BYTES_MASK;
+			if (b != FLOATSIZE && (dfacc > 2147483647.0 || dfacc < -2147483648.0)) {
+				if (!upsizef(te, facc, outidx, dfacc)) return(SET_ERR(ERR_WSFULL));
+				re = WSVAL_PTR(*VRIGHT);
+				le = WSVAL_PTR(*VLEFT);
+				te = WSVAL_PTR(*VTEMP);
+				lbase.cp = DATA_AD(le);
+				rbase.cp = DATA_AD(re);
+				tbase.cp = DATA_AD(te);
+				b = te->ve_vtype & BYTES_MASK;
+			} else if (b != FLOATSIZE) {
+				facc = (int32_t)dfacc;
+			}
 			switch (b) {
 				case 1:
 					if (facc > 127L || facc < -128L) {
@@ -411,8 +463,8 @@ double dfacc;
 					}
 					break;
 				case 4:
-					/* doesn't auto-promote to FLOAT -- same as
-					   scanred's own case 4 (see its comment). */
+					/* in range -- out-of-range values were promoted
+					   to float above */
 					tbase.lp[outidx] = facc;
 					break;
 				case FLOATSIZE:
