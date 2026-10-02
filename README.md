@@ -43,6 +43,7 @@ Windows from the same source.
 - **`apl_cli`**, a command-line version of the interpreter that reads and
   writes UTF-8, used for the regression tests.
 
+The list of primitives supported by RetroAPL is here: [`aplhome/resources/primitive_help.md`](aplhome/resources/primitive_help.md)
 The full list of system commands and quad functions, with what each one
 does, is in
 [`aplhome/resources/system_command_help.md`](aplhome/resources/system_command_help.md)
