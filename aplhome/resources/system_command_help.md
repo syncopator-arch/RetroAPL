@@ -168,6 +168,19 @@ containing `/` is used as a file path instead. Short form `)LI`.
 Lists the function source files in `$APLHOME/fns/`, optionally only
 those whose names match `pattern`.
 
+`)FSEARCH text`
+
+Lists every line of the function source files in `$APLHOME/fns/` that
+contains `text`, as `NAME[n]` followed by the line, then a count. Line
+numbers are the ones `)LIST` shows, header first as line 0. Comments
+and quoted strings are searched too. `text` is everything after the
+command, spaces included, and is matched glyph for glyph as typed, with
+no wildcards: `⍞` and `$` are different, as are `¯` and `-`. Upper and
+lower case letters match each other. A quad name can be
+given in part: `)FSEARCH ⎕I` finds `⎕IO` and `⎕INTDIV`, and
+`)FSEARCH ⎕IO 0` finds just that use. The files are searched, not the
+functions in the active workspace. Typed in full; no short form.
+
 `)DROP fname`
 
 Deletes the function source file `$APLHOME/fns/fname.fn` and reports
@@ -209,9 +222,10 @@ Setting it displays the previous value; widths below 20 are raised to
 
 Displays or sets print precision (the same setting as `⎕DIG`). Setting
 it displays the previous value; `n` is limited to `¯17…17`. Positive
-means exactly that many decimal places, trailing zeros kept; negative
-means up to that many decimal places, trailing zeros trimmed; `0` is
-valid either way. Saved with the workspace. Short form `)DIG`.
+means up to that many decimal places, trailing zeros trimmed; negative
+means exactly that many decimal places, trailing zeros kept (`¯2` for
+dollars and cents); `0` is valid either way. Saved with the
+workspace. Short form `)DIG`.
 
 `)INTDIV`
 

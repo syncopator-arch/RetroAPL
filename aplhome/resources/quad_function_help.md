@@ -8,12 +8,58 @@ otherwise.
 
 ---
 
+## Settable functions: `⎕IO←n` and `⎕IO n`
+
+`⎕INTDIV`, `⎕RL`, `⎕WI`, `⎕IO` and `⎕DIG` report a setting when used
+alone and change it when given a value. The value can be given two
+ways:
+
+- `⎕IO←0`, the assignment form, as for an APL system variable.
+  Everything to the right of `←` is the value, as with any assignment,
+  and nothing is displayed.
+- `⎕IO 0`, the original form. The prior value is displayed unless the
+  result is assigned or used.
+
+Both forms return the *prior* value, so `OLD←⎕IO←0` saves the old
+setting for restoring later. This differs from APL's system variables,
+where `X←⎕IO←0` gives `X` the new value, `0`.
+
+With the original form, whether `⎕IO` has an argument depends on what
+follows it. A value, or a function that has a monadic form, gives it
+one (`⎕IO ⍴X` sets `⎕IO` to `⍴X`). A function with only a dyadic form
+doesn't (`⎕IO+1` adds 1 to `⎕IO`). The assignment form leaves nothing
+to work out.
+
+The `-q` startup option picks which forms are accepted (`aplterm -q
+new`, `apl_cli -q new`):
+
+- `both` (the default): both forms.
+- `warn`: both forms, and `)ENTER` prints a note for each function
+  line that uses the original form, such as `old form ⎕IO X: FN[3]`.
+  Use it to find the lines to convert.
+- `new`: the assignment form only. Without `←`, `⎕IO` takes no
+  argument and reads like a variable: `⎕IO ⍴X` is dyadic `⍴`, and
+  `⎕IO 0`, `⎕IO X` and `⎕IO ¯1` are Syntax Errors. A function that
+  uses the original form gives a Syntax Error on that line when
+  `)ENTER`ed. `⎕IO-1` and `⎕IO - 1` are subtraction.
+
+The option affects only code compiled in that session: typed lines,
+`)ENTER`, `⍎` and `⎕` input. Functions already in a saved workspace
+keep working in every mode.
+
+`⎕WSIZE wnum` and `⎕WNUMS 'pattern'` keep the original form in every
+mode. Their argument chooses what to report rather than setting
+anything, so there's no `⎕WSIZE←` or `⎕WNUMS←` form.
+
+---
+
 ## System Functions
 
 `⎕TS`
 
 Returns the current timestamp as 7 numbers: year, month, day, hour,
-minute, second, and a 7th field believed to be hundredths of a second.
+minute, second, and a 7th field reserved for fractions of a second (ms)
+but may not be implemented.
 
 `⎕DL n`
 
@@ -23,7 +69,7 @@ precision matters.
 
 `⎕INTDIV`
 
-`⎕INTDIV n`
+`⎕INTDIV←n` or `⎕INTDIV n`
 
 Gets or sets whether dyadic `÷` does integer division (same setting
 `)INTDIV` controls). `1` means integer division: when both arguments
@@ -46,15 +92,14 @@ Returns the newline character as a 1-element character value.
 
 `⎕RL`
 
-`⎕RL n`
+`⎕RL←n` or `⎕RL n`
 
 Gets or sets the random link, the state of the generator behind `?`.
 Setting returns the *prior* value. Setting the same `n` repeats the same
 sequence of `?` results, on any platform; `S←⎕RL` saves the current
-point, and `⎕RL S` later carries on from it. `n` is `1`–`2147483646`,
+point, and `⎕RL←S` later carries on from it. `n` is `1`–`2147483646`,
 or `0` to go back to unpredictable results; anything else is
-`Domain Error`. Not saved with the workspace. Same compiler caveat as
-`⎕WNUMS` applies to `n`.
+`Domain Error`. Not saved with the workspace.
 
 `⎕WA`
 
@@ -62,12 +107,10 @@ Returns available workspace ("watermark") in bytes.
 
 `⎕WI`
 
-`⎕WI n`
+`⎕WI←n` or `⎕WI n`
 
 Gets or sets the output line width. Setting returns the *prior* value.
-A width below 20 is silently clamped up rather than rejected. Same
-compiler caveat as `⎕WNUMS` applies to `n` — pass it as a literal or a
-named variable, not an unresolved expression.
+A width below 20 is silently clamped up rather than rejected.
 
 `⎕VT value`
 
@@ -86,11 +129,11 @@ matrix, one row per argument, space-padded to the widest.
 
 `⎕IO`
 
-`⎕IO n`
+`⎕IO←n` or `⎕IO n`
 
 Gets or sets the index origin (same setting `)ORIGIN` controls).
 Setting returns the *prior* value; `Domain Error` if set to anything
-other than `0` or `1`. Same compiler caveat as `⎕WNUMS` applies to `n`.
+other than `0` or `1`.
 
 `⎕ENV name`
 
@@ -140,7 +183,7 @@ report current dir" without checking.
 
 `⎕LC`
 
-Returns the current executing line number or zero if not in a function.
+Returns the current function's line count.
 
 `⎕WSID`
 
@@ -168,12 +211,13 @@ Lowercases a character string; mirror of `⎕UCASE`.
 
 `⎕DIG`
 
-`⎕DIG n`
+`⎕DIG←n` or `⎕DIG n`
 
 Gets or sets `)DIGITS` print precision. Setting returns the *prior*
-value; `n` is clamped to `¯17…17`. Positive means fixed decimal places
-(trailing zeros kept); negative means up to that many decimal places
-(trailing zeros trimmed); `0` is valid either way.
+value; `n` is clamped to `¯17…17`. Positive means up to that many
+decimal places (trailing zeros trimmed); negative means exactly that
+many (trailing zeros kept, e.g. `¯2` for dollars and cents); `0` is
+valid either way.
 
 ---
 
@@ -362,11 +406,11 @@ trailing `*` is a prefix match against everything before it, no
 trailing `*` is an exact match. No interior wildcards, no escaping.
 Empty vector, not an error, if nothing matches.
 
-Pass `pattern` as a literal or a named variable (`⎕WNUMS 'palette*'`,
-`⎕WNUMS pat`) — not as the unresolved result of an operator expression
-(`⎕WNUMS ,'palette*'`). The latter currently compiles as if no argument
-were given at all. Same caveat applies to `⎕WSIZE`'s `wnum` argument
-below, and to `⎕WI`/`⎕IO`/`⎕DIG` in System Functions.
+Whether `⎕WNUMS` has an argument depends on what follows it: a value,
+or a function with a monadic form (`⎕WNUMS ,'palette*'`), gives it one;
+a function with only a dyadic form (`⎕WNUMS+1`) doesn't. The same goes
+for `⎕WSIZE`'s `wnum` below. Neither has a `←` form (see Settable
+functions at the top).
 
 `wnum ⎕WCLEAR color`
 
@@ -684,9 +728,9 @@ W←⎕WNUMS 'pal*'
 (1=⎕WVIS W)/W
 ```
 
-Use `(0<⎕WVIS W)/W` to include minimized windows too. Assign
-`⎕WNUMS`'s result to a variable first rather than using it inside a
-larger expression — see the caveat under `⎕WNUMS` above.
+Use `(0<⎕WVIS W)/W` to include minimized windows too. Keeping the list
+in a variable means `⎕WNUMS` runs once, so both uses see the same
+handles.
 
 `dst ⎕WBLIT src`
 

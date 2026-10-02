@@ -450,6 +450,10 @@ extern "C" {
     int  dll_startup(int debug, int xflag, char *wsname, int argc, char **argv);
     int  exec_apl_line(unsigned char *linebuf);
     void dll_cleanup(void);
+    /* quad-function syntax mode (parse.c; QSYN_BOTH 0, QSYN_WARN 1,
+       QSYN_NEW 2 in parse.h), set from -q in main() before the engine
+       thread starts */
+    extern int quad_syntax;
 }
 
 class EngineThread : public QThread
@@ -809,10 +813,12 @@ private:
  * content file name (resolved under resourcesDirectory()) are
  * constructor arguments, and APLMainWindow keeps one lazily-created
  * instance per document -- currently the quad function reference
- * (quad_function_help.md) and the system command reference
- * (system_command_help.md). Both documents share the same authoring
- * format: entry syntax lines are paragraphs made only of code spans,
- * categories are `##` headings.
+ * (quad_function_help.md), the system command reference
+ * (system_command_help.md) and the primitive function reference
+ * (primitive_help.md). All three share the same authoring format:
+ * entry syntax lines are paragraphs made only of code spans,
+ * categories are `##` headings. The primitive reference also has a
+ * Markdown table, which styleAndIndexContent() leaves alone.
  */
 class APLHelpReferenceWindow : public QDialog
 {
@@ -1053,6 +1059,20 @@ private:
      * identical (same 62 rows, same positions) under the old `⎕`-only
      * pattern and this one. Argument words after a command, like the ON
      * in `)INTDIV ON`, stay plain weight -- they aren't preceded by `)`.
+     *
+     * The primitive reference (primitive_help.md) needed two additions.
+     * Its syntax lines (`L⍴R`, `⍳R`) have no `⎕`/`)` name, so when the
+     * pattern finds none, the index row is labelled with the whole
+     * line instead; the quad and command references always have a
+     * name, so this never applies to them. And it opens with a
+     * Markdown table: Qt's importer makes each table cell a block of
+     * its own, and a cell holding only a code span (`+`) passes the
+     * syntax-line test, so cells got the entry margin (spreading the
+     * rows) and would have got index rows. Blocks inside a table are
+     * now skipped. Both checked in the PySide6 harness: the quad and
+     * command references' indexes are identical (same rows, same
+     * positions) and their margins unchanged; the primitive table gets
+     * no margins or index rows.
      */
     void styleAndIndexContent()
     {
@@ -1071,6 +1091,13 @@ private:
                 catItem->setData(Qt::UserRole, block.position());
                 m_index->addItem(catItem);
 
+                prevWasSyntaxLine = false;
+                continue;
+            }
+
+            /* Table cells are blocks too; leave the table as Markdown
+             * made it (see the comment above). */
+            if (QTextCursor(block).currentTable()) {
                 prevWasSyntaxLine = false;
                 continue;
             }
@@ -1121,6 +1148,9 @@ private:
                 boldFmt.setFontFixedPitch(true);
                 nameCursor.mergeCharFormat(boldFmt);
             }
+            /* No ⎕/) name (primitive reference): index by the line */
+            if (firstName.isEmpty())
+                firstName = text.trimmed();
 
             /* Extra space above this entry's first line only; sidebar
              * entry only for the first line too -- the second half of
@@ -1442,6 +1472,12 @@ private slots:
     {
         showHelpWindow(m_helpWindow, "APL Quad Function Reference",
                        "quad_function_help.md");
+    }
+
+    void openPrimitiveReference()
+    {
+        showHelpWindow(m_primHelpWindow, "APL Primitive Function Reference",
+                       "primitive_help.md");
     }
 
     void aboutDialog()
@@ -2169,6 +2205,10 @@ private:
         connect(cmdRefAction, &QAction::triggered, this, &APLMainWindow::openSystemCommandReference);
         helpMenu->addAction(cmdRefAction);
 
+        QAction *primRefAction = new QAction("&Primitive Function Reference", this);
+        connect(primRefAction, &QAction::triggered, this, &APLMainWindow::openPrimitiveReference);
+        helpMenu->addAction(primRefAction);
+
         helpMenu->addSeparator();
 
         QAction *aboutAction = new QAction("&About", this);
@@ -2206,6 +2246,7 @@ private:
      * APLHelpReferenceWindow's comment and showHelpWindow(). */
     APLHelpReferenceWindow *m_helpWindow    = nullptr;   /* quad functions  */
     APLHelpReferenceWindow *m_cmdHelpWindow = nullptr;   /* system commands */
+    APLHelpReferenceWindow *m_primHelpWindow = nullptr;  /* primitives      */
 
     /* Current persistent settings */
     APLSettingsDialog::Settings m_settings;
@@ -2256,6 +2297,13 @@ int main(int argc, char *argv[])
     QCommandLineOption testOption("test", "Run in test mode (engine not started)");
     parser.addOption(testOption);
 
+    QCommandLineOption quadOption(QStringList() << "q" << "quad-syntax",
+        "Quad-function syntax: both (default; \u2395IO 0 and \u2395IO\u21900), "
+        "warn (both, and )ENTER notes each old-form use), "
+        "new (only \u2395IO\u21900).",
+        "mode", "both");
+    parser.addOption(quadOption);
+
     parser.addPositionalArgument("workspace",
         "Workspace to load at startup (default: mpl)", "[workspace]");
     parser.addPositionalArgument("args",
@@ -2265,6 +2313,18 @@ int main(int argc, char *argv[])
 
     bool enableLogging = parser.isSet(logOption);
     bool testMode      = parser.isSet(testOption);
+
+    {
+        const QString q = parser.value(quadOption);
+        if (q == "both")      quad_syntax = 0;  /* QSYN_BOTH */
+        else if (q == "warn") quad_syntax = 1;  /* QSYN_WARN */
+        else if (q == "new")  quad_syntax = 2;  /* QSYN_NEW */
+        else {
+            qWarning("aplterm: -q must be both, warn or new, not '%s'",
+                     q.toLocal8Bit().constData());
+            parser.showHelp(2);
+        }
+    }
 
     QStringList pos = parser.positionalArguments();
     g_startupWsName = (pos.isEmpty() ? QStringLiteral("mpl") : pos.takeFirst()).toLocal8Bit();
