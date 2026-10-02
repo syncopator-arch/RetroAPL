@@ -42,6 +42,9 @@ UCHAR *types;
 			re = WSVAL_PTR(*VRIGHT);
 			if (!re || !le) return(SET_ERR(ERR_VALUE));
 			break;
+		case MONAD_OPT_NOASSIGN:	/* MONAD_OPT with no ⎕F←X form
+					   (V77); only parse.c treats it
+					   differently */
 		case MONAD_OPT:
 			VRIGHT = get_vparm(0);
 			if (VRIGHT) {

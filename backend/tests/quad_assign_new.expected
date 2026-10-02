@@ -1,0 +1,62 @@
+Clear WS
+     ⎕IO←0
+     ⎕IO
+0
+     ⎕IO←1
+     ⎕IO 0
+     ^
+Syntax Error
+     X←0
+     ⎕IO X
+     ^
+Syntax Error
+     ⎕IO (0)
+     ^
+Syntax Error
+     ⎕IO 'A'
+     ^
+Syntax Error
+     ⎕IO ⎕IO
+     ^
+Syntax Error
+     ⎕IO
+1
+     ⎕IO ⍴4 7 9
+4
+     ⎕IO ,1
+1 1
+     ⎕IO+1
+2
+     ⎕DIG ¯2
+     ^
+Syntax Error
+     ⎕DIG-2
+8
+     ⎕DIG - 2
+8
+     ⎕DIG
+10
+     ⎕IO←
+     ^
+Syntax Error
+     ⎕IO←⍴,0
+     ⎕IO
+1
+     ⎕IO←1
+     )ENTER QAOLD
+
+[1]  ⎕IO 0
+     ^
+Syntax Error
+
+     )FNS
+
+     )ENTER QANEW
+     QANEW
+     ⎕IO
+1
+     ⎕DIG
+10
+     ⎕WI
+80
+     

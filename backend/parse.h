@@ -175,6 +175,15 @@ typedef short (*PTF)();
 #define FUN_MASK 0xf		/* mask value from fun op */
 #define VAR_CODE 0xe0		/* variable (4 bits avail) */
 #define SYS_CODE 0xd0		/* system fn/variable */
+#define SYS_ASSIGN_BIT 0x01	/* in a compiled SYS_CODE byte (0xd1): the call
+				   was written in the assignment form, ⎕IO←0.
+				   parse.c's pass 2 emits it; exec.c's
+				   lexec_run() then sets LAST_OPERATOR to
+				   OP_ASS so end_exec() doesn't display the
+				   result, as for any assignment. Test SYS_CODE
+				   bytes with (c & 0xf0) == SYS_CODE, never
+				   c == SYS_CODE. Added V77; see INVARIANTS.md
+				   (MONAD_OPT section). */
 #define CONST_CODE 0xa0		/* all consts are this when masked */
 /* low nibble of all constants indicates number of bytes used */
 #define BYTES_MASK 0xf
@@ -443,6 +452,24 @@ typedef short (*PTF)();
 #define MONAD 1
 #define DYAD 2
 #define MONAD_OPT 3 /* accepts 0 or 1 right operand */
+#define MONAD_OPT_NOASSIGN 4	/* MONAD_OPT whose argument is not a setting
+				   (it picks what to report, e.g. ⎕WSIZE's window,
+				   ⎕WNUMS's tag pattern), so it has no ⎕F←X form and
+				   keeps the old ⎕F X form and its arity guessing
+				   under every -q mode. Same as MONAD_OPT everywhere
+				   else: parse.c and sys.c's do_sys() treat it so.
+				   The type exists only in the *_ftypes[] tables,
+				   never in compiled code (V77). */
+
+/* Quad-function syntax mode (quad_syntax, parse.c), set from the front
+   end's -q option before dll_startup(). Applies to MONAD_OPT functions
+   only; ⎕F←X is accepted in every mode. */
+#define QSYN_BOTH 0	/* ⎕F X and ⎕F←X both accepted (default) */
+#define QSYN_WARN 1	/* both accepted; )ENTER notes each old-form use */
+#define QSYN_NEW  2	/* only ⎕F←X: without ←, ⎕F takes no argument */
+extern int quad_syntax;
+extern short qsyn_fn, qsyn_line;	/* )ENTER's function symbol and line for
+					   warn notes; qsyn_fn -1 = no notes */
 
 /* parameter checking macros */
 /* NOTE: ve_rho orders dimensions from least- to most-significant --

@@ -16,13 +16,17 @@
 	-> quad substitution qt_puts() applies.
 
 	Usage:
-	    apl_cli [-t] [-w wsname] [args...]
+	    apl_cli [-t] [-w wsname] [-q both|warn|new] [args...]
 
 	    -t         transcript mode: echo each input line after the
 	               five-space prompt, so stdout reads like a GUI session.
 	               This is what the regression tests use.
 	    -w wsname  workspace name passed to dll_startup(); default "",
 	               the same as the GUI with no workspace argument.
+	    -q mode    quad-function syntax (quad_syntax, parse.c), same as
+	               the GUI's -q: both (default) accepts ⎕IO 0 and
+	               ⎕IO←0; warn also has )ENTER note each old-form use;
+	               new accepts only ⎕IO←0.
 	    args       passed through to the backend for quad-ARGS.
 
 	Without -t, prompts are shown only when stdin is a terminal, so
@@ -49,6 +53,7 @@ extern int  dll_startup(int debug, int xflag, char *wsname, int argc, char **arg
 extern int  exec_apl_line(UCHAR *linebuf);
 extern void dll_cleanup(void);
 extern int  crash_log_pending(char *path, size_t pathsz, char *summary, size_t sumsz);	/* crashlog.c */
+/* quad_syntax, QSYN_*: declared in parse.h, defined in parse.c */
 
 #define PROMPT		"     "		/* matches the GUI's INDENT */
 #define RAW_SIZE	(LINE_SIZE * 4)	/* UTF-8 is up to 4 bytes per character */
@@ -253,7 +258,7 @@ static const PlatformFuncs cli_funcs = {
 static void
 usage(const char *prog)
 {
-	fprintf(stderr, "Usage: %s [-t] [-w wsname] [args...]\n", prog);
+	fprintf(stderr, "Usage: %s [-t] [-w wsname] [-q both|warn|new] [args...]\n", prog);
 	exit(2);
 }
 
@@ -297,6 +302,12 @@ main(int argc, char **argv)
 			transcript = 1;
 		} else if (strcmp(argv[i], "-w") == 0 && i + 1 < argc) {
 			wsname = argv[++i];
+		} else if (strcmp(argv[i], "-q") == 0 && i + 1 < argc) {
+			i++;
+			if (strcmp(argv[i], "both") == 0) quad_syntax = QSYN_BOTH;
+			else if (strcmp(argv[i], "warn") == 0) quad_syntax = QSYN_WARN;
+			else if (strcmp(argv[i], "new") == 0) quad_syntax = QSYN_NEW;
+			else usage(argv[0]);
 		} else if (strcmp(argv[i], "--") == 0) {
 			i++;
 			break;

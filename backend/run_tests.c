@@ -15,6 +15,11 @@
 	                   recorded: each input line after the five-space
 	                   prompt, followed by its output, as in a GUI session
 
+	  and optionally
+	    NAME.opts      extra apl_cli options for this test, on one line,
+	                   separated by spaces (e.g. "-q new"); they go before
+	                   -t. Up to MAX_OPTS words, no quoting. (V77)
+
 	  With no names, runs every *.apl in the test directory, in name
 	  order. A name may be given bare (basic) or as a path (tests/basic.apl).
 
@@ -80,6 +85,35 @@
 static const char *apl_cli;
 static const char *test_dir;
 static long test_timeout;
+
+/* the current test's NAME.opts, split into words (read_opts()) */
+#define MAX_OPTS 8
+#define OPTS_SZ  256
+static char opts_buf[OPTS_SZ];
+static char *opts[MAX_OPTS];
+static int nopts;
+
+/* read NAME.opts, if there is one, into opts[]/nopts; no file = none */
+static void
+read_opts(const char *path)
+{
+	FILE *f;
+	char *p;
+
+	nopts = 0;
+	opts_buf[0] = '\0';
+	f = fopen(path, "r");
+	if (!f) return;
+	if (!fgets(opts_buf, sizeof(opts_buf), f)) opts_buf[0] = '\0';
+	fclose(f);
+	for (p = strtok(opts_buf, " \t\r\n"); p; p = strtok(NULL, " \t\r\n")) {
+		if (nopts == MAX_OPTS) {
+			fprintf(stderr, "run_tests: more than %d words in %s\n", MAX_OPTS, path);
+			exit(1);
+		}
+		opts[nopts++] = p;
+	}
+}
 
 /* build a path into out (PATHSZ bytes); a path that doesn't fit is a
    hard error rather than a silently truncated, different file */
@@ -257,7 +291,7 @@ set_env(const char *name, const char *val)
 #endif
 }
 
-/* Run apl_cli -t with stdin from inpath and stdout+stderr to outpath,
+/* Run apl_cli [opts] -t with stdin from inpath and stdout+stderr to outpath,
    killing it after test_timeout seconds (0 = no limit). Returns the
    exit status, -1 if it couldn't be started; *timed_out is set to 1 if
    it was killed. */
@@ -274,7 +308,8 @@ run_child(const char *inpath, const char *outpath, int *timed_out)
 		STARTUPINFOA si;
 		PROCESS_INFORMATION pi;
 		HANDLE hin, hout;
-		char cmd[PATHSZ + 16];
+		char cmd[PATHSZ + OPTS_SZ + 2 * MAX_OPTS + 16];
+		int k;
 		DWORD wait, code;
 
 		sa.nLength = sizeof(sa);
@@ -299,12 +334,17 @@ run_child(const char *inpath, const char *outpath, int *timed_out)
 		/* CreateProcess wants a writable command line; backslashes in
 		   the program path, since "./apl_cli.exe" isn't reliably
 		   understood with forward slashes */
-		snprintf(cmd, sizeof(cmd), "\"%s\" -t", apl_cli);
+		snprintf(cmd, sizeof(cmd), "\"%s\"", apl_cli);
 		{
 			char *c;
 			for (c = cmd; *c && *c != ' '; c++)
 				if (*c == '/') *c = '\\';
 		}
+		for (k = 0; k < nopts; k++) {
+			strcat(cmd, " ");
+			strcat(cmd, opts[k]);
+		}
+		strcat(cmd, " -t");
 		if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL,
 				&si, &pi)) {
 			CloseHandle(hin);
@@ -343,7 +383,16 @@ run_child(const char *inpath, const char *outpath, int *timed_out)
 			fd = open(outpath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 			if (fd < 0 || dup2(fd, 1) < 0 || dup2(fd, 2) < 0) _exit(127);
 			close(fd);
-			execl(apl_cli, apl_cli, "-t", (char *)NULL);
+			{
+				char *av[MAX_OPTS + 3];
+				int k, n = 0;
+
+				av[n++] = (char *)apl_cli;
+				for (k = 0; k < nopts; k++) av[n++] = opts[k];
+				av[n++] = "-t";
+				av[n] = NULL;
+				execv(apl_cli, av);
+			}
 			_exit(127);
 		}
 
@@ -626,6 +675,8 @@ main(int argc, char **argv)
 		mkpath(expected, "%s/%s.expected", test_dir, name);
 		mkpath(actual, "%s/%s.out", test_dir, name);
 		mkpath(raw, "%s/%s.out.raw", test_dir, name);
+		mkpath(src, "%s/%s.opts", test_dir, name);
+		read_opts(src);
 
 		if (!is_file(input)) {
 			printf("MISSING  %s  (%s not found)\n", name, input);

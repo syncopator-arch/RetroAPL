@@ -115,6 +115,10 @@ UCHAR cmd_table[] = {
 				   earlier but neither is a prefix of STEP */
 	'I','M','A','G',0,	/* 45 - )imag -- so )IMAGE and )IMAGES work
 				   too; INTDIV is the only other I entry */
+	'F','S','E','A','R','C','H',0,	/* 46 - )fsearch (V77) -- no entry
+				   above is a prefix of it (FNSL, FNS and
+				   FONT part at the second letter), and it
+				   is typed in full: no short form */
 	'@',0,	/* end of table -- do_command() and the command list stop here */
 	0	/* empty name: table_flip() (set_case) stops here; without it,
 		   it read, and could case-flip, the byte past the table */
@@ -1437,7 +1441,13 @@ NL();
 					if (LINEA[s] == ';') loc++;
 					s++;
 				}
-				if (on_stack(ms)) return(SET_ERR(ERR_SI));	/* si damage */
+				if (on_stack(ms)) 	/* si damage */
+				{
+					fclose(ifp);
+					free(tp);
+					free(ltable);
+					return(SET_ERR(ERR_SI));
+				}
 				sym_delete(ms);		/* rid any old fn or var */
 				/* NOTE!!! stuff can move here, but better not after that */
 				while (GarbCollect());		/* freeze stuff */
@@ -1447,7 +1457,13 @@ NL();
 				loc--;
 				if (loc > 0) l += loc * 2;
 				f0e = (struct Func0Ent *)MakeEnt(l,ME_FUNC0,fep);
-				if (!f0e) return(SET_ERR(ERR_WSFULL));
+				if (!f0e) 
+				{
+					fclose(ifp);
+					free(tp);
+					free(ltable);
+					return(SET_ERR(ERR_WSFULL));
+				}
 				f0e->f0e_result = zs;
 				f0e->f0e_left = ls;
 				f0e->f0e_right = rs;
@@ -1471,6 +1487,7 @@ NL();
 				if (i < ct) 	/* leftover junk after the last local -- e.g. ';V,M' */
 				{
 					sym_delete(ms);
+					fclose(ifp);
 					free(tp);
 					free(ltable);
 					return(SET_ERR(ERR_SYNTAX));
@@ -1562,7 +1579,12 @@ NL();
 					}
 					NL();
 				}
+				/* for -q warn's notes (parse.c qsyn_note()):
+				   which function and line is being compiled */
+				qsyn_fn = ms;
+				qsyn_line = line;
 				fe = MakeFNEnt();  /* compiles LINEB into ws entry */
+				qsyn_fn = -1;
 				if (!fe) 
 				{
 					if (!ERROR_CODE) continue;
@@ -1579,7 +1601,14 @@ NL();
 						vout((UCHAR *)tp,0,strlen(tp));
 						FE_TRANS_FLAG--;
 						CNL();
-						sym_delete(i);	/* delete */
+						/* delete the half-built function. Was
+						   sym_delete(i): i is a leftover (the
+						   header-parse offset, or a label's line
+						   number), so this deleted an unrelated
+						   symbol and left the function defined
+						   (V77; tests/enter_syntax_error). */
+						sym_delete(ms);
+						fclose(ifp);
 						free(tp);
 						free(ltable);
 						return(ERROR_CODE);
@@ -1607,6 +1636,205 @@ enterr:;
 	free(tp);
 	free(ltable);
 	return(i);
+}
+
+/* ============================================================
+   do_fsearch() -- )FSEARCH text (V77): every line of the function
+   source files in $APLHOME/fns/ that contains text, as
+
+       NAME[n]  line
+
+   NAME is the file name without .fn, in upper case (as )FNSL shows
+   it); n counts file lines as )ENTER and )LIST do, the header line
+   being [0]; the line is displayed from the file as )ENTER's error
+   display does. Files in name order; then a count.
+
+   Matching is on font-index bytes -- the glyphs as typed and as
+   displayed -- not on the translated (internal) form, because
+   translation isn't one-to-one: itrans[] maps '$' and ⍞ both to '$',
+   '-' and ¯ both to '-', and more. So:
+   - each file line goes through orig_trans[] only (.fn byte to font
+     index; ktrans[] is built from it and nothing installs another
+     table), the same bytes )ENTER's error display shows;
+   - the typed text is taken untranslated from last_input_line()
+     (platform_translate.c: the last line alt_input_proc() was given),
+     after the ')', the command word and spaces. To be sure that saved
+     line is this command, its text is translated (text_translate())
+     and must equal arg, the translated text do_command() passed; if
+     not, Command Error rather than searching for the wrong thing.
+   Comments, strings and partial quad names (⎕I) need no special
+   handling. ASCII letters match either case. No wildcards. The search
+   can be interrupted between lines.
+   ============================================================ */
+extern const UCHAR *last_input_line(void);	/* platform_translate.c */
+extern int text_translate(UCHAR *cp, UCHAR *outs);
+
+static int
+fs_fold(c)
+int c;
+{
+	if (c >= 'A' && c <= 'Z') c += 32;
+	return(c);
+}
+
+/* 1 if pat (non-empty) occurs in hay, ASCII letters' case ignored */
+static int
+fs_contains(hay,pat)
+const UCHAR *hay,*pat;
+{
+const UCHAR *h,*p;
+
+	for (; *hay; hay++) {
+		for (h = hay, p = pat; *p && *h && fs_fold(*h) == fs_fold(*p); h++, p++)
+			;
+		if (!*p) return(1);
+	}
+	return(0);
+}
+
+static int
+fs_cmp(a,b)
+const void *a,*b;
+{
+	return(strcmp((const char *)a, (const char *)b));
+}
+
+short
+do_fsearch(arg)
+UCHAR *arg;
+{
+struct stat st;
+UCHAR pat[LINE_SIZE], chk[LINE_SIZE];
+const UCHAR *rp;
+UCHAR *cp, *raw, *work;
+char dirbuf[PATHBUF_SIZE], sdir[PATHBUF_SIZE], path[PATHBUF_SIZE], cb[64];
+char (*names)[64];
+char *entry;
+int plen, count, capacity, k, nl, fhit;
+long hits, files;
+short line, j;
+FILE *ifp;
+
+	/* the text as typed: the saved raw line past ")", the command
+	   word (letters) and the spaces around them */
+	rp = last_input_line();
+	while (*rp == ' ') rp++;
+	if (*rp) rp++;				/* the ')' */
+	while (*rp == ' ') rp++;
+	while ((*rp >= 'A' && *rp <= 'Z') || (*rp >= 'a' && *rp <= 'z')) rp++;
+	while (*rp == ' ') rp++;
+	plen = 0;
+	while (rp[plen] && rp[plen] != 10 && rp[plen] != 13 && plen < LINE_SIZE - 1) {
+		pat[plen] = rp[plen];
+		plen++;
+	}
+	while (plen > 0 && pat[plen-1] == ' ') plen--;
+	pat[plen] = '\0';
+	if (!plen || !arg || !*arg) return(SET_ERR(ERR_COMMAND));
+	/* is the saved line this command? */
+	work = (UCHAR *)malloc(LINE_SIZE * 2);
+	if (!work) return(SET_ERR(ERR_NOMEM));
+	strcpy((char *)chk, (char *)pat);
+	text_translate(chk, work);
+	k = strcmp((char *)work, (char *)arg);
+	free(work);
+	if (k) return(SET_ERR(ERR_COMMAND));
+
+	get_aplhome_dir(dirbuf, sizeof(dirbuf), "fns");	/* ends in a separator */
+	/* stat() without the trailing separator: Windows's stat() fails
+	   on "dir\\" (img_first_entry() strips it the same way) */
+	strcpy(sdir, dirbuf);
+	nl = (int)strlen(sdir);
+	if (nl > 1 && img_is_sep(sdir[nl-1]) && !(nl == 3 && sdir[1] == ':'))
+		sdir[nl-1] = '\0';
+	if (stat(sdir, &st) != 0 || !S_ISDIR(st.st_mode)) {
+		PRINT("Can't find: ");
+		PRINT(dirbuf);
+		NL();
+		return(0);
+	}
+
+	/* the .fn files, sorted */
+	count = 0;
+	capacity = 64;
+	names = (char (*)[64])malloc((size_t)capacity * sizeof(*names));
+	if (!names) return(SET_ERR(ERR_NOMEM));
+	for (entry = img_first_entry(dirbuf); entry; entry = get_next_dir()) {
+		char *nm = entry + 1;
+
+		if (entry[0] != 'F') continue;
+		nl = (int)strlen(nm);
+		if (nl < 4 || nl >= 64) continue;
+		if (nm[nl-3] != '.' || fs_fold(nm[nl-2]) != 'f' || fs_fold(nm[nl-1]) != 'n')
+			continue;
+		if (count >= capacity) {
+			char (*tmp)[64];
+			capacity *= 2;
+			tmp = (char (*)[64])realloc(names, (size_t)capacity * sizeof(*names));
+			if (!tmp) break;
+			names = tmp;
+		}
+		strcpy(names[count++], nm);
+	}
+	cleanup_dir();
+	qsort(names, (size_t)count, sizeof(*names), fs_cmp);
+
+	raw = (UCHAR *)malloc(LINE_SIZE);
+	if (!raw) {
+		free(names);
+		return(SET_ERR(ERR_NOMEM));
+	}
+
+	hits = files = 0;
+	for (k = 0; k < count && !ABORTSIG; k++) {
+		if (strlen(dirbuf) + strlen(names[k]) >= sizeof(path)) continue;
+		strcpy(path, dirbuf);
+		strcat(path, names[k]);
+		ifp = fopen(path, "r");
+		if (!ifp) continue;
+		line = 0;
+		fhit = 0;
+		while (!ABORTSIG && fgets((char *)raw, LINE_SIZE, ifp)) {
+			{	/* strip line ending, as do_enter() does */
+				size_t n = strlen((char *)raw);
+				while (n > 0 && (raw[n-1] == 10 || raw[n-1] == 13)) raw[--n] = '\0';
+			}
+			/* .fn bytes to font index: what's displayed, and what
+			   the same text typed would be */
+			for (cp = raw; *cp; cp++) *cp = orig_trans[*cp];
+			if (fs_contains(raw, pat)) {
+				/* NAME[n]  then the line, as )ENTER's error display */
+				nl = (int)strlen(names[k]) - 3;
+				for (j = 0; j < nl && j < (short)sizeof(cb) - 1; j++)
+					cb[j] = (char)filt_up((int)(UCHAR)names[k][j]);
+				cb[j] = '\0';
+				CPRINT(cb);
+				sprintf(cb, "[%d]  ", line);
+				CPRINT(cb);
+				FE_TRANS_FLAG++;
+				vout(raw, 0, strlen((char *)raw));
+				FE_TRANS_FLAG--;
+				CNL();
+				hits++;
+				fhit = 1;
+			}
+			line++;
+		}
+		fclose(ifp);
+		if (fhit) files++;
+	}
+	free(raw);
+	free(names);
+
+	if (ABORTSIG) return(SET_ERR(ERR_INTERRUPT));
+	if (!hits) CPRINT("Not found");
+	else {
+		sprintf(cb, "%ld line%s in %ld file%s", hits, hits == 1 ? "" : "s",
+			files, files == 1 ? "" : "s");
+		CPRINT(cb);
+	}
+	CNL();
+	return(0);
 }
 
 short
@@ -4014,6 +4242,8 @@ long l;
 			return(do_step());
 		case 45:	/* IMAG */
 			return(do_images(COMMANDP));
+		case 46:	/* FSEARCH */
+			return(do_fsearch(COMMANDP));
 	}
 	return(SET_ERR(ERR_COMMAND));
 }

@@ -1,0 +1,28 @@
+⎕IO←0
+⎕IO
+⎕IO←1
+⎕IO 0
+X←0
+⎕IO X
+⎕IO (0)
+⎕IO 'A'
+⎕IO ⎕IO
+⎕IO
+⎕IO ⍴4 7 9
+⎕IO ,1
+⎕IO+1
+⎕DIG ¯2
+⎕DIG-2
+⎕DIG - 2
+⎕DIG
+⎕IO←
+⎕IO←⍴,0
+⎕IO
+⎕IO←1
+)ENTER QAOLD
+)FNS
+)ENTER QANEW
+QANEW
+⎕IO
+⎕DIG
+⎕WI

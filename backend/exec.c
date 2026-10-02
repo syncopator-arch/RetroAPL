@@ -778,9 +778,10 @@ short i;
 				}
 				break;
 			case NFUN_CODE:	/* niladic */
-				if (c == SYS_CODE) {	/* masks to NFUN_CODE */
+				if ((c & 0xf0) == SYS_CODE) {	/* masks to NFUN_CODE; low bit
+							   is SYS_ASSIGN_BIT (V77) */
 					i = z;
-					PRINT("sys func: ");
+					PRINT((c & SYS_ASSIGN_BIT) ? "sys func (assign): " : "sys func: ");
 					sprintf(cb,"%d",i);
 					PRINT(cb);
 					break;
@@ -993,12 +994,23 @@ char cb[16];
 					}
 					break;
 				case NFUN_CODE:	/* niladic */
-					if (c == SYS_CODE) 	/* masks to NFUN_CODE */
+					if ((c & 0xf0) == SYS_CODE) 	/* masks to NFUN_CODE */
 					{
 						i = *IP++;
 						ILEN--;
 						ERROR_CODE = do_sys(i);
-						LAST_OPERATOR = -1;
+						/* SYS_ASSIGN_BIT (V77): written ⎕IO←0, so
+						   don't display the result, as for any
+						   assignment -- end_exec() skips display
+						   when LAST_OPERATOR is OP_ASS. Anything
+						   further left on the line that runs after
+						   this sets LAST_OPERATOR again, so
+						   2+⎕IO←0 still displays. Must be (c &
+						   0xf0), not c == SYS_CODE: 0xd1 also
+						   masks to NFUN_CODE, and falling into the
+						   FUN_CODE case below would call a user
+						   function by a garbage symbol number. */
+						LAST_OPERATOR = (c & SYS_ASSIGN_BIT) ? OP_ASS : -1;
 						break;
 					}
 					/* otherwise, process as FUN_CODE */

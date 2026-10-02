@@ -17,6 +17,7 @@
 	  2. Basic char-translation helpers
 	  3. alt_input_proc() -- live keyboard/overstrike translation
 	  4. file_translate() -- .fn file translation
+	  (also: last_input_line() and text_translate(), for )FSEARCH, V77)
 
 	Built and linked into both the Linux and Windows targets; nothing in
 	this file is platform-specific.
@@ -243,9 +244,32 @@ static void ensure_translate_init(void)
 
 static int input_translate(UCHAR *cp, UCHAR *outs);
 
+/*
+   The last line alt_input_proc() was given, untranslated (font-index
+   bytes), for )FSEARCH (commands.c do_fsearch(), V77). A command
+   reaches do_command() already translated, and translation isn't
+   one-to-one: itrans[] maps '$' and ⍞ both to '$', '-' and ¯ both to
+   '-', and a few more pairs, so the search needs the text as typed.
+*/
+static UCHAR last_input[LINE_SIZE];
+
+const UCHAR *last_input_line(void)
+{
+    return last_input;
+}
+
+/* input_translate() without the transcript recording, for checking
+   that last_input_line() really is the line being run (do_fsearch()) */
+int text_translate(UCHAR *cp, UCHAR *outs)
+{
+    return input_translate(cp, outs);
+}
+
 int alt_input_proc(UCHAR *cp, UCHAR *outs)
 {
     crash_record_input(cp);
+    strncpy((char *)last_input, (char *)cp, LINE_SIZE - 1);
+    last_input[LINE_SIZE - 1] = '\0';
     return input_translate(cp, outs);
 }
 

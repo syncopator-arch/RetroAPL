@@ -163,20 +163,25 @@ UCHAR graph_ftypes[] = {
 	MONAD,  /* 1  WCLOSE */
 	DYAD,	/* 2  PEN */
 	DYAD,	/* 3  POLY */
-	MONAD_OPT,	/* 4  WNUMS -- was NILAD; now optionally takes a
+	MONAD_OPT_NOASSIGN,	/* 4  WNUMS -- was NILAD; now optionally takes a
 			   tag pattern (⎕WNUMS alone = all open handles,
 			   ⎕WNUMS 'pattern' = handles whose tag matches,
 			   trailing '*' = prefix match, no trailing '*' =
-			   exact match) */
+			   exact match). MONAD_OPT_NOASSIGN (V77): the
+			   pattern isn't a setting, so no ⎕WNUMS← form;
+			   ⎕WNUMS 'pattern' works under every -q mode. */
 	DYAD,	/* 5  WCLEAR */
 	DYAD,	/* 6  WTITLE -- 'title' WTITLE wnum. Flipped from the
 			   originally-shipped wnum WTITLE 'title' -- see this
 			   case's own comment below for why that was safe to
 			   do now rather than a breaking change. */
 	DYAD,	/* 7  WPOINTS */
-	MONAD_OPT,	/* 8  WSIZE -- was NILAD; now optionally takes a
+	MONAD_OPT_NOASSIGN,	/* 8  WSIZE -- was NILAD; now optionally takes a
 			   window handle (⎕WSIZE alone = desktop size,
-			   ⎕WSIZE h = window h's current size) */
+			   ⎕WSIZE h = window h's current size).
+			   MONAD_OPT_NOASSIGN (V77): h picks the window to
+			   report on, it isn't a setting, so no ⎕WSIZE←
+			   form; ⎕WSIZE h works under every -q mode. */
 	DYAD,	/* 9  WCTRL -- was MONAD (old, deferred, OOB-buggy, never
 			   actually shipped working -- see case 9's own comment).
 			   wnums WCTRL opcode,params: le is one or more window

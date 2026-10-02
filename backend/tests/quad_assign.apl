@@ -1,0 +1,48 @@
+⎕IO
+⎕IO←0
+⎕IO
+⎕IO←1
+X←⎕IO←0
+X
+⎕IO
+⎕IO 1
+⎕IO
+⎕IO ← 0
+⎕IO←1+0
+⎕IO
+⎕IO←,0
+⎕IO←⍴,1
+⎕IO
+2+⎕IO←0
+⎕IO←⎕IO+1
+⎕IO
+⎕DIG←¯2
+1÷3
+⎕DIG←10
+1÷3
+⎕INTDIV←1
+7÷2
+⎕INTDIV←0
+7÷2
+⎕WI←60
+⎕WI
+⎕WI←80
+Z←⎕RL←42
+⎕IO←
+(⎕IO←)
+⎕UCASE←'A'
+⎕TS←1
+⎕IO+1
+1+⎕IO
+⎕IO ⍴4 7 9
+⎕IO ,1
+)ENTER QAOLD
+QAOLD
+⎕IO
+⎕DIG
+⎕WI
+)ENTER QANEW
+QANEW
+⎕IO
+⎕DIG
+⎕WI

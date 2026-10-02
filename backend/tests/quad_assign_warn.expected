@@ -1,0 +1,19 @@
+Clear WS
+     ⎕IO 1
+1
+     ⎕IO←1
+     )ENTER QAOLD
+old form ⎕io X: QAOLD[1]
+old form ⎕dig X: QAOLD[2]
+old form ⎕wi X: QAOLD[3]
+     )ENTER QANEW
+     QAOLD
+1
+10
+82
+     ⎕IO
+0
+     QANEW
+     ⎕IO
+1
+     

@@ -1,0 +1,45 @@
+Clear WS
+     )FSEARCH ⎕IO
+QACOM[1]  X←⎕IO ⍝ SET ⎕IO HERE, 'QUOTED'
+QACOM[2]  '⎕IO 1'
+QANEW[1]  ⎕IO←1
+QAOLD[1]  ⎕IO 0
+4 lines in 3 files
+     )FSEARCH ⎕I
+QACOM[1]  X←⎕IO ⍝ SET ⎕IO HERE, 'QUOTED'
+QACOM[2]  '⎕IO 1'
+QANEW[1]  ⎕IO←1
+QAOLD[1]  ⎕IO 0
+4 lines in 3 files
+     )FSEARCH ⎕IO 0
+QAOLD[1]  ⎕IO 0
+1 line in 1 file
+     )FSEARCH ⎕IO←
+QANEW[1]  ⎕IO←1
+1 line in 1 file
+     )FSEARCH HERE
+QACOM[1]  X←⎕IO ⍝ SET ⎕IO HERE, 'QUOTED'
+1 line in 1 file
+     )FSEARCH 'QUOTED
+QACOM[1]  X←⎕IO ⍝ SET ⎕IO HERE, 'QUOTED'
+1 line in 1 file
+     )FSEARCH ⍞
+QACOM[4]  Z←⍞
+1 line in 1 file
+     )FSEARCH $
+QACOM[3]  Z←'COST $5'
+1 line in 1 file
+     )FSEARCH ¯
+BM[2]  →¯1
+QACOM[5]  X←¯1
+2 lines in 2 files
+     )FSEARCH 3-1
+QACOM[6]  Y←3-1
+1 line in 1 file
+     )FSEARCH NOSUCHTEXT
+Not found
+     )FSEARCH
+     ^
+Incorrect Command
+
+     

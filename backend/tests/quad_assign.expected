@@ -1,0 +1,87 @@
+Clear WS
+     ⎕IO
+1
+     ⎕IO←0
+     ⎕IO
+0
+     ⎕IO←1
+     X←⎕IO←0
+     X
+1
+     ⎕IO
+0
+     ⎕IO 1
+0
+     ⎕IO
+1
+     ⎕IO ← 0
+     ⎕IO←1+0
+     ⎕IO
+1
+     ⎕IO←,0
+     ⎕IO←⍴,1
+     ⎕IO
+1
+     2+⎕IO←0
+3
+     ⎕IO←⎕IO+1
+     ⎕IO
+1
+     ⎕DIG←¯2
+     1÷3
+0.33
+     ⎕DIG←10
+     1÷3
+0.3333333333
+     ⎕INTDIV←1
+     7÷2
+3
+     ⎕INTDIV←0
+     7÷2
+3.5
+     ⎕WI←60
+     ⎕WI
+60
+     ⎕WI←80
+     Z←⎕RL←42
+     ⎕IO←
+     ^
+Syntax Error
+     (⎕IO←)
+     ^
+Syntax Error
+     ⎕UCASE←'A'
+     ^
+Syntax Error
+     ⎕TS←1
+     ^
+Syntax Error
+     ⎕IO+1
+2
+     1+⎕IO
+2
+     ⎕IO ⍴4 7 9
+     ^
+Domain Error
+     ⎕IO ,1
+1
+     )ENTER QAOLD
+     QAOLD
+1
+10
+80
+     ⎕IO
+0
+     ⎕DIG
+5
+     ⎕WI
+72
+     )ENTER QANEW
+     QANEW
+     ⎕IO
+1
+     ⎕DIG
+10
+     ⎕WI
+80
+     

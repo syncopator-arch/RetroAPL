@@ -1,0 +1,62 @@
+Clear WS
+     S←⎕STRUCT 3
+     S[1]←⍳3
+     S[2]←'AB'
+     S[3]←10 20
+     ⍴,S
+3
+     T←,S
+     T[1]
+1 2 3
+     T[2]
+AB
+     T[3]
+10 20
+     S[2]←'XYZ'
+     S[2]
+XYZ
+     T[2]
+AB
+     )ERASE S
+     T[1]
+1 2 3
+     T[3]
+10 20
+     W←,,T
+     W[3]
+10 20
+     U←⍪T
+     ⍴U
+3 1
+     V←,U
+     V[1]
+1 2 3
+     V[2]
+AB
+     E←⎕STRUCT 2
+     E[2]←5
+     F←,E
+     F[2]
+5
+     F[1]
+     ^
+Value Error
+     G←⎕STRUCT 2 2
+     G[1;1]←'P'
+     G[2;2]←⍳2
+     H←⍪G
+     ⍴H
+2 2
+     H[2;2]
+1 2
+     K←,G
+     K[1]
+P
+     K[4]
+1 2
+     )ERASE G
+     K[4]
+1 2
+     H[1;1]
+P
+     

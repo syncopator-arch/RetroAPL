@@ -39,6 +39,7 @@ extern short resume_line(int32_t n);	/* fn.c -- ->N at the prompt */
  * in externs.h so the compiler sees the real signatures before the definitions.
  */
 static void           supdate(struct ValEnt *te);
+static short          struct_copy_cells(void);
 static void           shuffle(unsigned char *pp, int32_t be, int32_t bp);
 short reduce_identity(short op, UCHAR dtype, int32_t *acc, double *dacc);
 short reduce_combine(short op, short sdir, UCHAR dtype, int32_t *acc, int32_t acc2, double *dacc, double dacc2);
@@ -75,6 +76,66 @@ supdate(struct ValEnt *te)
 		}
 		tp.lp++;
 	}
+}
+
+/* struct_copy_cells -- monadic , and table (V78): give a struct-array
+ * result its own copy of each of R's children. The caller has built the
+ * result with make_temp() (so it is *VTEMP, on top of the stack) with
+ * R's element count and its own shape; R is *VRIGHT. Elements go across
+ * in order -- a reshape, not a reorder.
+ *
+ * Copying the child offsets with memcpy (what monadic , did before V78)
+ * gives each child two parents, while a child records only one owner,
+ * the cell holding its offset (see INVARIANTS.md, indexed assignment):
+ * GarbCollect() then shifts the child's owner record whenever either
+ * parent moves, me_delete() of either parent frees it under the other,
+ * and an assigned result (T←,S keeps the temp) read garbage, got Index
+ * Errors and crashed at exit (person's probe, V78).
+ *
+ * Same pattern as dyop.c's do_drav()/do_drav1(): each child through a
+ * floater (FLOATVS keeps the source offset current if dup_val()'s
+ * allocation moves things), dup_val() for a deep copy, then the result
+ * re-derived and the copy's ve_reference pointed at its new cell. Empty
+ * cells (offset 0) stay empty. The result's cells are zeroed first, so
+ * a GC during the copy never sees a stale offset in them. Unlike
+ * do_drav1(), a dup_val() failure is checked (Workspace Full) instead of
+ * dereferencing a null result.
+ */
+static short
+struct_copy_cells(void)
+{
+	struct ValEnt *re, *te, *tmp;
+	int32_t       *cell;
+	ws_off_t       child;
+	int32_t        k, n;
+	int            flt;
+
+	te = WSVAL_PTR(*VTEMP);
+	n  = te->ve_length;
+	memset(DATA_AD(te), 0, (size_t)n * sizeof(int32_t));
+	if (!n) return(0);
+
+	flt = AllocFloatv();
+	if (flt == -1) return(SET_ERR(ERR_NOFLOATV));
+
+	for (k = 0; k < n; k++) {
+		re    = WSVAL_PTR(*VRIGHT);	/* may have moved */
+		child = ((int32_t *)DATA_AD(re))[k];
+		if (!child) continue;
+		FLOATVS[flt] = child;
+		tmp = dup_val(&FLOATVS[flt]);
+		if (!tmp) {
+			FLOATVS[flt] = (ws_off_t)0;
+			return(SET_ERR(ERR_WSFULL));
+		}
+		te   = WSVAL_PTR(*VTEMP);	/* may have moved */
+		cell = (int32_t *)DATA_AD(te) + k;
+		tmp->ve_reference = WS_OFF(cell);
+		debug_check_ref("monop.c/struct_copy_cells", (struct MemEnt*)tmp, tmp->ve_reference); /* %%% DBG */
+		*cell = (int32_t)WS_OFF(tmp);
+	}
+	FLOATVS[flt] = (ws_off_t)0;
+	return(0);
 }
 
 /* reduce_identity -- seed acc and dacc  with the identity
@@ -2009,10 +2070,57 @@ isint:;
 			te = make_temp(ve->ve_vtype, 1, l);
 			if (!te) return(SET_ERR(ERR_WSFULL));
 			ve = WSVAL_PTR(*VRIGHT);
-			l *= ve->ve_vtype & BYTES_MASK;
-			memcpy((char *)&te->ve_rho[1], (char *)&ve->ve_rho[j], l);
+			if ((ve->ve_vtype | VARIABLE_BIT) == STRUCT_CODE) {
+				/* own copies of the children (V78), see
+				   struct_copy_cells() */
+				err = struct_copy_cells();
+				if (err) return(err);
+			} else {
+				l *= ve->ve_vtype & BYTES_MASK;
+				memcpy((char *)&te->ve_rho[1], (char *)&ve->ve_rho[j], l);
+			}
 			swapdrop();
 			break;
+
+		case OP_CATF:	/* monadic ⍪, table: ravel each major cell */
+		{
+			/* The result is always a matrix: rows = R's first axis,
+			   columns = the product of all its other axes (Table, as in
+			   Dyalog and SHARP APL). A scalar gives 1 1, a vector of n
+			   gives n 1, a matrix is unchanged, 2 3 4 gives 2 12.
+			   ve_rho is stored last axis first, so R's first axis is
+			   ve_rho[rank-1] and the others are ve_rho[0..rank-2]. The
+			   data is already row-major, so this is only a reshape: the
+			   elements are copied as they are, as monadic , does --
+			   for a struct array, through struct_copy_cells(), so the
+			   result owns its children. Columns are counted in 64 bits:
+			   with a zero first axis the other axes' product isn't
+			   bounded by ve_length. */
+			int64_t cols;
+
+			j    = ve->ve_rank;
+			m    = j ? ve->ve_rho[j - 1] : 1L;	/* rows */
+			cols = 1;
+			for (i = 0; i < j - 1; i++) {
+				cols *= ve->ve_rho[i];
+				if (cols > 0x7fffffffL) return(SET_ERR(ERR_DOMAIN));
+			}
+			l  = ve->ve_length;
+			te = make_temp(ve->ve_vtype, 2, l);
+			if (!te) return(SET_ERR(ERR_WSFULL));
+			ve = WSVAL_PTR(*VRIGHT);	/* might have moved */
+			te->ve_rho[0] = (int32_t)cols;	/* last axis: columns */
+			te->ve_rho[1] = m;		/* first axis: rows */
+			if ((ve->ve_vtype | VARIABLE_BIT) == STRUCT_CODE) {
+				err = struct_copy_cells();
+				if (err) return(err);
+			} else {
+				memcpy(DATA_AD(te), DATA_AD(ve),
+					(size_t)l * (ve->ve_vtype & BYTES_MASK));
+			}
+			swapdrop();
+			break;
+		}
 
 		case OP_TRA:
 			j  = ve->ve_rank;

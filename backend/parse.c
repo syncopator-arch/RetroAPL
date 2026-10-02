@@ -12,7 +12,67 @@ extern void sys_print(unsigned char *s);
 extern void NL();
 
 extern UCHAR var_lo,var_hi,alph_lo,alph_hi;
+extern UCHAR *all_fnames[];
+extern short print_name();
+extern short OUT_TRANS_FLAG;	/* platform_translate.c */
 
+/*
+	Quad-function syntax mode (V77): QSYN_BOTH, QSYN_WARN or QSYN_NEW,
+	see parse.h. Set by the front end (apl_cli's / the GUI's -q option)
+	before dll_startup(); a session setting, not saved with the ws.
+	qsyn_fn/qsyn_line are set by do_enter() (commands.c) around each
+	line it compiles, so a warn note can name the function and line.
+	qsyn_fn is -1 everywhere else (typed lines, execute, quad input),
+	and no note is printed there.
+*/
+int quad_syntax = QSYN_BOTH;
+short qsyn_fn = -1;
+short qsyn_line = 0;
+
+/*
+	Tags pass 1 puts in the low nibble of a MONAD_OPT function's
+	SYS_CODE byte in LINEC, for pass 2. Nothing else reads LINEC. Pass 2
+	strips QTAG_STRICT and QTAG_WARN; QTAG_ASSIGN is SYS_ASSIGN_BIT and
+	stays in the compiled byte (see parse.h). The low nibble of SYS_CODE
+	was unused before V77, in LINEC and in compiled code.
+*/
+#define QTAG_ASSIGN SYS_ASSIGN_BIT	/* written ⎕F←X */
+#define QTAG_STRICT 0x02		/* -q new, no ←: must take no argument */
+#define QTAG_WARN   0x04		/* -q warn, no ←: note it if it takes one */
+
+/*
+	qsyn_note() -- under -q warn, during )ENTER: this line uses the old
+	form ⎕F X. Prints e.g. "old form ⎕IO X: QAOLD[1]". n is the packed
+	module+index byte; the name is the index'th string of the module's
+	all_fnames[] list (the same walk input_translate() does).
+*/
+static void
+qsyn_note(UCHAR n)
+{
+UCHAR *cp;
+UCHAR qb[2];
+short j;
+
+	if (qsyn_fn < 0) return;
+	cp = all_fnames[n >> SYSFUNC_SHIFT];
+	for (j = n & SYSFUNC_MASK; j > 0 && *cp; j--) cp += strlen((char *)cp) + 1;
+	if (CURSX) NL();
+	PRINT((UCHAR *)"old form ");
+	/* quad and name as do_help() prints them: internal codes
+	   (CHAR_QD, and the name as all_fnames[] holds it, which
+	   set_case() flips with op_table) through output translation */
+	qb[0] = CHAR_QD;
+	qb[1] = '\0';
+	OUT_TRANS_FLAG++;
+	PRINT(qb);
+	PRINT(cp);
+	OUT_TRANS_FLAG--;
+	PRINT((UCHAR *)" X: ");
+	print_name(qsyn_fn);
+	sprintf((char *)LINED,"[%d]",qsyn_line);
+	PRINT(LINED);
+	NL();
+}
 
 UCHAR op_table[] = {
 	'+',OP_ADD,
@@ -477,14 +537,73 @@ short isfloat;
 					case SYS_CODE:
 					{
 					UCHAR *pk;
+					UCHAR *tagp;	/* this token's SYS_CODE byte */
 					short ftype;
 					short k;	/* op_table scan, see the peek below */
 					short opc;	/* -1 = not an op_table character */
 
 						n = *cpi;
 						*cpt++ = *cpi++;
+						tagp = cpt;
 						*cpt++ = SYS_CODE;
 						ftype = all_ftypes[n >> SYSFUNC_SHIFT][n & SYSFUNC_MASK];
+
+						/* Assignment syntax, ⎕IO←0 (V77). For a
+						   MONAD_OPT function, a ← after it (past
+						   spaces) is consumed here and marks the call
+						   as having an argument: everything to the
+						   right of the ← is that argument, as for
+						   X←.... The ← itself emits nothing; pass 2
+						   sees only the tag (QTAG_ASSIGN), which it
+						   checks and passes on into the compiled byte
+						   as SYS_ASSIGN_BIT. Before V77 a ← here was a
+						   Syntax Error at run time, so no working code
+						   changes meaning. Not for MONAD_OPT_NOASSIGN
+						   (⎕WSIZE, ⎕WNUMS: the ← is left alone and
+						   stays a Syntax Error) or any other type.
+
+						   Under -q new (quad_syntax QSYN_NEW), a
+						   MONAD_OPT function without ← takes no
+						   argument, full stop: LASTOP = 0, so what
+						   follows reads as it would after a variable
+						   (⎕IO ⍴X is dyadic ⍴, ⎕IO 0 is a Syntax
+						   Error), and QTAG_STRICT has pass 2 reject
+						   any value it still finds juxtaposed on the
+						   right (⎕IO X, ⎕IO (0), ⎕IO 'A' -- pass 1
+						   alone can't, see pass 2). One more case is
+						   rejected here: a space, then '-' straight
+						   before a digit. The negative sign and minus
+						   are the same byte here ('-', itrans[0xa2]),
+						   so the old form ⎕DIG ¯2 would otherwise
+						   silently compile as ⎕DIG-2. ⎕DIG-2 (no
+						   space first) and ⎕DIG - 2 stay subtraction.
+
+						   Under -q warn, the old rules below apply
+						   unchanged; QTAG_WARN has pass 2 print a
+						   note (during )ENTER only) when the call
+						   does take an argument. */
+						if (ftype == MONAD_OPT) {
+							pk = cpi;
+							while (*pk == ' ') pk++;
+							if (*pk == CHAR_AS) {
+								cpi = pk + 1;
+								*tagp |= QTAG_ASSIGN;
+								LASTOP = 1;
+								break;
+							}
+							if (quad_syntax == QSYN_NEW) {
+								if (pk > cpi && *pk == '-' &&
+									(ISDIGIT(pk[1]) || (pk[1] == '.' && ISDIGIT(pk[2]))))
+									return(-3);
+								*tagp |= QTAG_STRICT;
+								LASTOP = 0;
+								break;
+							}
+							if (quad_syntax == QSYN_WARN) *tagp |= QTAG_WARN;
+						}
+						/* from here on, an excluded function is a
+						   MONAD_OPT like any other (old rules) */
+						if (ftype == MONAD_OPT_NOASSIGN) ftype = MONAD_OPT;
 						if (ftype == MONAD_OPT) {
 							/* Whether THIS occurrence takes an argument
 							   depends on what actually follows it in the
@@ -552,6 +671,13 @@ short isfloat;
 							   leaves-a-plain-value pattern; not confirmed
 							   either way, excluded pending an actual case
 							   that needs it.
+
+							   And OP_CATF (⍪), left out on purpose although
+							   monadic ⍪ (table) exists: its result is always
+							   a matrix, which no MONAD_OPT function wants,
+							   while the niladic reading ⎕IO⍪X (⎕IO's value
+							   joined onto X by dyadic ⍪) is how this always
+							   compiled, and is kept (tests/table.apl).
 
 							   The operator check goes through op_table,
 							   by OP_ code, not by comparing raw source
@@ -714,6 +840,9 @@ short isfloat;
 								*cpo++ = (UCHAR)n;
 								LASTOP = 0;
 								goto dypop;
+							case MONAD_OPT_NOASSIGN:	/* never
+									   tagged by pass 1, so exactly
+									   case 3's old behavior */
 							case 3:		/* monadic opt -- decide per
 									   occurrence using LASTOP, same
 									   invariant CONST_CODE/case 0
@@ -737,12 +866,31 @@ short isfloat;
 									   own. do_sys()'s MONAD_OPT case
 									   (sys.c) pops that mark back
 									   off again. */
-								if (LASTOP) {
-									*cpo++ = OP_NOP;
-									*cpo++ = c;
-									*cpo++ = (UCHAR)n;
-									LASTOP = 0;
-									goto dypop;
+								/* V77: pass 1's tag (see the
+								   QTAG_ defines) is in c's low
+								   nibble. Keep only SYS_ASSIGN_BIT
+								   for the compiled byte. An
+								   ← with nothing resolved to its
+								   right (⎕IO←, (⎕IO←)) is a
+								   Syntax Error; so, under -q new,
+								   is a value juxtaposed without
+								   one (⎕IO X). Under -q warn,
+								   taking an argument without ←
+								   gets a note (during )ENTER). */
+								{
+								UCHAR tag = c & 0x0f;
+
+									c = SYS_CODE | (tag & SYS_ASSIGN_BIT);
+									if (LASTOP) {
+										if (tag & QTAG_ASSIGN) return(-3);
+										*cpo++ = OP_NOP;
+										*cpo++ = c;
+										*cpo++ = (UCHAR)n;
+										LASTOP = 0;
+										goto dypop;
+									}
+									if (tag & QTAG_STRICT) return(-3);
+									if (tag & QTAG_WARN) qsyn_note((UCHAR)n);
 								}
 								/* falls through: a real value is
 								   available -- treat like MONAD */
