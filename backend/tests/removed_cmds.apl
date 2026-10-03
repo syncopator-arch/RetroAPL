@@ -1,0 +1,12 @@
+)VERSION
+)VER
+)HELP
+)HE
+)SYS
+)SYS true
+)SCRH
+)SCR 30
+)SCRH
+)CASE
+)WIDTH
+)VARS

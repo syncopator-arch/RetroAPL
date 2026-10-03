@@ -1103,14 +1103,24 @@ void APLTerminalWidget::keyPressEvent(QKeyEvent *event)
     }
 
     if (m_editMode) {
+    	// Up/Down keep the cursor's column. QTextCursor::Up/Down already do
+    	// this, with a "sticky" goal column: passing through a short line
+    	// leaves the cursor at that line's end, and the next long enough
+    	// line puts it back at the original column. That works here because
+    	// edit mode is NoWrap (one block = one screen line) and kapl.ttf is
+    	// monospaced (Qt tracks the goal as a pixel x position). The only
+    	// adjustment is the line-number prefix: if the move lands in the
+    	// 5-char "[N]  " area (it started there), go to column 5, the start
+    	// of content. (Before this, both keys always went to column 5.)
     	if (keyCode == Qt::Key_Up) {
 			QTextCursor cursor = textCursor();
 			int currentLine = cursor.blockNumber();
 			if (currentLine > 0) {
 				cursor.movePosition(QTextCursor::Up);
-				// Ensure we're at column 5 (after line number) on the new line
-				cursor.movePosition(QTextCursor::StartOfBlock);
-				cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::MoveAnchor, 5);
+				if (cursor.columnNumber() < 5) {
+					cursor.movePosition(QTextCursor::StartOfBlock);
+					cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::MoveAnchor, 5);
+				}
 				setTextCursor(cursor);
 				ensureCursorVisible();
 			}
@@ -1121,9 +1131,10 @@ void APLTerminalWidget::keyPressEvent(QKeyEvent *event)
 			int currentLine = cursor.blockNumber();
 			if (currentLine < m_editorLines.size() - 1) {
 				cursor.movePosition(QTextCursor::Down);
-				// Ensure we're at column 5 (after line number) on the new line
-				cursor.movePosition(QTextCursor::StartOfBlock);
-				cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::MoveAnchor, 5);
+				if (cursor.columnNumber() < 5) {
+					cursor.movePosition(QTextCursor::StartOfBlock);
+					cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::MoveAnchor, 5);
+				}
 				setTextCursor(cursor);
 				ensureCursorVisible();
 			}

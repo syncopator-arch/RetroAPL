@@ -558,43 +558,6 @@ void _clearscreen(int n)
 }
 
 /* ============================================================
-   19. Graphics/window stubs -- stub_test build only (no AS_DLL).
-   grfuncs.c is deliberately excluded from stub_test's object list
-   (see makefile's own comment on LIB_ONLY_SRCS: stub_test is a
-   standalone, non-Qt smoke-test binary that was never going to run
-   graphics). graph_fnames/graph_ftypes/graph_funcs still need *some*
-   definition for stub_test to link against, since sys.c's function
-   tables reference them unconditionally -- these placeholders are
-   that definition. sys_ctrl likewise needs a definition here now that
-   sysfuncs.c's CTRL case calls it unconditionally (it's in the shared
-   SRCS list, built into both stub_test and libapl.a) -- a no-op is
-   correct for stub_test, which has no window to minimize/restore/
-   maximize in the first place. Real implementations for the actual Qt
-   app: graph_fnames/graph_ftypes/graph_funcs in grfuncs.c, sys_ctrl in
-   main.cpp -- all excluded here via #ifndef AS_DLL since libapl.a is
-   always compiled with -DAS_DLL. */
-#ifndef AS_DLL
-int flush_graphics()                    { return 0; }
-void sys_ctrl(long mode)                { (void)mode; }
-long sys_font_families(char *buf, long bufsize) { (void)buf; (void)bufsize; return -1; }
-long graph_ctrl(long a,long b,long c,long d) { return 0; }
-void sys_title(unsigned char *cp)        { }
-long open_window(char *cp,long x,long y,long w,long h) { return 0; }
-void close_window(long w)               { }
-int set_gpen(long a,long b)            { return 0; }
-int clear_window(long w,long c)        { return 0; }
-int g_move(long w,long x,long y)       { return 0; }
-int g_draw(long w,long x,long y)       { return 0; }
-int g_sendpoints(long csz,long len,char *datap) { return 0; }
-void g_windowsize(long *lp)             { lp[0]=lp[1]=lp[2]=0; }
-short w_getnums()                       { return 0; }
-void set_window_title(long w,char *cp)  { }
-UCHAR graph_fnames[] = { 0 };
-UCHAR graph_ftypes[] = { 0 };
-short graph_funcs() { return(0); }
-#endif
-
-/* ============================================================
    20. Editor
    Default to notepad on Windows if EDITOR is not set.
    In the Qt build, platform_edit_fn is set by the frontend

@@ -167,8 +167,8 @@ interpreter's maximum rank.
 `⎕EXEC command`
 
 Runs an external command asynchronously (doesn't wait for it to
-finish), returning the command's result code. See `⎕WEXEC` to wait for
-completion.
+finish), returning the command's result code. Its output doesn't appear
+in the APL session. See `⎕WEXEC` to wait for completion.
 
 `⎕WEXEC command`
 

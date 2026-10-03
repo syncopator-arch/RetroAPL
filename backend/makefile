@@ -1,9 +1,8 @@
 # Makefile for APL Interpreter backend
 #
 # Targets:
-#   all         -- builds stub_test, libapl.a and apl_cli
-#   stub_test   -- standalone interpreter for smoke testing (no AS_DLL)
-#   libapl.a    -- static library for Qt frontend (compiled with -DAS_DLL)
+#   all         -- builds libapl.a and apl_cli
+#   libapl.a    -- static library for the Qt front end
 #   apl_cli     -- UTF-8 command-line front end, for regression testing
 #   run_tests   -- the regression test runner (run_tests.c)
 #   check       -- build apl_cli and run all the tests (see below)
@@ -34,7 +33,7 @@ endif
 
 #				-fsigned-char \
 
-# Flags common to both builds
+# Compiler flags
 #
 # -fno-strict-aliasing: the backend routinely reads the same memory
 # through different pointer types (workspace bytes as MemEnt/ValEnt,
@@ -51,14 +50,13 @@ endif
 CFLAGS_COMMON = -std=gnu99 -Wall -O2 -g -fno-strict-aliasing \
                 -Wno-pointer-sign
 
-# stub_test: standalone interpreter path in main.c (no AS_DLL)
-CFLAGS_STUB = $(CFLAGS_COMMON) -DNO_INPUT_PROC
+# libapl.a, apl_cli and apl_cli_san all compile the backend this way.
+# (-DNO_INPUT_PROC -DAS_DLL used to be here: both were defined in every
+# build, and the code they switched off went with stub_test.)
+CFLAGS_LIB  = $(CFLAGS_COMMON)
 
-# libapl.a: DLL path in main.c, no standalone apl_main()
-CFLAGS_LIB  = $(CFLAGS_COMMON) -DNO_INPUT_PROC -DAS_DLL
 
-
-# Source files shared by both targets
+# Backend source files
 #
 # crashlog.c writes $APLHOME/crash.log on a fatal error, with the session
 # transcript converted to UTF-8 by kapl_unicode.c -- which is why
@@ -75,34 +73,23 @@ SRCS = commands.c dyop.c exec.c filfuncs.c fn.c globals.c index.c \
 # which are only ever defined in the Qt frontend (graph_bridge.cpp) --
 # nothing in this backend build can resolve them. libapl.a is fine
 # because it's always linked into the Qt app, which supplies those
-# symbols. stub_test is a standalone, non-Qt smoke-test binary and was
-# never going to run graphics anyway, so grfuncs.c is deliberately left
-# out of its object list rather than making it link-fail on symbols it
-# has no way to provide.
+# symbols. apl_cli has no graphics, so grfuncs.c is left out of its
+# object list rather than making it link-fail on symbols it has no way
+# to provide.
 LIB_ONLY_SRCS = grfuncs.c
 
-# Object files for stub_test (compiled without AS_DLL, in stub_objs/)
-STUB_OBJDIR = stub_objs
-STUB_OBJS   = $(addprefix $(STUB_OBJDIR)/,$(SRCS:.c=.o))
-
-# Object files for libapl.a (compiled with AS_DLL, in lib_objs/)
+# Object files for libapl.a (in lib_objs/)
 LIB_OBJDIR  = lib_objs
 LIB_OBJS    = $(addprefix $(LIB_OBJDIR)/,$(SRCS:.c=.o)) \
               $(addprefix $(LIB_OBJDIR)/,$(LIB_ONLY_SRCS:.c=.o))
 
-# Stub frontend
-STUB_SRC = stub_frontend.c
-STUB_OBJ = $(STUB_OBJDIR)/stub_frontend.o
-STUB_TEST = stub_test
-
 # Static library
 STATIC_LIB = libapl.a
 
-# apl_cli: command-line front end. Links the same AS_DLL objects as
-# libapl.a (from lib_objs/), so tests exercise exactly the backend code
-# the Qt app runs -- minus grfuncs.o, for the reason given above
-# LIB_ONLY_SRCS. apl_cli.c supplies the graphics placeholders that the
-# platform files' #ifndef AS_DLL block supplies for stub_test.
+# apl_cli: command-line front end. Links the same objects as libapl.a
+# (from lib_objs/), so tests exercise exactly the backend code the Qt
+# app runs -- minus grfuncs.o, for the reason given above LIB_ONLY_SRCS.
+# apl_cli.c supplies graphics placeholders in its place.
 CLI_OBJDIR = cli_objs
 # kapl_unicode.c used to be here too; it's in SRCS now (see there).
 CLI_SRCS   = apl_cli.c
@@ -151,17 +138,7 @@ APL_CLI_SAN = apl_cli_san
 SAN_ENV    = ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1
 
 # ── Default target ──────────────────────────────────────────────────────
-all: $(STUB_TEST) $(STATIC_LIB) $(APL_CLI)
-
-# ── stub_test ───────────────────────────────────────────────────────────
-$(STUB_TEST): $(STUB_OBJS) $(STUB_OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
-
-$(STUB_OBJDIR)/%.o: %.c | $(STUB_OBJDIR)
-	$(CC) $(CFLAGS_STUB) -c $< -o $@
-
-$(STUB_OBJDIR):
-	mkdir $@
+all: $(STATIC_LIB) $(APL_CLI)
 
 # ── libapl.a ────────────────────────────────────────────────────────────
 $(STATIC_LIB): $(LIB_OBJS)
@@ -222,7 +199,7 @@ check_san: $(APL_CLI_SAN) $(RUN_TESTS)
 # needs sh: if `make clean` says "'rm' is not recognized", run it from a
 # POSIX shell (e.g. the Korn shell) instead.
 clean:
-	rm -rf $(STUB_OBJDIR) $(LIB_OBJDIR) $(STUB_TEST)$(EXE) $(STATIC_LIB) \
+	rm -rf $(LIB_OBJDIR) $(STATIC_LIB) \
 	       $(CLI_OBJDIR) $(APL_CLI)$(EXE) $(KAPL_TEST)$(EXE) $(RUN_TESTS)$(EXE) \
 	       tests/*.out tests/.scratch \
 	       $(SAN_OBJDIR) $(APL_CLI_SAN)$(EXE)

@@ -25,7 +25,9 @@ QACOM[1]  X←⎕IO ⍝ SET ⎕IO HERE, 'QUOTED'
 1 line in 1 file
      )FSEARCH ⍞
 QACOM[4]  Z←⍞
-1 line in 1 file
+QP[1]  ⍞←'NAME? '
+QP[2]  X←⍞
+3 lines in 2 files
      )FSEARCH $
 QACOM[3]  Z←'COST $5'
 1 line in 1 file

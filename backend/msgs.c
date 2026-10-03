@@ -147,6 +147,9 @@ char *s;
 	}
 	if (p) 
 	{
+		/* output with no newline yet (⍞←X just before the error):
+		   start the caret on a line of its own */
+		if (CURSX) NL();
 		PRINT("     ^");
 		NL();
 	}

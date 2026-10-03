@@ -38,7 +38,6 @@ int tablecase = 1;
 /*
 
 extern UCHAR op_table[];
-extern UCHAR char_xtable[];
 
 extern long file_serial();
 extern long GarbCollect();
@@ -47,7 +46,6 @@ extern short lookup_sym();
 extern short compline();
 extern short pop_fn();
 extern short vout();
-extern short input_proc();
 extern struct ValEnt **get_vparm();
 extern void message(short n);
 extern void Adjust_Stack();
@@ -86,12 +84,13 @@ UCHAR cmd_table[] = {
 	'S','I','V',0,		/* 18 - )siv */
 	'L','I','B',0,		/* 19 - )lib */
 	'P','U','R',0,		/* 20 - )purge */
-	'S','Y','S',0,		/* 21 - )sys */
+	'S','Y','S',0,		/* 21 - )sys -- removed V81 (Incorrect Command);
+				   the name keeps the slot, see do_command() */
 	'S','I',0,		/* 22 - )si */
 	'S','T','A',0,		/* 23 - )stack */
 	'L','I',0,		/* 24 - )list */
 	'O','U','T',0,		/* 25 - )outsync */
-	'H','E',0,		/* 26 - )help */
+	'H','E',0,		/* 26 - )help -- removed V81 */
 	'B','O',0,		/* 27 - )boot */
 	'P','S',0,		/* 28 - )psnap */
 	'B','A',0,		/* 29 - )base */
@@ -100,10 +99,10 @@ UCHAR cmd_table[] = {
 	'T','R',0,		/* 31 - )trace */
 	'R','I',0,		/* 32 - )right */
 	'L','E',0,		/* 33 - )left */
-	'S','C','R',0,		/* 34 - )scrh */
-	'H','I','S','T',0,	/* 35 - )hist */
-	'C','A','S','E',0,	/* 36 - )case */
-	'V','E','R',0,		/* 37 - )version */
+	'S','C','R',0,		/* 34 - )scrh -- removed V81 */
+	'H','I','S','T',0,	/* 35 - )hist -- not implemented */
+	'C','A','S','E',0,	/* 36 - )case -- removed V81 */
+	'V','E','R',0,		/* 37 - )version -- removed V81 */
 	'T','E','X','T',0,	/* 38 - )text */
 	'D','R','O','P',0,	/* 39 - )drop */
 	'R','E','S',0,		/* 40 - )resize */
@@ -1311,18 +1310,8 @@ NL();
 				size_t n = strlen((char *)LINEA);
 				while (n > 0 && (LINEA[n-1] == 10 || LINEA[n-1] == 13)) LINEA[--n] = '\0';
 			}
-			if (wspace->caseflip) caseflip(LINEA);
-#ifdef NO_INPUT_PROC
 			ct = file_translate(LINEA,LINEB);
 			strcpy(LINEA,LINEB);
-#else
-			ct = input_proc(LINEA,LINEB);
-			if (ct < 0) {
-		        /* Error handling - syntax error in function line */
-       			break;
-    		}
-    		strcpy(LINEA, LINEB);
-#endif
 
 			t = 0;
 			while (LINEA[t] == ' ' || LINEA[t] == 9) t++;
@@ -1361,15 +1350,10 @@ NL();
 			}
 			strcpy(tp,LINEA);	/* make a copy for error msgs -- raw file bytes,
 						   translated via orig_trans[] at display time to
-						   match )LIST's f==1 handling in do_clist() */
-			if (wspace->caseflip) caseflip(LINEA);
+						   match )LIST's handling in do_clist() */
 			
-#ifdef NO_INPUT_PROC
 			ct = file_translate(LINEA,LINEB);
 			strcpy(LINEA,LINEB);
-#else
-			ct = input_proc(LINEA,LINEB);
-#endif
 
 			if (line == 0) 
 			{
@@ -1594,7 +1578,7 @@ NL();
 						sprintf((char *)LINEA,"[%d]  ",line);
 						CPRINT(LINEA);
 						/* translate raw file bytes -> display glyphs,
-						   same as do_clist()'s f==1 ()LIST) handling */
+						   same as do_clist()'s ()LIST) handling */
 						gp = (UCHAR *)tp;
 						while (*gp) { *gp = orig_trans[*gp]; gp++; }
 						FE_TRANS_FLAG++;
@@ -1994,28 +1978,6 @@ short upd;
 	return(0);
 }
 
-int
-do_scrh()
-{
-short i;
-	
-	if (*COMMANDP) {
-		COMMANDP = get_vstr(COMMANDP);
-		if (COMMANDP) {
-			Cmessage(MSG_WAS);
-			print_num((long)(SCRH+1));
-			sscanf((char *)&VBUF[0],"%hd",&i);
-			if (i < 3) i = 3;
-			SCRH = i - 1;
-		}
-	} else {
-		Cmessage(MSG_IS);
-		print_num((long)(SCRH+1));
-	}
-	CNL();
-	return(0);
-}
-
 UCHAR
 char_flip(c)
 UCHAR c;
@@ -2065,14 +2027,6 @@ int i,j;
 		while (*cp) {
 			*cp = char_flip(*cp);
 			cp += 2;
-		}
-
-		/* flip comb char table */
-		cp = char_xtable;
-		while (*cp) {
-			cp[0] = char_flip(cp[0]);
-			cp[1] = char_flip(cp[1]);
-			cp += 3;
 		}
 
 		/* flip func table */
@@ -2155,7 +2109,7 @@ REG short i;
 				   new/cleared workspaces (classic APL behavior).
 				   Workspaces saved before )INTDIV existed carry 0
 				   in this byte and still load as ON. */
-	set_case(wspace->caseflip);
+	set_case(0);	/* see load_ws() */
 
 	for (i=0;i<SYMTSIZE;i++) 
 	{
@@ -2724,7 +2678,11 @@ short ret;
     SYMT = (struct SymTable *)((char *)wspace + sizeof(struct WorkSpace));
 	SYMTACTUAL = wspace->symtsize ? wspace->symtsize : SYMTSIZE;
 
-    set_case(wspace->caseflip);
+    /* Always the normal case setting (caseflip 0). )CASE, removed in
+       V81, could leave 1 here; set_case(0) then flips such a
+       workspace's symbol names back as it loads, so it comes in
+       normal. */
+    set_case(0);
     WIDTH   = (wspace->width >= 20) ? wspace->width : 20;
     RMARGIN = LMARGIN + WIDTH;
 	DIGITS = (wspace->digits >= 1 && wspace->digits <= 17) ? wspace->digits : 10;
@@ -3222,170 +3180,6 @@ char *cp;
 }
 
 /*
-	does )list, if f=1
-	displays help.dat if f=0
-*/
-
-/* -----------------------------------------------------------------------
-   help.dat Unicode -> KAPL font-index translation
-   -----------------------------------------------------------------------
-   help.dat is authored as plain UTF-8 text containing real Unicode APL
-   glyphs (copy/pasted straight out of the emulator with clipboard Unicode
-   translation ON, edited in any normal UTF-8-aware editor). This table is
-   a direct mechanical port of the 50-entry table in kapl_unicode_mapping.hpp
-   (Qt/C++ side) -- same source, same derivation, same confidence notes.
-   See kapl_unicode_mapping.md for how each entry was identified.
-
-   This ONLY affects how help.dat is decoded when displayed via )HELP.
-   .fn files, screen codes, and orig_trans[]/ascii_trans[] are untouched.
-   ----------------------------------------------------------------------- */
-
-struct kapl_unicode_entry {
-	uint32_t unicode;
-	UCHAR    kapl;
-};
-
-static const struct kapl_unicode_entry kapl_unicode_table[] = {
-	{0x00A8, 0xA1},  /* diaeresis */
-	{0x00AF, 0xA2},  /* macron / APL high-minus */
-	{0x2264, 0xA4},  /* <= */
-	{0x2265, 0xA6},  /* >= */
-	{0x2260, 0xA8},  /* <> */
-	{0x2228, 0xA9},  /* or (inverted-caret) */
-	{0x00D7, 0xAB},  /* multiply */
-	{0x236A, 0xAC},  /* comma bar -- not independently confirmed reachable via a key/overstrike */
-	{0x2339, 0xAD},  /* quad divide (domino) -- see kapl_unicode_mapping.md root-cause note */
-	{0x233F, 0xAF},  /* slash bar (compress w/ dash) */
-	{0x2372, 0xB0},  /* nand */
-	{0x2371, 0xB9},  /* nor */
-	{0x2261, 0xBD},  /* identical to (match) -- not independently confirmed reachable */
-	{0x2337, 0xBE},  /* squish quad (squad) */
-	{0x237A, 0xC1},  /* alpha */
-	{0x22A5, 0xC2},  /* up tack */
-	{0x2229, 0xC3},  /* cap / intersection */
-	{0x230A, 0xC4},  /* left floor */
-	{0x2208, 0xC5},  /* element of */
-	{0x2207, 0xC7},  /* nabla / del */
-	{0x2206, 0xC8},  /* delta ("Del-up") */
-	{0x2373, 0xC9},  /* iota */
-	{0x2218, 0xCA},  /* jot */
-	{0x2395, 0xCC},  /* quad */
-	{0x007C, 0xCD},  /* stile (plain '|' -- see note below) */
-	{0x22A4, 0xCE},  /* down tack */
-	{0x25CB, 0xCF},  /* circle */
-	{0x2374, 0xD2},  /* rho */
-	{0x2308, 0xD3},  /* left ceiling */
-	{0x2193, 0xD5},  /* down arrow */
-	{0x222A, 0xD6},  /* union */
-	{0x2375, 0xD7},  /* omega */
-	{0x2283, 0xD8},  /* right shoe (pick) */
-	{0x2191, 0xD9},  /* up arrow */
-	{0x2282, 0xDA},  /* left shoe (enclose) */
-	{0x2340, 0xDC},  /* backslash bar (expand w/ dash) */
-	{0x00F7, 0xDF},  /* divide */
-	{0x2336, 0xE0},  /* I-beam */
-	{0x2296, 0xE1},  /* circle minus */
-	{0x234E, 0xE2},  /* execute */
-	{0x235D, 0xE3},  /* comment */
-	{0x236B, 0xE6},  /* locked del */
-	{0x2352, 0xE7},  /* grade down */
-	{0x234B, 0xE8},  /* grade up */
-	{0x235E, 0xEC},  /* quote-quad */
-	{0x2355, 0xEE},  /* format */
-	{0x235F, 0xF0},  /* circle star */
-	{0x2349, 0xF4},  /* transpose */
-	{0x233D, 0xF7},  /* rotate (circle stile) */
-	{0x2190, 0xFB},  /* left arrow (assignment) */
-	{0x2359, 0xFC},  /* delta underbar */
-	{0x2192, 0xFD},  /* right arrow (branch) */
-};
-#define KAPL_UNICODE_TABLE_SIZE \
-	(sizeof(kapl_unicode_table) / sizeof(kapl_unicode_table[0]))
-
-/* NOTE on 0x007C (stile): the plain ASCII '|' key also produces KAPL byte
-   0xCD (see mappings.hpp / OrigTrans V22 change), so an author typing a
-   literal '|' in help.dat -- which decode_utf8_char() returns unchanged as
-   codepoint 0x7C via the <0x80 passthrough below, never reaching this table
-   -- already gets 0xCD for free. This table entry exists only so that if
-   help.dat is ever machine-generated by copying a real U+007C VERTICAL LINE
-   out of some other source, it resolves the same way. */
-
-/* Linear scan is fine: table is tiny (50 entries) and this only runs once
-   per help.dat line at )HELP display time, not in any hot path. */
-static short
-unicode_to_kapl_byte(uint32_t cp)
-{
-size_t i;
-	for (i = 0; i < KAPL_UNICODE_TABLE_SIZE; i++) {
-		if (kapl_unicode_table[i].unicode == cp)
-			return((short)kapl_unicode_table[i].kapl);
-	}
-	return(-1);
-}
-
-/* Decode one UTF-8 sequence starting at *sp, advance *sp past it, and
-   return the codepoint. Malformed/truncated sequences are consumed one
-   byte at a time and returned as-is (so a bad byte can't desync the rest
-   of the line) rather than aborting the whole line. */
-static uint32_t
-decode_utf8_char(UCHAR **sp)
-{
-UCHAR *s = *sp;
-UCHAR b0 = *s;
-uint32_t cp;
-int extra, i;
-
-	if (b0 < 0x80) {
-		*sp = s + 1;
-		return((uint32_t)b0);
-	}
-	if ((b0 & 0xE0) == 0xC0) { cp = b0 & 0x1F; extra = 1; }
-	else if ((b0 & 0xF0) == 0xE0) { cp = b0 & 0x0F; extra = 2; }
-	else if ((b0 & 0xF8) == 0xF0) { cp = b0 & 0x07; extra = 3; }
-	else {
-		/* Not a valid UTF-8 lead byte (stray continuation byte, or a
-		   raw 0x80-0xFF byte left over from some other encoding).
-		   Consume just this one byte so we don't get stuck. */
-		*sp = s + 1;
-		return((uint32_t)b0);
-	}
-
-	for (i = 1; i <= extra; i++) {
-		if ((s[i] & 0xC0) != 0x80) {
-			/* Truncated/malformed sequence -- bail out on just the
-			   lead byte, same fallback as above. */
-			*sp = s + 1;
-			return((uint32_t)b0);
-		}
-		cp = (cp << 6) | (s[i] & 0x3F);
-	}
-	*sp = s + 1 + extra;
-	return(cp);
-}
-
-/* Translate one UTF-8 help.dat line (src) into KAPL font-index bytes
-   (dst). dst must be at least as large as src -- UTF-8 never expands
-   under this mapping, since every multi-byte input sequence collapses to
-   exactly one output byte, and single-byte input passes through 1:1. */
-static void
-translate_help_line(UCHAR *dst, UCHAR *src)
-{
-	while (*src) {
-		uint32_t cp = decode_utf8_char(&src);
-		if (cp < 0x80) {
-			*dst++ = (UCHAR)cp;
-		} else {
-			short b = unicode_to_kapl_byte(cp);
-			/* Unrecognized Unicode in help.dat (typo, wrong glyph,
-			   stray copy-paste from elsewhere): substitute a visible
-			   '?' rather than silently drop or misrender it. */
-			*dst++ = (b >= 0) ? (UCHAR)b : (UCHAR)'?';
-		}
-	}
-	*dst = '\0';
-}
-
-/*
 	clist_linenum() -- if the last word of s is a plain line number,
 	remove it from s and return it; otherwise leave s alone and return
 	-1. Leading zeros are ignored; more than 5 significant digits
@@ -3416,7 +3210,9 @@ int j;
 }
 
 /*
-	do_clist() -- )LIST (f == 1) and )HELP's file listing (f == 0).
+	do_clist() -- )LIST. (Until V81 it also listed help.dat for )HELP,
+	which is where its old f argument and its "a name with a / is a path"
+	rule came from; both went with )HELP.)
 
 	)LIST fname          whole file, header first as line 0
 	)LIST fname n        just line n (0 = the header)
@@ -3434,9 +3230,7 @@ int j;
 	since it was )ENTERed -- )ENTER counts every file line too.
 */
 short
-do_clist(s,f)
-char *s;
-short f;
+do_clist(char *s)
 {
 FILE *lfp;
 short i,j;
@@ -3454,7 +3248,6 @@ int ranged, nlines;
 	ranged = 0;
 	first = 0;
 	last = 0;
-	if (f == 1)
 	{
 		last = clist_linenum(s);
 		if (last >= 0)
@@ -3467,15 +3260,10 @@ int ranged, nlines;
 		}
 	}
 
-	if (strchr(s, '/')) {
-		strcpy(cp,s);
-	} else {
-		get_aplhome_dir(cp, LINE_SIZE, "fns");
-		go_lower(s);
-		strcat(cp,s);
-	}
-
-	if (f == 1) strcat(cp,".fn");
+	get_aplhome_dir(cp, LINE_SIZE, "fns");
+	go_lower(s);
+	strcat(cp,s);
+	strcat(cp,".fn");
 	lfp = fopen(cp,"r");
 	if (!lfp) return(SET_ERR(ERR_FNOTF));
 
@@ -3504,21 +3292,13 @@ int ranged, nlines;
 			i++;
 			continue;
 		}
-		if (!f)
-		{
-			translate_help_line(LINEB, LINEA);
-			strcpy(LINEA,LINEB);
-		}
-
 		j = strlen(LINEA);
 		while (j > 0 && (LINEA[j-1] == 10 || LINEA[j-1] == 13)) j--;
 		LINEA[j] = '\0';
-		if (f == 1)
 		{
 			UCHAR *tp = LINEA;
 			while (*tp) { *tp = orig_trans[*tp]; tp++; }
 		}
-		if (f == 1) 
 		{
 			if (i)  // don't number line 0?  Better if it's there
 			{
@@ -3885,94 +3665,6 @@ int32_t *lp;
 }
 
 void
-do_version()
-{
-int i,w,first;
-UCHAR *cp;
-UCHAR quadch[4];
-UCHAR ch[4];
-
-	quadch[0] = CHAR_QD;
-	quadch[1] = '\0';
-
-	PRINT("MPL Version ");
-	PRINT(VERSION);
-	NL();
-	PRINT("Commands:");
-	NL();
-
-	OUT_TRANS_FLAG++;
-
-	cp = cmd_table;
-	w = 0;
-	while (*cp != '@') 
-	{
-		if ((int)(w + strlen(cp)) > WIDTH-1) 
-		{
-			NL();
-			w = 0;
-		}
-		if (w) PRINT(" ");
-		PRINT(")");
-		PRINT(cp);
-		w += 2 + strlen(cp);
-		cp += 1 + strlen(cp);
-	}
-	OUT_TRANS_FLAG--;
-	NL();
-	NL();
-	PRINT("System Functions:");
-	OUT_TRANS_FLAG++;
-	first = 1;
-	i = 0;
-	while (all_fnames[i]) 
-	{
-		NL();
-		w = 0;
-		cp = all_fnames[i];
-		while (*cp) 
-		{
-			if (first == 0)  /* skip over the quad-ZZ dummy */
-			{
-				if ((int)(w + strlen(cp)) > WIDTH-1) 
-				{
-					NL();
-					w = 0;
-				}	
-				if (w) PRINT(" ");
-				PRINT(quadch);
-				PRINT(cp);
-				w += 2 + strlen(cp);
-			}
-			cp += 1 + strlen(cp);
-			first = 0;
-		}
-		i++;
-	}
-	NL();
-	NL();
-	w = 0;
-	cp = char_xtable;
-	while (*cp) 
-	{
-		if ((int)(w + 2) > WIDTH - 1) 
-		{
-			NL();
-			w = 0;
-		}
-		if (w) PRINT(" ");
-		ch[0] = *cp;
-		ch[1] = cp[1];
-		ch[2] = '\0';
-		PRINT(ch);
-		w += 3;
-		cp += 3;
-	}
-	NL();
-	OUT_TRANS_FLAG--;
-}
-
-void
 set_commandp(unsigned char *cp)
 {
 	COMMANDP = cp;
@@ -3984,7 +3676,7 @@ UCHAR *line;
 {
 UCHAR *cp,*cp2;
 UCHAR bf[20];
-short cnum,j,w;
+short cnum,j;
 int i;
 long l;
 
@@ -4120,43 +3812,25 @@ long l;
 			return(0);
 		case 20:	/* PURGE */
 			return(do_purge());
-		case 21:	/* SYS */
-			if (*COMMANDP) {
-				callsystem(COMMANDP);
-				return(0);
-			} 
-			else {
-				i = w = 0;
-				while ((cp = all_fnames[i++]) != NULL) 
-				{
-					cnum = 0;
-					while (cp[cnum]) 
-					{
-						if (w >= (WIDTH - 1)) 
-						{
-							w = 0;
-							NL();
-						}
-						PRINT(cp);
-						j = strlen(cp);
-						cp += j + 1;
-						w += j;
-						while ((w % 10) && w < (WIDTH - 1)) 
-						{
-							PRINT(" ");
-							w++;
-						}
-					}
-				}
-			}
-			CNL();
-			return(0);
+		case 21:	/* SYS -- removed V81: )SYS cmd was ⎕EXEC (same
+				   callsystem()), bare )SYS listed the ⎕ names
+				   (the Help window does that) */
+		case 26:	/* HELP -- removed V81: help.dat, superseded by the
+				   front end's Help menu */
+		case 34:	/* SCRH -- removed V81: obsolete under Qt (the SCRH
+				   variable stays; terminal.c uses it) */
+		case 35:	/* HIST */
+		case 36:	/* CASE -- removed V81: flipped the language tables
+				   and broke the session (see set_case()) */
+		case 37:	/* VERSION -- removed V81: the GUI's About box and
+				   window title show the version */
+			return(SET_ERR(ERR_COMMAND));
 		case 22:	/* SI */
 			return(do_si(0));
 		case 23:	/* STACK */
 			return(do_stack());
 		case 24:	/* LIST */
-			j = do_clist(COMMANDP,1);
+			j = do_clist(COMMANDP);
 			return(j);
 		case 25:	/* OUTSYNC */
 			Cmessage(MSG_WAS);
@@ -4165,11 +3839,6 @@ long l;
 			else OUTSYNC = 1;
 			CNL();
 			return(0);
-		case 26:	/* HELP */
-			get_aplhome_dir((char *)LINEA, LINE_SIZE, "");
-			strcat((char *)LINEA, "help.dat");
-			i = do_clist((char *)LINEA, 0);
-			return(i);
 		case 27:	/* BOOT */
 			i = wspace->bootfn;
 			wspace->bootfn = -1;
@@ -4213,16 +3882,6 @@ long l;
 		case 33:	/* left */
 			if (!print_stack(0)) PRINT("No left parm");
 			NL();
-			return(0);
-		case 34:	/* scrh */
-			return(do_scrh());
-		case 35:	/* hist */
-			return(SET_ERR(ERR_COMMAND));
-		case 36:	/* case */
-			set_case(wspace->caseflip ^ 1);
-			return(0);
-		case 37:
-			do_version();
 			return(0);
 		case 38:
 			return(do_text_dump());

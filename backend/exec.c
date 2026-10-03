@@ -17,9 +17,6 @@ extern short do_monop();
 extern short do_iprod();	/* generalized inner product, Stage 5 (not yet implemented) */
 extern short do_index();
 extern short do_command();
-extern short input_proc();
-extern UCHAR op_table[];		/* read only */
-extern UCHAR char_xtable[];		/* ditto */
 extern void get_aplhome_dir(char *out, size_t outsz, const char *subdir);
 
 short exec_lineb();	/* predefine for proc_quad */
@@ -593,11 +590,8 @@ UCHAR qbuf[LINE_SIZE];		/* local: getin()'s real contract is a LINE_SIZE buffer 
 			NL();
 			PRINT("     ");		/* prompt */
 			getin(cp);
-#ifdef NO_INPUT_PROC
+			CURSX = 0;	/* see the quote-quad case */
 			sl = alt_input_proc(cp,LINEB);
-#else
-			sl = input_proc(cp,LINEB);
-#endif
 			// cp = LINEB;
 			ERROR_CODE = exec_lineb();	/* this is insecure in a closed application */
 			return;
@@ -606,6 +600,14 @@ UCHAR qbuf[LINE_SIZE];		/* local: getin()'s real contract is a LINE_SIZE buffer 
 		case QQUAD_CODE:
 			APL_CASE = 0;
 			getin(cp);
+			/* The person pressed Enter, so the front end is now at the
+			   start of a new line; nothing told the backend. CURSX still
+			   held the prompt's width (⍞←'NAME? ', or quad's 5 blanks),
+			   and the next output wrapped that many columns early. Both
+			   front ends echo the input line and its newline themselves
+			   (apl_cli's cli_getin(), the GUI's qt_getin()), not through
+			   NL(), so reset it here. */
+			CURSX = 0;
 			crash_record_input(cp);
 			sl = strlen(cp);
 			break;
@@ -623,6 +625,19 @@ UCHAR qbuf[LINE_SIZE];		/* local: getin()'s real contract is a LINE_SIZE buffer 
 	return;
 }
 
+/*
+	exec_buf -- where exec_setup() puts the compiled code of the line
+	being run; IP walks it. Not LINEA: LINEA is also the general scratch
+	buffer (vprint(), floatlen(), fmt_number(), ⎕ATN, ...), and those
+	run in the middle of a line -- ⎕←X printing X wrote its digits over
+	the code still to run (⍴⎕←V: Syntax Error). Nothing else may write
+	here. A nested line (a function call, ⍎, ⎕ input) reuses it, as it
+	did LINEA: end_fn() copies the caller's remaining code back in from
+	its function entry when it resumes. A command line (ILEN -1) still
+	goes to LINEA, unchanged: do_command() expects its text there.
+*/
+static UCHAR exec_buf[LINE_SIZE];
+
 void
 exec_setup(src,ilb)
 UCHAR *src;
@@ -634,14 +649,15 @@ short ilb;
 	if (ILEN == -1) 		/* a command? */
 	{
 		strcpy((char *)LINEA,(char *)IP);
+		IP = LINEA;
 	} else {
 		ILEN -= 2;	/* count is included */
 		IP += ilb;	/* skip ahead if requested */
 		ILEN -= ilb;	/* adjust count */
 		/* move to a fixed location */
-		if (ILEN) memcpy((char *)LINEA,(char *)IP,ILEN);
+		if (ILEN) memcpy((char *)exec_buf,(char *)IP,ILEN);
+		IP = exec_buf;
 	}
-	IP = LINEA;
 }
 
 void
@@ -699,41 +715,97 @@ short r;
 }
 
 
+/*
+	op_glyph[] -- the font byte of each operator's standard glyph, by
+	OP_ number, for print_code(): what )STEP OP shows. A table, not a
+	lookup through op_table: op_table holds internal codes, whose letters
+	set_case() flips at run time (⍳ is 'I' in the usual mode), and
+	itrans[] maps several font glyphs to one internal code (! and ∣, ~
+	and ∨ -- see INVARIANTS.md), so neither gives back the standard glyph
+	by itself. Each entry was checked (V81) against itrans[]/op_table:
+	the glyph, typed, compiles to this OP_ number. Not here: OP_OUT
+	(treport() prints ∘. and the function), OP_QDAS/OP_QTAS (two glyphs,
+	print_code()), OP_INA (treport()), OP_RB (never compiled; ']' is
+	OP_IND). Replaces the stub_test-era ASCII digraphs (char_xtable[]).
+*/
+static const UCHAR op_glyph[64] = {
+	[OP_EQ]    = 0x3d,	/* = */
+	[OP_NE]    = 0xa8,	/* ≠ */
+	[OP_GT]    = 0x3e,	/* > */
+	[OP_GE]    = 0xa6,	/* ≥ */
+	[OP_LT]    = 0x3c,	/* < */
+	[OP_LE]    = 0xa4,	/* ≤ */
+	[OP_AND]   = 0x5e,	/* ∧ */
+	[OP_OR]    = 0xa9,	/* ∨ */
+	[OP_NAND]  = 0xb0,	/* ⍲ */
+	[OP_NOR]   = 0xb9,	/* ⍱ */
+	[OP_DIV]   = 0xdf,	/* ÷ */
+	[OP_QU]    = 0x3f,	/* ? */
+	[OP_CE]    = 0xd3,	/* ⌈ */
+	[OP_FL]    = 0xc4,	/* ⌊ */
+	[OP_AB]    = 0xcd,	/* ∣ */
+	[OP_BAND]  = 0xc3,	/* ∩ */
+	[OP_BOR]   = 0xd6,	/* ∪ */
+	[OP_RS]    = 0xd8,	/* ⊃ */
+	[OP_SQUAD] = 0xbe,	/* ⌷ */
+	[OP_INR]   = 0x2e,	/* . */
+	[OP_CATF]  = 0xac,	/* ⍪ */
+	[OP_LS]    = 0xda,	/* ⊂ */
+	[OP_ADD]   = 0x2b,	/* + */
+	[OP_SUB]   = 0x2d,	/* - */
+	[OP_MUL]   = 0xab,	/* × */
+	[OP_POW]   = 0x2a,	/* * */
+	[OP_ENC]   = 0xce,	/* ⊤ */
+	[OP_DEC]   = 0xc2,	/* ⊥ */
+	[OP_QX]    = 0xe2,	/* ⍎ */
+	[OP_FMT]   = 0xee,	/* ⍕ */
+	[OP_LOG]   = 0xf0,	/* ⍟ */
+	[OP_OH]    = 0xcf,	/* ○ */
+	[OP_DRP]   = 0xd5,	/* ↓ */
+	[OP_TAK]   = 0xd9,	/* ↑ */
+	[OP_TRA]   = 0xf4,	/* ⍉ */
+	[OP_DNG]   = 0xe7,	/* ⍒ */
+	[OP_UPG]   = 0xe8,	/* ⍋ */
+	[OP_EXP]   = 0x5c,	/* \ */
+	[OP_COMP]  = 0x2f,	/* / */
+	[OP_RAV]   = 0x2c,	/* , */
+	[OP_BRA]   = 0xfd,	/* → */
+	[OP_VROT]  = 0xe1,	/* ⊖ */
+	[OP_HROT]  = 0xf7,	/* ⌽ */
+	[OP_NOP]   = 0x3b,	/* ; */
+	[OP_IND]   = 0x5d,	/* ] */
+	[OP_IOT]   = 0xc9,	/* ⍳ */
+	[OP_RHO]   = 0xd2,	/* ⍴ */
+	[OP_ASS]   = 0xfb,	/* ← */
+	[OP_LB]    = 0x5b,	/* [ */
+	[OP_RP]    = 0x29,	/* ) */
+	[OP_LP]    = 0x28,	/* ( */
+	[OP_COMPF] = 0xaf,	/* ⌿ */
+	[OP_EXPF]  = 0xdc,	/* ⍀ */
+	[OP_EPS]   = 0xc5,	/* ∊ */
+	[OP_EXEC]  = 0x78,	/* x (the old )-command-from-a-string op) */
+};
+
 void
 print_code(c)
 short c;
 {
-UCHAR *cp,d;
 UCHAR t[4];
 
-	cp = op_table;
-	while (*cp) 
+	t[0] = 0;
+	if (c == OP_QDAS || c == OP_QTAS)
 	{
-		if (cp[1] == c) break;
-		cp += 2;
-	}
-	if (!*cp) 
-	{
-		PRINT("unknown");
-		return;
-	}
-	d = cp[0];
-	cp = char_xtable;
-	while (*cp) 
-	{
-		if (cp[2] == d) break;
-		cp += 3;
-	}
-	if (*cp) 
-	{
-		t[0] = cp[0];
-		t[1] = cp[1];
+		t[0] = (c == OP_QDAS) ? 0xcc : 0xec;	/* ⎕ or ⍞ */
+		t[1] = op_glyph[OP_ASS];		/* ← */
 		t[2] = '\0';
-	} else {
-		t[0] = d;
+	}
+	else if (c >= 0 && c < 64 && op_glyph[c])
+	{
+		t[0] = op_glyph[c];
 		t[1] = '\0';
 	}
-	PRINT(t);
+	if (t[0]) PRINT(t);
+	else PRINT("unknown");
 }
 
 void
@@ -804,7 +876,8 @@ short i;
 				PRINT("scan/reduction");
 			} else {
 				PRINT("monop: ");
-				print_code(c);
+				if (c == OP_NOT) PRINT((UCHAR *)"~");	/* monadic ∨ is not */
+				else print_code(c);
 			}
 		} else {
 			switch (c) 	/* test before get_vparms */
@@ -819,13 +892,17 @@ short i;
 					PRINT("]");
 					break;
 				case OP_INA:
-					PRINT("]=");
+					PRINT("]");
+					print_code(OP_ASS);	/* ]← */
 					break;
-				case OP_OUT:	/* outer product */
-					PRINT("o. :");
-					sprintf(cb,"%d",c);
-					PRINT(cb);
+				case OP_OUT:	/* outer product: z is the function */
+				{
+				UCHAR jot[3] = { 0xca, '.', '\0' };	/* ∘. */
+					PRINT("dyop: ");
+					PRINT(jot);
+					print_code(z);
 					break;
+				}
 				default:
 					PRINT("dyop: ");
 					print_code(c);

@@ -9,7 +9,7 @@
 
 /*
 	Module slot assignment (the 3-bit "k" selector packed into a compiled
-	quad-function reference by input_proc()/alt_input_proc(), and unpacked
+	quad-function reference by platform_translate.c's input_translate(), and unpacked
 	by do_sys() as f >> SYSFUNC_SHIFT):
 
 		k=0  SYSFUNCS   (always enabled)
@@ -48,7 +48,7 @@
 	    removal is the exception, justified case by case, not the rule.
 
 	all_fnames[] is scanned (not indexed) by name-lookup code in
-	lineproc.c's input_proc() and each platform file's alt_input_proc(), via
+	platform_translate.c's input_translate(), via
 	"while (cpt = all_fnames[k])" -- a literal 0L there is a loop
 	terminator, not a "disabled" marker, and would hide every module after
 	it from name lookup. A disabled module must therefore point at

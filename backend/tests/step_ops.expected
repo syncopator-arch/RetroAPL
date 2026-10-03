@@ -1,0 +1,178 @@
+Clear WS
+     )ENTER OPS
+     )STOP OPS 1
+Now: OPS[1]
+     )STEP OP
+Was OFF
+     OPS
+
+OPS [1] *
+     →0
+OPS [1] push byte
+     →0
+OPS [1] push byte
+     →0
+OPS [1] dyop: ≠
+     →0
+1
+OPS [2] push byte
+     →0
+OPS [2] push byte
+     →0
+OPS [2] dyop: ≤
+     →0
+1
+OPS [3] push byte
+     →0
+OPS [3] monop: ⍴
+     →0
+2
+OPS [4] push byte
+     →0
+OPS [4] push byte
+     →0
+OPS [4] dyop: ×
+     →0
+6
+OPS [5] push byte
+     →0
+OPS [5] push byte
+     →0
+OPS [5] dyop: ÷
+     →0
+3.5
+OPS [6] push byte
+     →0
+OPS [6] monop: -
+     →0
+¯5
+OPS [7] push float
+     →0
+OPS [7] monop: ⌈
+     →0
+2.5
+OPS [8] push quote
+     →0
+OPS [8] push quote
+     →0
+OPS [8] dyop: ∈
+     →0
+1
+OPS [9] push byte
+     →0
+OPS [9] push byte
+     →0
+OPS [9] dyop: ∘.+
+     →0
+ 4 5
+ 5 6
+OPS [10] push byte
+     →0
+OPS [10] monop: ⍳
+     →0
+OPS [10] push byte
+     →0
+OPS [10] dyop: ⌽
+     →0
+3 4 1 2
+OPS [11] push byte
+     →0
+OPS [11] monop: ⍳
+     →0
+OPS [11] push byte
+     →0
+OPS [11] dyop: ⍴
+     →0
+OPS [11] monop: ⍉
+     →0
+ 1 3
+ 2 4
+OPS [12] push byte
+     →0
+OPS [12] monop: ⍳
+     →0
+OPS [12] scan/reduction
+     →0
+10
+OPS [13] push byte
+     →0
+OPS [13] push var: X
+     →0
+OPS [13] dyop: ←
+     →0
+1 2 3
+OPS [14] push var: X
+     →0
+1 2 3
+OPS [14] monop: ⎕←
+     →0
+1 2 3
+OPS [15] push byte
+     →0
+OPS [15] ]←
+     →0
+OPS [15] push byte
+     →0
+OPS [15] push var: X
+     →0
+OPS [15] [
+     →0
+6
+OPS [16] push byte
+     →0
+OPS [16] monop: ⍳
+     →0
+OPS [16] push byte
+     →0
+OPS [16] dyop: ↑
+     →0
+ 1 2 3 4
+ 0 0 0 0
+ 0 0 0 0
+OPS [17] push byte
+     →0
+OPS [17] monop: ~
+     →0
+0 1
+OPS [18] push byte
+     →0
+OPS [18] push byte
+     →0
+OPS [18] dyop: ⊥
+     →0
+5
+OPS [19] push byte
+     →0
+OPS [19] monop: ⍳
+     →0
+OPS [19] push byte
+     →0
+OPS [19] dyop: ⍴
+     →0
+OPS [19] monop: ⌿
+     →0
+4 6
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     →0
+     )STEP OFF
+Was OP
+     )STOP OFF
+Now: None
+     

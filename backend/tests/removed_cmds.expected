@@ -1,0 +1,46 @@
+Clear WS
+     )VERSION
+     ^
+Incorrect Command
+
+     )VER
+     ^
+Incorrect Command
+
+     )HELP
+     ^
+Incorrect Command
+
+     )HE
+     ^
+Incorrect Command
+
+     )SYS
+     ^
+Incorrect Command
+
+     )SYS true
+     ^
+Incorrect Command
+
+     )SCRH
+     ^
+Incorrect Command
+
+     )SCR 30
+     ^
+Incorrect Command
+
+     )SCRH
+     ^
+Incorrect Command
+
+     )CASE
+     ^
+Incorrect Command
+
+     )WIDTH
+Is 82
+     )VARS
+
+     

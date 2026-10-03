@@ -3,7 +3,7 @@
 
 	Command-line front end for the APL backend, with UTF-8 input and
 	output. Built mainly for regression testing: it drives the backend
-	through the same AS_DLL entry points, in the same order, as the Qt
+	through the same entry points, in the same order, as the Qt
 	front end's EngineThread::run() in main.cpp, so tests exercise the
 	same code the GUI does:
 
@@ -33,8 +33,7 @@
 	`apl_cli < script.apl` prints just the results.
 
 	Graphics are not supported yet: grfuncs.o is not linked, and the
-	placeholders at the end of this file (copied from the platform
-	files' stub_test block) stand in for it.
+	placeholders at the end of this file stand in for it.
 */
 
 #include <stdio.h>
@@ -47,7 +46,7 @@
 #include "platform.h"
 #include "kapl_unicode.h"
 
-/* Backend entry points (main.c, AS_DLL build) -- declared locally, as
+/* Backend entry points (main.c) -- declared locally, as
    main.cpp does, since no backend header declares them. */
 extern int  dll_startup(int debug, int xflag, char *wsname, int argc, char **argv);
 extern int  exec_apl_line(UCHAR *linebuf);
@@ -354,13 +353,12 @@ main(int argc, char **argv)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Graphics placeholders -- copied from the #ifndef AS_DLL block in  */
-/*  linux_platform.c / windows_platform.c, which provides them for    */
-/*  stub_test. The backend objects linked here are the AS_DLL ones,   */
-/*  where that block is compiled out, and grfuncs.o is left out (its  */
-/*  gw_*() calls resolve only against the Qt front end), so this file */
-/*  supplies the same set. Graphics calls do nothing; replace these   */
-/*  when graphics testing is taken up.                                */
+/*  Graphics placeholders. grfuncs.o is left out of apl_cli (its      */
+/*  gw_*() calls resolve only against the Qt front end, which also    */
+/*  supplies sys_ctrl() and the rest of this set), so this file       */
+/*  defines them instead. (The platform files once carried the same   */
+/*  placeholders for the retired stub_test build.) Graphics calls do  */
+/*  nothing; replace these when graphics testing is taken up.         */
 /* ------------------------------------------------------------------ */
 
 int flush_graphics()                    { return 0; }

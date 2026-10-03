@@ -16,7 +16,6 @@
 extern char *sys_malloc();
 extern short restart_mode;
 extern void flush_output(void);
-extern short input_proc();
 /* alt_input_proc() is already declared in externs.h (int alt_input_proc(UCHAR*,UCHAR*)) */
 
 

@@ -351,8 +351,9 @@ start of the next line, including lines of functions it calls, so each
 `→0` moves one line. With `OP` it stops after every operation,
 displaying what just ran, such as `RECURSE [3] push var: N`. These
 describe the compiled line, which runs right to left: a constant
-appears as `push byte`, `push short` and so on, and `exec fn:` is a
-function call. There's no stop directly after a branch — the next
+appears as `push byte`, `push short` and so on, `exec fn:` is a
+function call, and a primitive appears with its glyph, as `dyop: ≠`
+(dyadic) or `monop: ⍴` (monadic). There's no stop directly after a branch — the next
 line's first operation stops instead. Stepping only applies to a
 function continued with `→0`: a function run from a typed line runs
 normally until it reaches a `)STOP` line, so to step from the top,
@@ -376,20 +377,6 @@ failed — for `3÷0`, `3` and `0`. Short forms `)LE` and `)RI`.
 ---
 
 ## System
-
-`)SYS`
-
-`)SYS command`
-
-With a command, starts it as a separate operating-system program and
-returns immediately without waiting for it to finish, the same as
-`⎕EXEC`; its output doesn't appear in the APL session. With no command, lists the names of all
-`⎕` functions.
-
-`)VERSION`
-
-Displays the interpreter version, followed by the names of all system
-commands and `⎕` functions. Short form `)VER`.
 
 `)FONT`
 

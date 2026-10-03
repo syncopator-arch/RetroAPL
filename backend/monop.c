@@ -963,11 +963,7 @@ char *tp;
 	strncpy(cp,tp,i);
 	cp[i] = '\0';
 
-#ifdef NO_INPUT_PROC
 	alt_input_proc((UCHAR *)cp,(UCHAR *)LINEB);
-#else
-	input_proc((UCHAR *)cp,(UCHAR *)LINEB);
-#endif
 	return(0);
 }
 
@@ -2153,8 +2149,6 @@ isint:;
 			l  = ve->ve_length;
 			strncpy(cp, DATA_AD(ve), (int)l);
 			cp[l] = '\0';
-			/* x commands always lower case */
-			if (wspace->caseflip) caseflip((UCHAR *)cp);
 			SILENT_COMMAND = 1;
 			i = do_command((UCHAR *)cp);
 			SILENT_COMMAND = 0;

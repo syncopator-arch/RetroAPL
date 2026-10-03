@@ -9,8 +9,6 @@
 			   whatever a given including .c file happened to
 			   pull in first. */
 
-/* #define AS_DLL 1	 specifies DLL compliation options */
-
 extern UCHAR *all_fnames[];
 extern int term_fd;
 
@@ -20,13 +18,9 @@ extern short upsize();
 extern PTF all_funcs[];
 extern UCHAR *all_ftypes[];
 extern UCHAR *get_vstr();
-extern UCHAR *input_line();
 extern UCHAR char_flip();
-extern UCHAR char_xtable[];
 extern UCHAR file_fnames[];
 extern UCHAR file_ftypes[];
-extern UCHAR ledit_fnames[];
-extern UCHAR ledit_ftypes[];
 extern UCHAR op_table[];
 extern UCHAR sys_fnames[];
 extern UCHAR sys_ftypes[];
@@ -60,8 +54,6 @@ extern short file_funcs();
 extern short getach_e();
 extern short getdlist();
 extern short guru_abort;
-extern short input_proc();
-extern short ledit_funcs();
 extern short mem_init(char *wsname);
 extern short outsync;
 extern short pop_fn();
@@ -149,12 +141,6 @@ extern short global_restore(short r);
 extern void die(short f);
 extern void live();
 extern void proc_abort(int n);
-#endif
-
-#ifndef LEDFUNCS_C
-extern short do_hist();
-extern void vi_hist(UCHAR *b,short c);
-extern void add_hist(UCHAR *b);
 #endif
 
 #ifndef LINEPROC_C
@@ -290,7 +276,7 @@ extern void translate_init(UCHAR *kt);
 
 /* )FONT's font-family source. Link-time hook, same arrangement as
    sysfuncs.c's sys_ctrl(): the Qt build defines the real one in main.cpp,
-   apl_cli and stub_test each define a placeholder that returns -1. Fills
+   apl_cli defines a placeholder that returns -1. Fills
    buf with NUL-terminated names back to back, whole names only, and
    returns how many it wrote; -1 means no font list in this build.
    Declared here rather than in externs.h, following get_aplhome_dir()'s

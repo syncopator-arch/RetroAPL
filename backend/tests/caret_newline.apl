@@ -1,0 +1,7 @@
+⎕WI 20
+⍞←'NAME? '
+⍳8
+1÷⍞←0
+⍞←'NAME? '
+NOSUCH+1
+NOSUCH+1
