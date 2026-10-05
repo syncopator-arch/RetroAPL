@@ -13,6 +13,8 @@
 extern struct FuncEnt *MakeFNEnt();
 extern short mem_init(char *wsname);
 extern short do_exec();
+extern void seqf_close(void);	/* seqfuncs.c: MIDI sequencer hooks */
+extern void seqf_panic(void);
 
 short restart_mode = 0;
 
@@ -67,6 +69,13 @@ char *cp;
 	A second fatal error while this one is being handled (the SI walk
 	tripping over the damage, say) exits at once.
 
+	Both exits call seqf_panic() (seqfuncs.c) just before _Exit(),
+	after the log and the message, so notes the MIDI sequencer has
+	sounding don't hang on the synth: note-offs and All Notes Off,
+	without waiting long for the sequencer's lock. It touches nothing
+	in the workspace, and does nothing unless a port is open. The
+	kernel closes the port itself after _Exit().
+
 	Not die(): die(short) stays the normal-shutdown call, and has no
 	message to give.
 */
@@ -84,6 +93,7 @@ int logged;
 
 	if (in_fatal)
 	{
+		seqf_panic();
 		fflush(NULL);
 		_Exit(FATAL_EXIT_CODE);
 	}
@@ -113,6 +123,7 @@ int logged;
 		NL();
 	}
 	flush_output();
+	seqf_panic();
 	fflush(NULL);
 	_Exit(FATAL_EXIT_CODE);
 }
@@ -250,6 +261,7 @@ UCHAR *line;
 void
 dll_cleanup()
 {
+	seqf_close();	/* MIDI sequencer: stop, note-offs, close the port */
 	mem_free();
 	die(0);
 }

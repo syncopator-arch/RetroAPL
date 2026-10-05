@@ -33,6 +33,24 @@ endif()
 # Headers: platform.h, externs.h, globals.h, depend.h, etc.
 include_directories("${BACKEND_DIR}")
 
+# ── MIDI sequencer library ────────────────────────────────────────────
+# libapl.a's seqfuncs.c (the ⎕SEQ functions) calls it. Built by the
+# backend's make (which runs `make libseq.a` in ../sequencer), or there
+# directly. The front end includes none of its headers: stopEngine()
+# reaches it through seqf_close() in libapl.a.
+set(SEQUENCER_DIR "${CMAKE_SOURCE_DIR}/../sequencer")
+if(NOT EXISTS "${SEQUENCER_DIR}/libseq.a")
+    message(WARNING
+        "libseq.a not found in ${SEQUENCER_DIR} -- "
+        "run 'make' in the backend directory (or 'make libseq.a' in the "
+        "sequencer directory) before building the frontend.")
+endif()
+
+# The sequencer's playback thread uses POSIX threads on both platforms
+# (glibc; winpthreads in the Qt kit's MinGW).
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 # ── Source files ──────────────────────────────────────────────────────
 set(SOURCES
     main.cpp
@@ -74,8 +92,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Widgets
     Qt6::PrintSupport
     "${BACKEND_DIR}/libapl.a"
+    "${SEQUENCER_DIR}/libseq.a"
+    Threads::Threads
 	$<$<NOT:$<BOOL:${WIN32}>>:m>
 	$<$<BOOL:${WIN32}>:bcrypt>
+	$<$<BOOL:${WIN32}>:winmm>
 )
 
 # ── Warnings ──────────────────────────────────────────────────────────
@@ -107,9 +128,11 @@ install(FILES kapl.ttf
 # Build instructions
 # =============================================================================
 #
-# 1. Build the backend static library first:
+# 1. Build the backend static library and the sequencer library first:
 #      cd ../backend
 #      make libapl.a
+#      make -C ../sequencer libseq.a
+#    (a plain `make` in the backend does both, and builds apl_cli)
 #
 # 2. Build the frontend:
 #      cd ../frontend

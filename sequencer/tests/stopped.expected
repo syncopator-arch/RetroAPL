@@ -1,0 +1,58 @@
+# Stopped mid-loop: a new version waits for its boundary exactly as
+# while playing, so continuing never lands in the middle of a new
+# pattern. A track started from nothing while stopped waits for the
+# next whole beat. seq_clear while stopped removes tracks at once;
+# their settings are kept for the next version.
+open virtual
+track 1 60:4
+  takes over at beat 0.000 (t0)
+track 2:2 72:4
+  takes over at beat 0.000 (t0)
+vel 2 = 50
+  prev: 100
+play continue
+  was playing: 0
+runto 1.5
+play stop
+  was playing: 1
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t0 0.000ms ON  ch2 72 v50
+  1.500 t3780 750.000ms OFF ch1 60
+  1.500 t3780 750.000ms OFF ch2 72
+track 1 62:4
+  takes over at beat 4.000 (t10080)
+track 3:3 76:1
+  takes over at beat 2.000 (t5040)
+clear 2
+  held: 1
+clear 2 4
+  held: 0 0
+state
+  seq: STOPPED beat 1.500 (t3780) tempo 120 tracks 2
+  track 1: notes 1 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 1 position 1.500 (t3780)
+  track 3: notes 0 ch 3 mute 0 loop 1 vel 100 length 0.000 (t0) pending 1 position 0.000 (t0)
+play continue
+  was playing: 0
+runto 6
+log
+  2.000 t5040 1000.000ms ON  ch3 76 v100
+  3.000 t7560 1500.000ms OFF ch3 76
+  3.000 t7560 1500.000ms ON  ch3 76 v100
+  4.000 t10080 2000.000ms OFF ch3 76
+  4.000 t10080 2000.000ms ON  ch1 62 v100
+  4.000 t10080 2000.000ms ON  ch3 76 v100
+  5.000 t12600 2500.000ms OFF ch3 76
+  5.000 t12600 2500.000ms ON  ch3 76 v100
+track 2 74:1
+  takes over at beat 6.000 (t15120)
+state
+  seq: PLAYING beat 6.000 (t15120) tempo 120 tracks 3
+  track 1: notes 1 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+  track 2: notes 0 ch 2 mute 0 loop 1 vel 50 length 0.000 (t0) pending 1 position 0.000 (t0)
+  track 3: notes 1 ch 3 mute 0 loop 1 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0)
+runto 7
+log
+  6.000 t15120 3000.000ms OFF ch3 76
+  6.000 t15120 3000.000ms ON  ch2 74 v50
+  6.000 t15120 3000.000ms ON  ch3 76 v100

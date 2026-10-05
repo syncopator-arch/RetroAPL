@@ -1,0 +1,48 @@
+# Stop is a pause: note-offs for sounding notes, then continue picks
+# up where it stopped (the held note is not resounded). Restart goes
+# back to beat 0 for every track, taking a waiting version at once.
+open virtual
+track 1 60:2 62:2
+  takes over at beat 0.000 (t0)
+track 2 72:3
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 3
+play stop
+  was playing: 1
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t0 0.000ms ON  ch2 72 v100
+  2.000 t5040 1000.000ms OFF ch1 60
+  2.000 t5040 1000.000ms ON  ch1 62 v100
+  3.000 t7560 1500.000ms OFF ch1 62
+  3.000 t7560 1500.000ms OFF ch2 72
+state
+  seq: STOPPED beat 3.000 (t7560) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 3.000 (t7560)
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 3.000 (t7560) pending 0 position 0.000 (t0)
+play stop
+  was playing: 0
+play continue
+  was playing: 0
+runto 6
+log
+  3.000 t7560 1500.000ms ON  ch2 72 v100
+  4.000 t10080 2000.000ms ON  ch1 60 v100
+track 1 48:1
+  takes over at beat 8.000 (t20160)
+play restart
+  was playing: 1
+runto 2
+log
+  6.000 t15120 3000.000ms OFF ch1 60
+  6.000 t15120 3000.000ms OFF ch2 72
+  0.000 t0 3000.000ms ON  ch1 48 v100
+  0.000 t0 3000.000ms ON  ch2 72 v100
+  1.000 t2520 3500.000ms OFF ch1 48
+  1.000 t2520 3500.000ms ON  ch1 48 v100
+state
+  seq: PLAYING beat 2.000 (t5040) tempo 120 tracks 2
+  track 1: notes 1 ch 1 mute 0 loop 1 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0)
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 3.000 (t7560) pending 0 position 2.000 (t5040)

@@ -1,0 +1,51 @@
+# Opening a device (Phase 3, on the fake device in seq_fake_dev.c).
+# The subdevice preference is set on the control device, from the same
+# thread, before the MIDI device is opened non-blocking; the subdevice
+# actually opened is checked, and the control device closed after.
+fakedev port 1 0 2
+open device hw:1,0,1
+devdiag
+fakedev log
+close
+fakedev log
+# hw:C,D takes any free subdevice; hw:C means device 0
+fakedev busy 1 0 0
+open device hw:1,0
+devdiag
+close
+open device hw:1
+devdiag
+close
+fakedev free 1 0 0
+fakedev log
+# names not understood (nothing is opened)
+open device hw:x
+open device hw:1,0,
+open device 1,0,0
+open device hw:1,0,0,0
+open device hw:256
+open device hw:01234
+devdiag
+fakedev log
+# no such card, device or subdevice (the kernel gives ENODEV for a
+# subdevice past the last)
+open device hw:2,0,0
+devdiag
+open device hw:1,1
+open device hw:1,0,2
+devdiag
+fakedev log
+# in use: the one asked for, or all of them; open never waits
+fakedev busy 1 0 1
+open device hw:1,0,1
+devdiag
+fakedev busy 1 0 0
+open device hw:1,0
+fakedev log
+# no permission (not in the audio group)
+fakedev free 1 0 0
+fakedev deny 1
+open device hw:1,0,0
+devdiag
+fakedev log
+state

@@ -1,0 +1,32 @@
+# seq_clear while playing: the track finishes its pass and is removed
+# at its boundary; a waiting version is dropped too. Submitting after
+# the clear (before the boundary) cancels the clear. A track waiting
+# for its start beat is removed at once. Restart applies pending
+# clears.
+open virtual
+track 1 60:2 62:2
+track 2:2 72:4
+play continue
+runto 1
+clear 1
+track 2 74:4
+clear 2
+state
+runto 5
+log
+state
+track 1 60:2
+runto 6.5
+clear 1
+track 1 65:1
+runto 9
+log
+runto 9.5
+track 3:3 76:1
+clear 3
+state
+clear 1
+play restart
+runto 1
+log
+state

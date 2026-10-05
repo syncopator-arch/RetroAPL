@@ -1,0 +1,14 @@
+# The real clock with the log for output (no device): checks the
+# timed-wait path. Only ticks are shown, since times vary run to run.
+# At 1000 bpm a beat is 60 ms; a 4-beat play-once track takes 240 ms.
+open realtime
+tempo 1000
+loop 1 2 = 0
+track 1 60:1 62:1 64:1/2 65:1/2 67:1
+track 2:2 48:4/3 50:4/3 52:4/3
+runto 4
+play continue
+sleep 600
+logticks
+play stop
+close

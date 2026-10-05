@@ -1,0 +1,13 @@
+# Tracks of different lengths started together stay locked: a 3-beat
+# and a 4-beat track coincide every 12 beats, and still do after many
+# loops (beat 1200). Track 2 is on its own channel.
+open virtual
+track 1 60:3
+track 2:2 72:4
+play continue
+runto 13
+log
+runto 1199
+logdrop
+runto 1201
+log

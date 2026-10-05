@@ -1,0 +1,48 @@
+Clear WS
+     ⎕SEQSTATE
+  0  0  0  0  0  0  0  0  0
+     ⎕SEQCLOSE
+
+     ⍴⎕SEQCLOSE
+0
+     ⎕SEQTEMPO
+     ^
+Sequencer Not Open
+     ⎕SEQTEMPO←90
+     ^
+Sequencer Not Open
+     ⎕SEQPLAY
+     ^
+Sequencer Not Open
+     ⎕SEQPLAY←1
+     ^
+Sequencer Not Open
+     1 ⎕SEQTRACK 2 4⍴60 62 64 ¯1 1 1 1 1
+     ^
+Sequencer Not Open
+     ⎕SEQCLEAR 1
+     ^
+Sequencer Not Open
+     1 ⎕SEQMUTE 1
+     ^
+Sequencer Not Open
+     1 ⎕SEQLOOP 0
+     ^
+Sequencer Not Open
+     1 ⎕SEQVEL 70
+     ^
+Sequencer Not Open
+     ⎕SEQRUNTO 4
+     ^
+Sequencer Not Open
+     ⍴⎕SEQLOG
+0 0
+     ⎕SEQOPEN 'nonsense' ⍝ k3 slot 0 compiles to byte 0x60, the comment character
+     ^
+Domain Error
+     ⎕SEQOPEN 1 2⍴'AB'
+     ^
+Rank Error
+     ⎕SEQSTATE
+  0  0  0  0  0  0  0  0  0
+     

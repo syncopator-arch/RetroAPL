@@ -1,0 +1,6 @@
+# Rests (r or -1) take time and send nothing; pitch 0 is a real note.
+open virtual
+track 1 0:1 r:1 127:1 -1:1
+play continue
+runto 9
+log

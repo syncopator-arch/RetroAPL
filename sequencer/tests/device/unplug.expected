@@ -1,0 +1,78 @@
+# Unplugging (Phase 3, fake device, behaving as the 5.15 kernel source
+# says: writes fail with ENODEV, a waiting poll() wakes with POLLERR,
+# the card's files can't be opened). Tempo 120, a beat is 500 ms.
+fakedev port 1 0 1
+open device hw:1,0,0
+track 1 60:1 62:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+sleep 250
+fakedev unplug 1
+sleep 500
+state
+  seq: PORT_LOST beat 1.000 (t2520) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520)
+devdiag
+  failed: write (No such device)
+  writes 1, waited 0, subdevice 0
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice 0
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC1
+  write 90 3c 64
+  write: No such device
+  close midiC1D0 sub 0
+open device hw:1,0,0
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+fakedev replug 1
+open device hw:1,0,0
+play continue
+  was playing: 0
+sleep 100
+fakedev log
+  open controlC1: No such file or directory
+  open controlC1: ok
+  ioctl prefer-subdevice 0
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC1
+  write 80 3c 00
+  write b0 7b 00
+  write b1 7b 00
+  write b2 7b 00
+  write b3 7b 00
+  write b4 7b 00
+  write b5 7b 00
+  write b6 7b 00
+  write b7 7b 00
+  write b8 7b 00
+  write b9 7b 00
+  write ba 7b 00
+  write bb 7b 00
+  write bc 7b 00
+  write bd 7b 00
+  write be 7b 00
+  write bf 7b 00
+  write 90 3e 64
+# unplugged while a write waits for room: the wait ends at once with
+# the real error, not after 1 s
+fakedev room 0
+sleep 500
+fakedev unplug 1
+sleep 100
+state
+  seq: PORT_LOST beat 2.000 (t5040) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0)
+devdiag
+  failed: write (No such device)
+  writes 18, waited 0, subdevice 0
+fakedev log
+  write: Resource temporarily unavailable
+  poll (wait for room)
+  write: No such device
+  close midiC1D0 sub 0
+close
+  closed: 1

@@ -1,0 +1,23 @@
+# Beat waits: the event arrives at the next whole beat, numbered by
+# the main clock, so beats missed while busy show as a jump. Stop or
+# close ends a wait with STOPPED. Cancel disarms it. Not playing:
+# an error at once (the glue returns empty).
+open virtual
+arm
+track 1 60:1
+play continue
+beatwait
+beatwait
+runto 5.5
+beatwait
+arm
+cancel
+runto 9
+arm
+arm
+runto 10.5
+arm
+play stop
+play continue
+arm
+close

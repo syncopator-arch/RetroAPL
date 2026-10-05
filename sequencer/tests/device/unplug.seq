@@ -1,0 +1,29 @@
+# Unplugging (Phase 3, fake device, behaving as the 5.15 kernel source
+# says: writes fail with ENODEV, a waiting poll() wakes with POLLERR,
+# the card's files can't be opened). Tempo 120, a beat is 500 ms.
+fakedev port 1 0 1
+open device hw:1,0,0
+track 1 60:1 62:1
+play continue
+sleep 250
+fakedev unplug 1
+sleep 500
+state
+devdiag
+fakedev log
+open device hw:1,0,0
+fakedev replug 1
+open device hw:1,0,0
+play continue
+sleep 100
+fakedev log
+# unplugged while a write waits for room: the wait ends at once with
+# the real error, not after 1 s
+fakedev room 0
+sleep 500
+fakedev unplug 1
+sleep 100
+state
+devdiag
+fakedev log
+close

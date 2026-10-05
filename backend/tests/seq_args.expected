@@ -1,0 +1,200 @@
+Clear WS
+     ⎕SEQOPEN 'x'
+1
+     M←2 4⍴60 62 64 ¯1 1 1 1 1
+     1 2 3 ⎕SEQTRACK M
+     ^
+Length Error
+     (⍳0) ⎕SEQTRACK M
+     ^
+Length Error
+     'A' ⎕SEQTRACK M
+     ^
+Domain Error
+     1.5 ⎕SEQTRACK M
+     ^
+Domain Error
+     17 ⎕SEQTRACK M
+     ^
+Domain Error
+     0 ⎕SEQTRACK M
+     ^
+Domain Error
+     1 0 ⎕SEQTRACK M
+     ^
+Domain Error
+     1 ¯1 ⎕SEQTRACK M
+     ^
+Domain Error
+     1 17 ⎕SEQTRACK M
+     ^
+Domain Error
+     1 ⎕SEQTRACK 60 62 64
+     ^
+Rank Error
+     1 ⎕SEQTRACK 3 3⍴1
+     ^
+Length Error
+     1 ⎕SEQTRACK 2 0⍴0
+     ^
+Length Error
+     1 ⎕SEQTRACK 2 2⍴'ABCD'
+     ^
+Domain Error
+     1 ⎕SEQTRACK 2 2 2⍴1
+     ^
+Rank Error
+     1 ⎕SEQTRACK 2 1⍴128 1
+     ^
+Domain Error
+     1 ⎕SEQTRACK 2 1⍴¯2 1
+     ^
+Domain Error
+     1 ⎕SEQTRACK 2 1⍴60.5 1
+     ^
+Domain Error
+     1 ⎕SEQTRACK 2 1⍴60 0
+     ^
+Domain Error
+     1 ⎕SEQTRACK 2 1⍴60 ¯1
+     ^
+Domain Error
+     1 ⎕SEQTRACK 2 1⍴60,÷2600
+     ^
+Domain Error
+     1 ⎕SEQTRACK 2 2⍴60 61 1,÷2520
+0
+     (8÷4) ⎕SEQTRACK M
+0
+     ((3÷1),2×2) ⎕SEQTRACK M
+0
+     ⎕SEQSTATE
+    0    1    0  120    3    0    0    0    0
+    1    0    1    0    1  100    0    1    0
+    2    0    2    0    1  100    0    1    0
+    3    0    4    0    1  100    0    1    0
+     1 2 ⎕SEQMUTE 1
+0 0
+     1 2 ⎕SEQMUTE 0 1
+1 1
+     1 2 ⎕SEQMUTE 1 0 1
+     ^
+Length Error
+     (⍳0) ⎕SEQMUTE 1
+
+     ⍴(⍳0) ⎕SEQMUTE 1
+0
+     1 ⎕SEQMUTE ⍳0
+     ^
+Length Error
+     1 ⎕SEQMUTE 2
+     ^
+Domain Error
+     1 ⎕SEQMUTE 0.5
+     ^
+Domain Error
+     1 ⎕SEQMUTE 'A'
+     ^
+Domain Error
+     17 ⎕SEQMUTE 0
+     ^
+Domain Error
+     (2 2⍴1) ⎕SEQMUTE 0
+     ^
+Rank Error
+     1 ⎕SEQMUTE 2 2⍴0
+     ^
+Rank Error
+     2 ⎕SEQVEL 70
+100
+     2 ⎕SEQVEL 128
+     ^
+Domain Error
+     2 ⎕SEQVEL 0
+     ^
+Domain Error
+     1 2 ⎕SEQVEL 90 80
+100 70
+     1 ⎕SEQLOOP 0
+1
+     1 ⎕SEQLOOP 1
+0
+     1 ⎕SEQLOOP ¯1
+     ^
+Domain Error
+     ⎕SEQCLEAR 2 4
+2
+     ⎕SEQCLEAR ⍳0
+
+     ⍴⎕SEQCLEAR ⍳0
+0
+     ⎕SEQCLEAR 0
+     ^
+Domain Error
+     ⎕SEQCLEAR 'A'
+     ^
+Domain Error
+     ⎕SEQCLEAR 2 2⍴1
+     ^
+Rank Error
+     ⎕SEQPLAY 3
+     ^
+Domain Error
+     ⎕SEQPLAY 1.5
+     ^
+Domain Error
+     ⎕SEQPLAY ¯1
+     ^
+Domain Error
+     ⎕SEQPLAY 'A'
+     ^
+Domain Error
+     ⎕SEQPLAY 1 1
+     ^
+Length Error
+     ⎕SEQTEMPO 0
+     ^
+Domain Error
+     ⎕SEQTEMPO 1000.5
+     ^
+Domain Error
+     ⎕SEQTEMPO 1 2
+     ^
+Length Error
+     ⎕SEQTEMPO 'X'
+     ^
+Domain Error
+     ⎕SEQTEMPO 0.5
+     ^
+Domain Error
+     ⎕SEQTEMPO 1000
+120
+     ⎕SEQTEMPO 66.5
+1000
+     ⎕SEQRUNTO 4
+     ^
+Domain Error
+     ⎕SEQPLAY←1
+     ⎕SEQRUNTO ¯1
+     ^
+Domain Error
+     ⎕SEQRUNTO 'A'
+     ^
+Domain Error
+     ⎕SEQRUNTO 1 2
+     ^
+Length Error
+     ⎕SEQRUNTO 0
+0
+     ⎕SEQRUNTO 1÷3
+0.3333333333
+     ⎕SEQSTATE
+   0.0000000000   2.0000000000   0.3333333333  66.5000000000   2.0000000000
+   0.0000000000   0.0000000000   0.0000000000   0.0000000000
+   1.0000000000   2.0000000000   1.0000000000   0.0000000000   1.0000000000
+  90.0000000000   1.0003968254   0.0000000000   0.3333333333
+   3.0000000000   4.0000000000   4.0000000000   0.0000000000   1.0000000000
+ 100.0000000000   4.0000000000   0.0000000000   0.3333333333
+     ⎕SEQCLOSE
+1 3
+     

@@ -1,0 +1,38 @@
+# The real clock with the log for output (no device): checks the
+# timed-wait path. Only ticks are shown, since times vary run to run.
+# At 1000 bpm a beat is 60 ms; a 4-beat play-once track takes 240 ms.
+open realtime
+tempo 1000
+  prev: 120
+loop 1 2 = 0
+  prev: 1 1
+track 1 60:1 62:1 64:1/2 65:1/2 67:1
+  takes over at beat 0.000 (t0)
+track 2:2 48:4/3 50:4/3 52:4/3
+  takes over at beat 0.000 (t0)
+runto 4
+  error: SEQ_ERR_BACKEND (not valid for this backend)
+play continue
+  was playing: 0
+sleep 600
+logticks
+  0.000 t0 ON  ch1 60 v100
+  0.000 t0 ON  ch2 48 v100
+  1.000 t2520 OFF ch1 60
+  1.000 t2520 ON  ch1 62 v100
+  1.333 t3360 OFF ch2 48
+  1.333 t3360 ON  ch2 50 v100
+  2.000 t5040 OFF ch1 62
+  2.000 t5040 ON  ch1 64 v100
+  2.500 t6300 OFF ch1 64
+  2.500 t6300 ON  ch1 65 v100
+  2.667 t6720 OFF ch2 50
+  2.667 t6720 ON  ch2 52 v100
+  3.000 t7560 OFF ch1 65
+  3.000 t7560 ON  ch1 67 v100
+  4.000 t10080 OFF ch1 67
+  4.000 t10080 OFF ch2 52
+play stop
+  was playing: 1
+close
+  closed: (none)

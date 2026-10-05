@@ -1,0 +1,18 @@
+# A new version takes over exactly at the loop boundary, at the beat
+# seq_submit_track() returned. Sent mid-loop; then sent while held
+# exactly on a boundary (beat 12, not yet played), where it takes
+# over at that boundary, not one loop later. A second submission
+# before the takeover replaces the first.
+open virtual
+track 1 60:1 62:1 64:1 65:1
+play continue
+runto 5.5
+track 1 67:1 65:1 64:1 62:1
+state
+runto 9
+log
+runto 12
+track 1 72:2 71:2
+track 1 48:2 50:2
+runto 17
+log

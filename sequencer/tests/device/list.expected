@@ -1,0 +1,35 @@
+# Listing output ports (Phase 3, fake device): every output subdevice
+# of every card, as the port name seq_open() takes, with the card,
+# device and subdevice names. A device with input only is left out,
+# and opening it for output fails as no such port; so is a card that
+# can't be opened (no permission). Nothing is left open.
+ports
+  0 ports
+fakedev port 1 0 2
+fakedev port 1 2 1
+fakedev port 3 0 1
+fakedev port 3 1 1
+fakedev inonly 3 1
+fakedev port 5 0 1
+fakedev deny 5
+ports
+  4 ports
+  hw:1,0,0  Fake card 1 / Fake MIDI 0 / Fake MIDI 0-0
+  hw:1,0,1  Fake card 1 / Fake MIDI 0 / Fake MIDI 0-1
+  hw:1,2,0  Fake card 1 / Fake MIDI 2 / Fake MIDI 2-0
+  hw:3,0,0  Fake card 3 / Fake MIDI 0 / Fake MIDI 0-0
+open device hw:3,1,0
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+devdiag
+  failed: midi open (No such device or address)
+  writes 0, waited 0, subdevice -1
+fakedev log
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: Permission denied
+  open controlC3: ok
+  ioctl prefer-subdevice 0
+  open midiC3D1 nonblock: No such device or address
+  close controlC3

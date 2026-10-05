@@ -1,0 +1,42 @@
+# The channel is sticky and changes only with a new version: the
+# sounding note's off goes to the channel it was started on. The
+# state's channel is the playing version's (1 until the swap at beat
+# 2, then 5); a track with only a waiting version shows the channel
+# it will start on (track 2, 9).
+open virtual
+track 1 60:2
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 1
+track 1:5 62:2
+  takes over at beat 2.000 (t5040)
+state
+  seq: PLAYING beat 1.000 (t2520) tempo 120 tracks 1
+  track 1: notes 1 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 1 position 1.000 (t2520)
+runto 5
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  2.000 t5040 1000.000ms OFF ch1 60
+  2.000 t5040 1000.000ms ON  ch5 62 v100
+  4.000 t10080 2000.000ms OFF ch5 62
+  4.000 t10080 2000.000ms ON  ch5 62 v100
+track 2:9 50:1
+  takes over at beat 5.000 (t12600)
+state
+  seq: PLAYING beat 5.000 (t12600) tempo 120 tracks 2
+  track 1: notes 1 ch 5 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520)
+  track 2: notes 0 ch 9 mute 0 loop 1 vel 100 length 0.000 (t0) pending 1 position 0.000 (t0)
+track 1 64:2
+  takes over at beat 6.000 (t15120)
+runto 7
+log
+  5.000 t12600 2500.000ms ON  ch9 50 v100
+  6.000 t15120 3000.000ms OFF ch5 62
+  6.000 t15120 3000.000ms OFF ch9 50
+  6.000 t15120 3000.000ms ON  ch5 64 v100
+  6.000 t15120 3000.000ms ON  ch9 50 v100
+track 1:17 64:1
+  error: SEQ_ERR_CHANNEL (channel out of range)
+track 1:0 64:1
+  error: SEQ_ERR_CHANNEL (channel out of range)

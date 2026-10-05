@@ -1,0 +1,39 @@
+# Errors. Calls while closed; open twice; bad tracks, channels,
+# pitches, durations (a duration under one tick is rejected wherever
+# it falls; exactly one tick, 1/2520, is accepted); run_to while
+# stopped returns at once instead of hanging; a port name that isn't
+# one on any platform (Phase 3/6: whether a port exists is covered by
+# check_device on Linux, and by hand on Windows); test calls on a
+# device.
+track 1 60:1
+play continue
+tempo
+tempo 100
+mute 1 = 1
+clear 1
+arm
+runto 4
+close
+open device nonsense
+open virtual
+open virtual
+track 0 60:1
+track 17 60:1
+track 1:0 60:1
+track 1:17 60:1
+track 1 128:1
+track 1 -2:1
+track 1 60:1/2521
+track 1 60:1 62:1 64:1/2521 65:1
+track 1 60:0
+track 1 60:-1
+track 1 60:1000000001
+track 1 60:1/2520 62:1/2520
+runto 4
+play continue
+runto t5
+log
+vel 1 = 0
+vel 1 = 128
+loop 1 = 2
+play 3

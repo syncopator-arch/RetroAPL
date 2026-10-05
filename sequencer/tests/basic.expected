@@ -1,0 +1,31 @@
+# One 4-beat track looping: the example from the notes.
+open virtual
+track 1 60:1 62:1 64:1 r:1
+  takes over at beat 0.000 (t0)
+state
+  seq: STOPPED beat 0.000 (t0) tempo 120 tracks 1
+  track 1: notes 0 ch 1 mute 0 loop 1 vel 100 length 0.000 (t0) pending 1 position 0.000 (t0)
+play continue
+  was playing: 0
+runto 8
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 62 v100
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms ON  ch1 64 v100
+  3.000 t7560 1500.000ms OFF ch1 64
+  4.000 t10080 2000.000ms ON  ch1 60 v100
+  5.000 t12600 2500.000ms OFF ch1 60
+  5.000 t12600 2500.000ms ON  ch1 62 v100
+  6.000 t15120 3000.000ms OFF ch1 62
+  6.000 t15120 3000.000ms ON  ch1 64 v100
+  7.000 t17640 3500.000ms OFF ch1 64
+state
+  seq: PLAYING beat 8.000 (t20160) tempo 120 tracks 1
+  track 1: notes 4 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 0.000 (t0)
+close
+  closed: 1
+log
+state
+  seq: CLOSED beat 0.000 (t0) tempo 0 tracks 0

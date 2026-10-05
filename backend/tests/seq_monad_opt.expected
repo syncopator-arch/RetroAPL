@@ -1,0 +1,58 @@
+Clear WS
+     ⎕SEQOPEN 'x'
+1
+     ⎕SEQTEMPO
+120
+     ⎕SEQTEMPO 90
+120
+     1+⎕SEQTEMPO
+91
+     ⎕SEQTEMPO+1
+91
+     ⎕SEQTEMPO ,100
+90
+     ⎕SEQTEMPO ⎕SEQTEMPO
+100
+     ⎕SEQTEMPO⍴7
+     ^
+Length Error
+     ⎕SEQTEMPO←120
+     X←⎕SEQTEMPO←60
+     X
+120
+     ⎕SEQTEMPO
+60
+     ⎕SEQTEMPO←
+     ^
+Syntax Error
+     (⎕SEQTEMPO←)
+     ^
+Syntax Error
+     ⎕SEQPLAY
+0
+     1+⎕SEQPLAY
+1
+     ⎕SEQPLAY+1
+1
+     ⎕SEQPLAY ,1
+0
+     ⎕SEQPLAY
+1
+     ⎕SEQPLAY←0
+     X←⎕SEQPLAY←1
+     X
+0
+     ⎕SEQPLAY
+1
+     ⎕SEQPLAY ⎕SEQPLAY
+1
+     ⎕SEQPLAY
+1
+     ⎕SEQPLAY←
+     ^
+Syntax Error
+     ⍴⎕SEQLOG
+0 0
+     ⎕SEQCLOSE
+
+     

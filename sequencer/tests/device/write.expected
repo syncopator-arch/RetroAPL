@@ -1,0 +1,92 @@
+# Writing (Phase 3, fake device). Tempo 120, so a beat is 500 ms; the
+# script acts 250 ms away from any note, so the timing is never close.
+# Messages reach the device whole; a full buffer is waited out (for up
+# to 1 s) and a message written in pieces is finished; EINTR is
+# retried; a buffer that stays full loses the port, keeping the
+# tracks, and reopening carries on.
+fakedev port 1 0 1
+open device hw:1,0,0
+track 1 60:1 62:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+sleep 250
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice 0
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC1
+  write 90 3c 64
+# room for 2 bytes: beat 1's note-off goes out in pieces, waiting for
+# room, then beat 1's note-on
+fakedev room 2
+sleep 500
+fakedev drain
+sleep 100
+fakedev log
+  write 80 3c (2 of 3)
+  write: Resource temporarily unavailable
+  poll (wait for room)
+  write 00
+  write 90 3e 64
+devdiag
+  failed: (none)
+  writes 3, waited 1, subdevice 0
+# an interrupted write (beat 2) is retried
+fakedev eintr
+sleep 500
+fakedev log
+  write: Interrupted system call
+  write 80 3e 00
+  write 90 3c 64
+# no room at all from beat 3: after 1 s the port counts as lost
+fakedev room 0
+sleep 1500
+state
+  seq: PORT_LOST beat 3.000 (t7560) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520)
+devdiag
+  failed: write timeout (no error code)
+  writes 5, waited 1, subdevice 0
+fakedev log
+  write: Resource temporarily unavailable
+  poll (wait for room)
+  poll: timed out
+  write: Resource temporarily unavailable
+  close midiC1D0 sub 0
+fakedev room all
+open device hw:1,0,0
+play continue
+  was playing: 0
+sleep 100
+play stop
+  was playing: 1
+close
+  closed: 1
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice 0
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC1
+  write 80 3c 00
+  write b0 7b 00
+  write b1 7b 00
+  write b2 7b 00
+  write b3 7b 00
+  write b4 7b 00
+  write b5 7b 00
+  write b6 7b 00
+  write b7 7b 00
+  write b8 7b 00
+  write b9 7b 00
+  write ba 7b 00
+  write bb 7b 00
+  write bc 7b 00
+  write bd 7b 00
+  write be 7b 00
+  write bf 7b 00
+  write 90 3e 64
+  write 80 3e 00
+  close midiC1D0 sub 0

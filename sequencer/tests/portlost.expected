@@ -1,0 +1,114 @@
+# Simulated unplug (as on the hardware, see seq.h): the first failed write
+# stops playback and closes the port, keeping tracks, settings and the
+# position. Track calls still work; starting is an error; reopening
+# (writes back on) returns to stopped, first releasing the notes the
+# synth was left holding (see reconnect), and continue carries on. An
+# armed beat wait ends with STOPPED, PORT LOST.
+open virtual
+track 1 60:1 62:1
+  takes over at beat 0.000 (t0)
+vel 1 = 90
+  prev: 100
+play continue
+  was playing: 0
+runto 1.5
+log
+  0.000 t0 0.000ms ON  ch1 60 v90
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 62 v90
+failwrites on
+arm
+  armed (id 1)
+runto 3
+  error: SEQ_ERR_IO (MIDI port lost)
+  event: STOPPED PORT LOST (id 1)
+state
+  seq: PORT_LOST beat 2.000 (t5040) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 90 length 2.000 (t5040) pending 0 position 0.000 (t0)
+track 1 64:1 65:1
+  takes over at beat 2.000 (t5040)
+vel 1 = 70
+  prev: 90
+play continue
+  error: SEQ_ERR_IO (MIDI port lost)
+play restart
+  error: SEQ_ERR_IO (MIDI port lost)
+play stop
+  was playing: 0
+open virtual
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+failwrites off
+open realtime
+  error: SEQ_ERR_BACKEND (not valid for this backend)
+open virtual
+state
+  seq: STOPPED beat 2.000 (t5040) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 70 length 2.000 (t5040) pending 1 position 0.000 (t0)
+play continue
+  was playing: 0
+runto 5
+log
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms CC  ch1 123 0
+  2.000 t5040 1000.000ms CC  ch2 123 0
+  2.000 t5040 1000.000ms CC  ch3 123 0
+  2.000 t5040 1000.000ms CC  ch4 123 0
+  2.000 t5040 1000.000ms CC  ch5 123 0
+  2.000 t5040 1000.000ms CC  ch6 123 0
+  2.000 t5040 1000.000ms CC  ch7 123 0
+  2.000 t5040 1000.000ms CC  ch8 123 0
+  2.000 t5040 1000.000ms CC  ch9 123 0
+  2.000 t5040 1000.000ms CC  ch10 123 0
+  2.000 t5040 1000.000ms CC  ch11 123 0
+  2.000 t5040 1000.000ms CC  ch12 123 0
+  2.000 t5040 1000.000ms CC  ch13 123 0
+  2.000 t5040 1000.000ms CC  ch14 123 0
+  2.000 t5040 1000.000ms CC  ch15 123 0
+  2.000 t5040 1000.000ms CC  ch16 123 0
+  2.000 t5040 1000.000ms ON  ch1 64 v70
+  3.000 t7560 1500.000ms OFF ch1 64
+  3.000 t7560 1500.000ms ON  ch1 65 v70
+  4.000 t10080 2000.000ms OFF ch1 65
+  4.000 t10080 2000.000ms ON  ch1 64 v70
+# lose it again at beat 5, where 64's note-off is the first write:
+# after reopening, the rest of beat 5 (65's note-on) still plays
+failwrites on
+runto 6
+  error: SEQ_ERR_IO (MIDI port lost)
+state
+  seq: PORT_LOST beat 5.000 (t12600) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 70 length 2.000 (t5040) pending 0 position 1.000 (t2520)
+failwrites off
+open virtual
+play continue
+  was playing: 0
+runto 7
+log
+  5.000 t12600 2500.000ms OFF ch1 64
+  5.000 t12600 2500.000ms CC  ch1 123 0
+  5.000 t12600 2500.000ms CC  ch2 123 0
+  5.000 t12600 2500.000ms CC  ch3 123 0
+  5.000 t12600 2500.000ms CC  ch4 123 0
+  5.000 t12600 2500.000ms CC  ch5 123 0
+  5.000 t12600 2500.000ms CC  ch6 123 0
+  5.000 t12600 2500.000ms CC  ch7 123 0
+  5.000 t12600 2500.000ms CC  ch8 123 0
+  5.000 t12600 2500.000ms CC  ch9 123 0
+  5.000 t12600 2500.000ms CC  ch10 123 0
+  5.000 t12600 2500.000ms CC  ch11 123 0
+  5.000 t12600 2500.000ms CC  ch12 123 0
+  5.000 t12600 2500.000ms CC  ch13 123 0
+  5.000 t12600 2500.000ms CC  ch14 123 0
+  5.000 t12600 2500.000ms CC  ch15 123 0
+  5.000 t12600 2500.000ms CC  ch16 123 0
+  5.000 t12600 2500.000ms ON  ch1 65 v70
+  6.000 t15120 3000.000ms OFF ch1 65
+  6.000 t15120 3000.000ms ON  ch1 64 v70
+# and once more, closing this time
+failwrites on
+runto 8
+  error: SEQ_ERR_IO (MIDI port lost)
+close
+  closed: 1
+state
+  seq: CLOSED beat 0.000 (t0) tempo 0 tracks 0

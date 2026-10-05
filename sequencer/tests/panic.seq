@@ -1,0 +1,14 @@
+# Panic: note-off for everything sounding, then All Notes Off (CC 123)
+# on all 16 channels. Close while playing sends the note-offs.
+open virtual
+track 1 60:4
+track 2:2 60:4
+track 3:10 36:4
+play continue
+runto 1
+panic
+log
+runto 5
+close
+log
+panic

@@ -1,0 +1,20 @@
+# The state in every state: closed, stopped, playing, port lost; a
+# track with only a waiting version; a playing one with a version
+# waiting; positions within each track's own pass.
+state
+open virtual
+state
+track 3 60:2 62:2
+state
+play continue
+runto 1.5
+track 1 48:3
+track 3 64:4
+state
+runto 2
+state
+failwrites on
+runto 3
+state
+close
+state

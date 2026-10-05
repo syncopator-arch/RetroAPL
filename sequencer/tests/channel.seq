@@ -1,0 +1,20 @@
+# The channel is sticky and changes only with a new version: the
+# sounding note's off goes to the channel it was started on. The
+# state's channel is the playing version's (1 until the swap at beat
+# 2, then 5); a track with only a waiting version shows the channel
+# it will start on (track 2, 9).
+open virtual
+track 1 60:2
+play continue
+runto 1
+track 1:5 62:2
+state
+runto 5
+log
+track 2:9 50:1
+state
+track 1 64:2
+runto 7
+log
+track 1:17 64:1
+track 1:0 64:1

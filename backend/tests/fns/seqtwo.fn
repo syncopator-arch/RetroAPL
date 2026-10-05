@@ -1,0 +1,8 @@
+zût seqtwo v<n<r ã retroapl v4.6
+ã two voices in the old note_file layout to two sequencer tracks.
+ã v> n, then n pitches for voice 1, n for voice 2, n shared durations
+ã :rests faked by lengthening the previous note, as the file has them".
+ã t> the two track numbers. z> the beats at which each takes over.
+nûv;Ìio]
+rû1Õv
+zû::1Ùt" Ìseqtrack :2,n"Ò:nÙr",:2«n"Õr",:1Õt" Ìseqtrack :2,n"Ò:nÙnÕr",:2«n"Õr

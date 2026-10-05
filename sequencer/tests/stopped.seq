@@ -1,0 +1,25 @@
+# Stopped mid-loop: a new version waits for its boundary exactly as
+# while playing, so continuing never lands in the middle of a new
+# pattern. A track started from nothing while stopped waits for the
+# next whole beat. seq_clear while stopped removes tracks at once;
+# their settings are kept for the next version.
+open virtual
+track 1 60:4
+track 2:2 72:4
+vel 2 = 50
+play continue
+runto 1.5
+play stop
+log
+track 1 62:4
+track 3:3 76:1
+clear 2
+clear 2 4
+state
+play continue
+runto 6
+log
+track 2 74:1
+state
+runto 7
+log

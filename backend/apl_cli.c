@@ -16,11 +16,16 @@
 	-> quad substitution qt_puts() applies.
 
 	Usage:
-	    apl_cli [-t] [-w wsname] [-q both|warn|new] [args...]
+	    apl_cli [-t] [-S] [-w wsname] [-q both|warn|new] [args...]
 
 	    -t         transcript mode: echo each input line after the
 	               five-space prompt, so stdout reads like a GUI session.
 	               This is what the regression tests use.
+	    -S         sequencer test mode: every ⎕SEQOPEN opens the MIDI
+	               sequencer's virtual-clock backend (simulated time,
+	               output to an in-memory log read by ⎕SEQLOG, advanced
+	               by ⎕SEQRUNTO), whatever port it names. For the
+	               regression tests (tests/NAME.opts); seqfuncs.c.
 	    -w wsname  workspace name passed to dll_startup(); default "",
 	               the same as the GUI with no workspace argument.
 	    -q mode    quad-function syntax (quad_syntax, parse.c), same as
@@ -52,6 +57,7 @@ extern int  dll_startup(int debug, int xflag, char *wsname, int argc, char **arg
 extern int  exec_apl_line(UCHAR *linebuf);
 extern void dll_cleanup(void);
 extern int  crash_log_pending(char *path, size_t pathsz, char *summary, size_t sumsz);	/* crashlog.c */
+extern int  seqf_virtual;	/* seqfuncs.c: -S */
 /* quad_syntax, QSYN_*: declared in parse.h, defined in parse.c */
 
 #define PROMPT		"     "		/* matches the GUI's INDENT */
@@ -257,7 +263,7 @@ static const PlatformFuncs cli_funcs = {
 static void
 usage(const char *prog)
 {
-	fprintf(stderr, "Usage: %s [-t] [-w wsname] [-q both|warn|new] [args...]\n", prog);
+	fprintf(stderr, "Usage: %s [-t] [-S] [-w wsname] [-q both|warn|new] [args...]\n", prog);
 	exit(2);
 }
 
@@ -299,6 +305,8 @@ main(int argc, char **argv)
 	for (i = 1; i < argc && argv[i][0] == '-'; i++) {
 		if (strcmp(argv[i], "-t") == 0) {
 			transcript = 1;
+		} else if (strcmp(argv[i], "-S") == 0) {
+			seqf_virtual = 1;
 		} else if (strcmp(argv[i], "-w") == 0 && i + 1 < argc) {
 			wsname = argv[++i];
 		} else if (strcmp(argv[i], "-q") == 0 && i + 1 < argc) {

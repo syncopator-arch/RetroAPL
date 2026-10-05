@@ -15,7 +15,9 @@
 		k=0  SYSFUNCS   (always enabled)
 		k=1  FILEFUNCS  (always enabled)
 		k=2  GRAPHFUNCS (optional -- disabled by default)
-		k=3..7  reserved / unused
+		k=3  SEQFUNCS   (always enabled; seqfuncs.c, the ⎕SEQ MIDI
+		                 sequencer functions, Phase 4 Oct 2026)
+		k=4..7  reserved / unused
 
 	THESE POSITIONS ARE PERMANENT. A workspace's compiled functions store
 	only the raw k value, not a module name -- do_sys() trusts it blindly
@@ -66,6 +68,18 @@ extern short sys_funcs();
 extern UCHAR file_ftypes[];
 extern short file_funcs();
 
+/* SEQFUNCS is always enabled too, pinned to k=3, after GRAPHFUNCS's
+   slot (which stays in place whether or not graphics is built in).
+   A build switch was considered and dropped (Oct 5, 2026): leaving
+   the module out would have changed which workspaces load and which
+   help applies, for no real gain -- an unused sequencer costs nothing
+   at run time (its thread starts only at ⎕SEQOPEN). Its independence
+   is kept differently: seqfuncs.c is the only interpreter file that
+   includes the sequencer's header. */
+extern UCHAR seq_fnames[];
+extern UCHAR seq_ftypes[];
+extern short seq_funcs();
+
 #ifdef GRAPHFUNCS
 extern UCHAR graph_fnames[];
 extern UCHAR graph_ftypes[];
@@ -85,6 +99,7 @@ UCHAR *all_fnames[] = {
 #else
 	empty_fnames,			/* k=2 (reserved, disabled) */
 #endif
+	seq_fnames,			/* k=3 */
 	0L
 };
 
@@ -96,6 +111,7 @@ PTF all_funcs[] = {
 #else
 	0L,				/* k=2 (reserved, disabled) */
 #endif
+	seq_funcs,			/* k=3 */
 	0L
 };
 
@@ -107,5 +123,6 @@ UCHAR *all_ftypes[] = {
 #else
 	0L,				/* k=2 (reserved, disabled) */
 #endif
-	0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L
+	seq_ftypes,			/* k=3 */
+	0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L
 };

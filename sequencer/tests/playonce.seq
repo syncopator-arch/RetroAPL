@@ -1,0 +1,19 @@
+# A play-once track (loop 0) plays through, then falls silent; it has
+# no playing version afterwards (no state row). Resending it plays it
+# again from the next whole beat. Loop applies at the next boundary.
+open virtual
+loop 1 = 0
+track 1 60:1 62:1
+play continue
+runto 2.5
+state
+track 1 64:1 65:1
+runto 6
+log
+state
+track 2 48:1
+runto 7.5
+loop 2 = 0
+runto 10
+log
+state

@@ -145,6 +145,11 @@ typedef short (*PTF)();
 			   size," same reasoning ERR_WSLOAD already
 			   established for ".ws wouldn't load" as its own
 			   thing rather than overloading an existing code. */
+/* The ⎕SEQ functions (seqfuncs.c, MIDI sequencer), Phase 4 */
+#define ERR_SEQNOTOPEN 36	/* "Sequencer Not Open" */
+#define ERR_SEQOPEN 37		/* "Sequencer Already Open" */
+#define ERR_SEQLOST 38		/* "MIDI Port Lost": the device stopped
+				   taking data; ⎕SEQOPEN to reopen */
 
 /* mem entry flags */
 #define ME_VAL 1	/* value */

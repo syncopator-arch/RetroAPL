@@ -1,0 +1,20 @@
+# Stop is a pause: note-offs for sounding notes, then continue picks
+# up where it stopped (the held note is not resounded). Restart goes
+# back to beat 0 for every track, taking a waiting version at once.
+open virtual
+track 1 60:2 62:2
+track 2 72:3
+play continue
+runto 3
+play stop
+log
+state
+play stop
+play continue
+runto 6
+log
+track 1 48:1
+play restart
+runto 2
+log
+state

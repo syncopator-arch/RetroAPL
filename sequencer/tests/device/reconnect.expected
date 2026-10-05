@@ -1,0 +1,92 @@
+# Reopening after an unplug (Phase 3, fake device). The notes the synth
+# was left holding are released at once, then All Notes Off on all 16
+# channels. If the port is lost again while sending those, the reopen
+# fails (port lost again) and the next one sends them all. Tempo 120,
+# a beat is 500 ms; the port is lost at beat 2 by 45's note-off, with
+# 60 (track 2) still sounding.
+fakedev port 3 0 1
+open device hw:3,0,0
+track 1 45:2 52:2
+  takes over at beat 0.000 (t0)
+track 2 60:4
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+sleep 250
+fakedev unplug 3
+sleep 1000
+state
+  seq: PORT_LOST beat 2.000 (t5040) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+fakedev log
+  open controlC3: ok
+  ioctl prefer-subdevice 0
+  open midiC3D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC3
+  write 90 2d 64
+  write 91 3c 64
+  write: No such device
+  close midiC3D0 sub 0
+# back, but the device takes nothing: the first note-off waits 1 s
+fakedev replug 3
+fakedev room 0
+open device hw:3,0,0
+  error: SEQ_ERR_IO (MIDI port lost)
+devdiag
+  failed: write timeout (no error code)
+  writes 0, waited 0, subdevice 0
+state
+  seq: PORT_LOST beat 2.000 (t5040) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+fakedev log
+  open controlC3: ok
+  ioctl prefer-subdevice 0
+  open midiC3D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC3
+  write: Resource temporarily unavailable
+  poll (wait for room)
+  poll: timed out
+  write: Resource temporarily unavailable
+  close midiC3D0 sub 0
+fakedev room all
+open device hw:3,0,0
+devdiag
+  failed: (none)
+  writes 18, waited 0, subdevice 0
+fakedev log
+  open controlC3: ok
+  ioctl prefer-subdevice 0
+  open midiC3D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC3
+  write 80 2d 00
+  write 81 3c 00
+  write b0 7b 00
+  write b1 7b 00
+  write b2 7b 00
+  write b3 7b 00
+  write b4 7b 00
+  write b5 7b 00
+  write b6 7b 00
+  write b7 7b 00
+  write b8 7b 00
+  write b9 7b 00
+  write ba 7b 00
+  write bb 7b 00
+  write bc 7b 00
+  write bd 7b 00
+  write be 7b 00
+  write bf 7b 00
+play continue
+  was playing: 0
+sleep 250
+close
+  closed: 1 2
+fakedev log
+  write 90 34 64
+  write 80 34 00
+  close midiC3D0 sub 0

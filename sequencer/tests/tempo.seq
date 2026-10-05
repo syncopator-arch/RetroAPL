@@ -1,0 +1,16 @@
+# Tempo changes mid-loop: beats and ticks carry on evenly, only the
+# time column changes pace. 120 bpm is 500 ms a beat; 60 bpm is 1000.
+open virtual
+track 1 60:1
+tempo
+play continue
+runto 2.5
+tempo 60
+runto 5
+tempo 240
+runto 7
+log
+tempo 0.5
+tempo 1001
+tempo 1000
+tempo

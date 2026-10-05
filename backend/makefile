@@ -8,7 +8,13 @@
 #   check       -- build apl_cli and run all the tests (see below)
 #   apl_cli_san -- apl_cli built with AddressSanitizer and UBSan (Linux)
 #   check_san   -- run the regression tests against apl_cli_san
-#   clean       -- remove all generated files
+#   clean       -- remove all generated files (not the sequencer's)
+#
+# The MIDI sequencer library lives in ../sequencer with its own makefile
+# and tests. seqfuncs.c (the ⎕SEQ functions) calls it, so apl_cli links
+# ../sequencer/libseq.a, and anything here that links apl_cli first runs
+# `make libseq.a` there -- a no-op when it's up to date. libapl.a holds
+# backend objects only: the Qt build links libseq.a beside it.
 
 CC = gcc
 AR = ar
@@ -20,13 +26,18 @@ AR = ar
 #
 ifeq ($(OS),Windows_NT)
     PLATFORM_SRC = windows_platform.c
-	LDFLAGS = -lm -lbcrypt
+	LDFLAGS = -lm -lbcrypt -lpthread -lwinmm
 	EXE = .exe
 else
     PLATFORM_SRC = linux_platform.c
-	LDFLAGS = -lm
+	LDFLAGS = -lm -lpthread
 	EXE =
 endif
+
+# -lpthread (and -lwinmm on Windows) are for the sequencer library,
+# the same as its own makefile's LDLIBS.
+SEQ_DIR = ../sequencer
+SEQ_LIB = $(SEQ_DIR)/libseq.a
 
 # EXE: the suffix gcc gives executables here -- on Windows `-o apl_cli`
 # writes apl_cli.exe -- used only by clean, so it removes the real files.
@@ -48,7 +59,7 @@ endif
 # Remaining warning suppression:
 #   pointer-sign   UCHAR*/char* mixing (~115), cosmetic, deferred
 CFLAGS_COMMON = -std=gnu99 -Wall -O2 -g -fno-strict-aliasing \
-                -Wno-pointer-sign
+                -Wno-pointer-sign -I$(SEQ_DIR)
 
 # libapl.a, apl_cli and apl_cli_san all compile the backend this way.
 # (-DNO_INPUT_PROC -DAS_DLL used to be here: both were defined in every
@@ -67,7 +78,7 @@ SRCS = commands.c dyop.c exec.c filfuncs.c fn.c globals.c index.c \
        interfac.c lineproc.c links.c $(PLATFORM_SRC) \
        main.c monop.c mplmem.c msgs.c parse.c rndsrc.c sort.c \
        sys.c sysfuncs.c terminal.c vprint.c platform_translate.c inprod.c \
-       crashlog.c kapl_unicode.c
+       crashlog.c kapl_unicode.c seqfuncs.c
 
 # grfuncs.c calls gw_open()/gw_close()/gw_nums()/gw_size()/gw_title(),
 # which are only ever defined in the Qt frontend (graph_bridge.cpp) --
@@ -151,7 +162,9 @@ $(LIB_OBJDIR):
 	mkdir $@
 
 # ── apl_cli ─────────────────────────────────────────────────────────────
-$(APL_CLI): $(CLI_LIB_OBJS) $(CLI_OBJS)
+# $(SEQ_LIB) is last among the prerequisites, so $^ puts it after the
+# objects that call it.
+$(APL_CLI): $(CLI_LIB_OBJS) $(CLI_OBJS) $(SEQ_LIB)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(CLI_OBJDIR)/%.o: %.c | $(CLI_OBJDIR)
@@ -159,6 +172,14 @@ $(CLI_OBJDIR)/%.o: %.c | $(CLI_OBJDIR)
 
 $(CLI_OBJDIR):
 	mkdir $@
+
+# ── The sequencer library ───────────────────────────────────────────────
+# Always asks the sequencer's makefile, which knows its own sources;
+# make relinks apl_cli only if libseq.a actually changed.
+$(SEQ_LIB): FORCE
+	$(MAKE) -C $(SEQ_DIR) libseq.a
+
+FORCE:
 
 # ── Tests ───────────────────────────────────────────────────────────────
 # check runs, in order: the translation self-test (which also compares
@@ -178,7 +199,9 @@ check: $(KAPL_TEST) $(APL_CLI) $(RUN_TESTS)
 # Sanitizer reports go to stderr, which run_tests merges into each
 # test's transcript -- so any report makes that test FAIL, the diff
 # shows the report, and the full text stays in tests/NAME.out.
-$(APL_CLI_SAN): $(SAN_OBJS)
+# The sequencer library itself isn't rebuilt under the sanitizers: it
+# has its own check_san and check_tsan in ../sequencer.
+$(APL_CLI_SAN): $(SAN_OBJS) $(SEQ_LIB)
 	$(CC) $(SAN_FLAGS) -o $@ $^ $(LDFLAGS)
 
 $(SAN_OBJDIR)/%.o: %.c | $(SAN_OBJDIR)
@@ -204,4 +227,4 @@ clean:
 	       tests/*.out tests/.scratch \
 	       $(SAN_OBJDIR) $(APL_CLI_SAN)$(EXE)
 
-.PHONY: all clean check check_san
+.PHONY: all clean check check_san FORCE

@@ -1,0 +1,20 @@
+Clear WS
+     ⎕SEQOPEN 'x'
+1
+     ⎕SEQTEMPO 90
+     ^
+Syntax Error
+     ⎕SEQTEMPO
+120
+     ⎕SEQTEMPO←90
+     ⎕SEQTEMPO
+90
+     ⎕SEQPLAY 1
+     ^
+Syntax Error
+     ⎕SEQPLAY←1
+     ⎕SEQPLAY
+1
+     ⎕SEQCLOSE
+
+     

@@ -1,0 +1,44 @@
+# Simulated unplug (as on the hardware, see seq.h): the first failed write
+# stops playback and closes the port, keeping tracks, settings and the
+# position. Track calls still work; starting is an error; reopening
+# (writes back on) returns to stopped, first releasing the notes the
+# synth was left holding (see reconnect), and continue carries on. An
+# armed beat wait ends with STOPPED, PORT LOST.
+open virtual
+track 1 60:1 62:1
+vel 1 = 90
+play continue
+runto 1.5
+log
+failwrites on
+arm
+runto 3
+state
+track 1 64:1 65:1
+vel 1 = 70
+play continue
+play restart
+play stop
+open virtual
+failwrites off
+open realtime
+open virtual
+state
+play continue
+runto 5
+log
+# lose it again at beat 5, where 64's note-off is the first write:
+# after reopening, the rest of beat 5 (65's note-on) still plays
+failwrites on
+runto 6
+state
+failwrites off
+open virtual
+play continue
+runto 7
+log
+# and once more, closing this time
+failwrites on
+runto 8
+close
+state

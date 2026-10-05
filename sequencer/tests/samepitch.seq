@@ -1,0 +1,13 @@
+# Two tracks sounding the same pitch on one channel: one track's
+# note-off must not cut the other's note (the off goes out only when
+# the last one ends; each note-on is sent, a re-strike). Then a
+# repeated pitch within one track: off before on at the same tick.
+open virtual
+track 1 60:4
+track 2:1 60:1 r:3
+play continue
+runto 5
+log
+track 3:5 64:1 64:1 64:1/2 64:1/2
+runto 16
+log

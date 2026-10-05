@@ -1,0 +1,17 @@
+# Rests (r or -1) take time and send nothing; pitch 0 is a real note.
+open virtual
+track 1 0:1 r:1 127:1 -1:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 9
+log
+  0.000 t0 0.000ms ON  ch1 0 v100
+  1.000 t2520 500.000ms OFF ch1 0
+  2.000 t5040 1000.000ms ON  ch1 127 v100
+  3.000 t7560 1500.000ms OFF ch1 127
+  4.000 t10080 2000.000ms ON  ch1 0 v100
+  5.000 t12600 2500.000ms OFF ch1 0
+  6.000 t15120 3000.000ms ON  ch1 127 v100
+  7.000 t17640 3500.000ms OFF ch1 127
+  8.000 t20160 4000.000ms ON  ch1 0 v100

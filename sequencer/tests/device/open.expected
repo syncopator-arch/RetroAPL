@@ -1,0 +1,118 @@
+# Opening a device (Phase 3, on the fake device in seq_fake_dev.c).
+# The subdevice preference is set on the control device, from the same
+# thread, before the MIDI device is opened non-blocking; the subdevice
+# actually opened is checked, and the control device closed after.
+fakedev port 1 0 2
+open device hw:1,0,1
+devdiag
+  failed: (none)
+  writes 0, waited 0, subdevice 1
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice 1
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 1
+  close controlC1
+close
+  closed: (none)
+fakedev log
+  close midiC1D0 sub 1
+# hw:C,D takes any free subdevice; hw:C means device 0
+fakedev busy 1 0 0
+open device hw:1,0
+devdiag
+  failed: (none)
+  writes 0, waited 0, subdevice 1
+close
+  closed: (none)
+open device hw:1
+devdiag
+  failed: (none)
+  writes 0, waited 0, subdevice 1
+close
+  closed: (none)
+fakedev free 1 0 0
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice -1
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 1
+  close controlC1
+  close midiC1D0 sub 1
+  open controlC1: ok
+  ioctl prefer-subdevice -1
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 1
+  close controlC1
+  close midiC1D0 sub 1
+# names not understood (nothing is opened)
+open device hw:x
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+open device hw:1,0,
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+open device 1,0,0
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+open device hw:1,0,0,0
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+open device hw:256
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+open device hw:01234
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+devdiag
+  failed: port name (no error code)
+  writes 0, waited 0, subdevice -1
+fakedev log
+# no such card, device or subdevice (the kernel gives ENODEV for a
+# subdevice past the last)
+open device hw:2,0,0
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+devdiag
+  failed: control open (No such file or directory)
+  writes 0, waited 0, subdevice -1
+open device hw:1,1
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+open device hw:1,0,2
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+devdiag
+  failed: midi open (No such device)
+  writes 0, waited 0, subdevice -1
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice -1
+  open midiC1D1 nonblock: No such file or directory
+  close controlC1
+  open controlC1: ok
+  ioctl prefer-subdevice 2
+  open midiC1D0 nonblock: No such device
+  close controlC1
+# in use: the one asked for, or all of them; open never waits
+fakedev busy 1 0 1
+open device hw:1,0,1
+  error: SEQ_ERR_PORT_BUSY (MIDI port in use)
+devdiag
+  failed: midi open (Device or resource busy)
+  writes 0, waited 0, subdevice -1
+fakedev busy 1 0 0
+open device hw:1,0
+  error: SEQ_ERR_PORT_BUSY (MIDI port in use)
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice 1
+  open midiC1D0 nonblock: Device or resource busy
+  close controlC1
+  open controlC1: ok
+  ioctl prefer-subdevice -1
+  open midiC1D0 nonblock: Device or resource busy
+  close controlC1
+# no permission (not in the audio group)
+fakedev free 1 0 0
+fakedev deny 1
+open device hw:1,0,0
+  error: SEQ_ERR_PORT_ACCESS (no permission for MIDI port)
+devdiag
+  failed: control open (Permission denied)
+  writes 0, waited 0, subdevice -1
+fakedev log
+  open controlC1: Permission denied
+state
+  seq: CLOSED beat 0.000 (t0) tempo 0 tracks 0

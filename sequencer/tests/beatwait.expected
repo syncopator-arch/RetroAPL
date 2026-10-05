@@ -1,0 +1,43 @@
+# Beat waits: the event arrives at the next whole beat, numbered by
+# the main clock, so beats missed while busy show as a jump. Stop or
+# close ends a wait with STOPPED. Cancel disarms it. Not playing:
+# an error at once (the glue returns empty).
+open virtual
+arm
+  error: SEQ_ERR_NOT_PLAYING (not playing)
+track 1 60:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+beatwait
+  armed (id 1)
+  event: BEAT 0 (id 1)
+beatwait
+  armed (id 2)
+  event: BEAT 1 (id 2)
+runto 5.5
+beatwait
+  armed (id 3)
+  event: BEAT 6 (id 3)
+arm
+  armed (id 4)
+cancel
+runto 9
+arm
+  armed (id 5)
+arm
+  armed (id 6)
+runto 10.5
+  event: BEAT 9 (id 6)
+arm
+  armed (id 7)
+play stop
+  was playing: 1
+  event: STOPPED OK (id 7)
+play continue
+  was playing: 0
+arm
+  armed (id 8)
+close
+  closed: 1
+  event: STOPPED OK (id 8)

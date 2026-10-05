@@ -1,0 +1,54 @@
+# A new version takes over exactly at the loop boundary, at the beat
+# seq_submit_track() returned. Sent mid-loop; then sent while held
+# exactly on a boundary (beat 12, not yet played), where it takes
+# over at that boundary, not one loop later. A second submission
+# before the takeover replaces the first.
+open virtual
+track 1 60:1 62:1 64:1 65:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 5.5
+track 1 67:1 65:1 64:1 62:1
+  takes over at beat 8.000 (t20160)
+state
+  seq: PLAYING beat 5.500 (t13860) tempo 120 tracks 1
+  track 1: notes 4 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 1 position 1.500 (t3780)
+runto 9
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 62 v100
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms ON  ch1 64 v100
+  3.000 t7560 1500.000ms OFF ch1 64
+  3.000 t7560 1500.000ms ON  ch1 65 v100
+  4.000 t10080 2000.000ms OFF ch1 65
+  4.000 t10080 2000.000ms ON  ch1 60 v100
+  5.000 t12600 2500.000ms OFF ch1 60
+  5.000 t12600 2500.000ms ON  ch1 62 v100
+  6.000 t15120 3000.000ms OFF ch1 62
+  6.000 t15120 3000.000ms ON  ch1 64 v100
+  7.000 t17640 3500.000ms OFF ch1 64
+  7.000 t17640 3500.000ms ON  ch1 65 v100
+  8.000 t20160 4000.000ms OFF ch1 65
+  8.000 t20160 4000.000ms ON  ch1 67 v100
+runto 12
+track 1 72:2 71:2
+  takes over at beat 12.000 (t30240)
+track 1 48:2 50:2
+  takes over at beat 12.000 (t30240)
+runto 17
+log
+  9.000 t22680 4500.000ms OFF ch1 67
+  9.000 t22680 4500.000ms ON  ch1 65 v100
+  10.000 t25200 5000.000ms OFF ch1 65
+  10.000 t25200 5000.000ms ON  ch1 64 v100
+  11.000 t27720 5500.000ms OFF ch1 64
+  11.000 t27720 5500.000ms ON  ch1 62 v100
+  12.000 t30240 6000.000ms OFF ch1 62
+  12.000 t30240 6000.000ms ON  ch1 48 v100
+  14.000 t35280 7000.000ms OFF ch1 48
+  14.000 t35280 7000.000ms ON  ch1 50 v100
+  16.000 t40320 8000.000ms OFF ch1 50
+  16.000 t40320 8000.000ms ON  ch1 48 v100

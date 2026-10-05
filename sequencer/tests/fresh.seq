@@ -1,0 +1,14 @@
+# A track started from nothing mid-loop enters at the next whole beat,
+# which becomes its start point; its later versions take over at its
+# own boundaries (5, 8 here), not at the other track's.
+open virtual
+track 1 60:4
+play continue
+runto 1.3
+track 2:2 72:3
+state
+runto 5.5
+track 2 74:3
+runto 9
+log
+state

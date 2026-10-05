@@ -1,0 +1,31 @@
+# Reopening after an unplug (Phase 3, fake device). The notes the synth
+# was left holding are released at once, then All Notes Off on all 16
+# channels. If the port is lost again while sending those, the reopen
+# fails (port lost again) and the next one sends them all. Tempo 120,
+# a beat is 500 ms; the port is lost at beat 2 by 45's note-off, with
+# 60 (track 2) still sounding.
+fakedev port 3 0 1
+open device hw:3,0,0
+track 1 45:2 52:2
+track 2 60:4
+play continue
+sleep 250
+fakedev unplug 3
+sleep 1000
+state
+fakedev log
+# back, but the device takes nothing: the first note-off waits 1 s
+fakedev replug 3
+fakedev room 0
+open device hw:3,0,0
+devdiag
+state
+fakedev log
+fakedev room all
+open device hw:3,0,0
+devdiag
+fakedev log
+play continue
+sleep 250
+close
+fakedev log

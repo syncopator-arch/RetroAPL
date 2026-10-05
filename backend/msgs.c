@@ -139,6 +139,18 @@ char *s;
 			s = "Can't Load Image";
 			p = 1;
 			break;
+		case ERR_SEQNOTOPEN:
+			s = "Sequencer Not Open";
+			p = 1;
+			break;
+		case ERR_SEQOPEN:
+			s = "Sequencer Already Open";
+			p = 1;
+			break;
+		case ERR_SEQLOST:
+			s = "MIDI Port Lost";
+			p = 1;
+			break;
 		default:
 			sprintf((char *)LINEA,"Error %d",n);
 			s = (char *)LINEA;

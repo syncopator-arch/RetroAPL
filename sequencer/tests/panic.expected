@@ -1,0 +1,47 @@
+# Panic: note-off for everything sounding, then All Notes Off (CC 123)
+# on all 16 channels. Close while playing sends the note-offs.
+open virtual
+track 1 60:4
+  takes over at beat 0.000 (t0)
+track 2:2 60:4
+  takes over at beat 0.000 (t0)
+track 3:10 36:4
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 1
+panic
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t0 0.000ms ON  ch2 60 v100
+  0.000 t0 0.000ms ON  ch10 36 v100
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms OFF ch2 60
+  1.000 t2520 500.000ms OFF ch10 36
+  1.000 t2520 500.000ms CC  ch1 123 0
+  1.000 t2520 500.000ms CC  ch2 123 0
+  1.000 t2520 500.000ms CC  ch3 123 0
+  1.000 t2520 500.000ms CC  ch4 123 0
+  1.000 t2520 500.000ms CC  ch5 123 0
+  1.000 t2520 500.000ms CC  ch6 123 0
+  1.000 t2520 500.000ms CC  ch7 123 0
+  1.000 t2520 500.000ms CC  ch8 123 0
+  1.000 t2520 500.000ms CC  ch9 123 0
+  1.000 t2520 500.000ms CC  ch10 123 0
+  1.000 t2520 500.000ms CC  ch11 123 0
+  1.000 t2520 500.000ms CC  ch12 123 0
+  1.000 t2520 500.000ms CC  ch13 123 0
+  1.000 t2520 500.000ms CC  ch14 123 0
+  1.000 t2520 500.000ms CC  ch15 123 0
+  1.000 t2520 500.000ms CC  ch16 123 0
+runto 5
+close
+  closed: 1 2 3
+log
+  4.000 t10080 2000.000ms ON  ch1 60 v100
+  4.000 t10080 2000.000ms ON  ch2 60 v100
+  4.000 t10080 2000.000ms ON  ch10 36 v100
+  5.000 t12600 2500.000ms OFF ch1 60
+  5.000 t12600 2500.000ms OFF ch2 60
+  5.000 t12600 2500.000ms OFF ch10 36
+panic

@@ -1,0 +1,37 @@
+# Tracks of different lengths started together stay locked: a 3-beat
+# and a 4-beat track coincide every 12 beats, and still do after many
+# loops (beat 1200). Track 2 is on its own channel.
+open virtual
+track 1 60:3
+  takes over at beat 0.000 (t0)
+track 2:2 72:4
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 13
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t0 0.000ms ON  ch2 72 v100
+  3.000 t7560 1500.000ms OFF ch1 60
+  3.000 t7560 1500.000ms ON  ch1 60 v100
+  4.000 t10080 2000.000ms OFF ch2 72
+  4.000 t10080 2000.000ms ON  ch2 72 v100
+  6.000 t15120 3000.000ms OFF ch1 60
+  6.000 t15120 3000.000ms ON  ch1 60 v100
+  8.000 t20160 4000.000ms OFF ch2 72
+  8.000 t20160 4000.000ms ON  ch2 72 v100
+  9.000 t22680 4500.000ms OFF ch1 60
+  9.000 t22680 4500.000ms ON  ch1 60 v100
+  12.000 t30240 6000.000ms OFF ch1 60
+  12.000 t30240 6000.000ms OFF ch2 72
+  12.000 t30240 6000.000ms ON  ch1 60 v100
+  12.000 t30240 6000.000ms ON  ch2 72 v100
+runto 1199
+logdrop
+  (1382 lines dropped)
+runto 1201
+log
+  1200.000 t3024000 600000.000ms OFF ch1 60
+  1200.000 t3024000 600000.000ms OFF ch2 72
+  1200.000 t3024000 600000.000ms ON  ch1 60 v100
+  1200.000 t3024000 600000.000ms ON  ch2 72 v100

@@ -450,6 +450,10 @@ extern "C" {
     int  dll_startup(int debug, int xflag, char *wsname, int argc, char **argv);
     int  exec_apl_line(unsigned char *linebuf);
     void dll_cleanup(void);
+    /* seqfuncs.c: stops the MIDI sequencer, sends note-offs and closes
+       the port. Safe from any thread and more than once; stopEngine()
+       calls it from the GUI thread, dll_cleanup() from the engine. */
+    void seqf_close(void);
     /* quad-function syntax mode (parse.c; QSYN_BOTH 0, QSYN_WARN 1,
        QSYN_NEW 2 in parse.h), set from -q in main() before the engine
        thread starts */
@@ -2054,6 +2058,14 @@ private:
             g_engineRunning = false;
         }
         g_inputCond.wakeAll();
+        /* Silence the MIDI sequencer now, from this (GUI) thread. If
+           APL is busy -- a function looping while music plays is the
+           usual case -- the engine thread outlasts the wait below and
+           dll_cleanup() never runs, so its own close would never
+           happen. Before the wait, so the music stops when the window
+           closes rather than up to 3 s later. A ⎕SEQ call the busy
+           engine thread makes after this gets Sequencer Not Open. */
+        seqf_close();
         m_engineThread->wait(3000);
     }
 

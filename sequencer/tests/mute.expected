@@ -1,0 +1,44 @@
+# Mute is immediate and releases the track's sounding note; unmuting
+# waits for the next note. Lists: one value for all, or one per track;
+# results are the previous settings. A bad entry fails the whole call.
+open virtual
+track 1 60:2
+  takes over at beat 0.000 (t0)
+track 2 64:2
+  takes over at beat 0.000 (t0)
+track 3 67:2
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 1
+mute 1 2 = 1
+  prev: 0 0
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t0 0.000ms ON  ch2 64 v100
+  0.000 t0 0.000ms ON  ch3 67 v100
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms OFF ch2 64
+runto 3
+mute 1 = 0
+  prev: 1
+runto 5
+log
+  2.000 t5040 1000.000ms OFF ch3 67
+  2.000 t5040 1000.000ms ON  ch3 67 v100
+  4.000 t10080 2000.000ms OFF ch3 67
+  4.000 t10080 2000.000ms ON  ch1 60 v100
+  4.000 t10080 2000.000ms ON  ch3 67 v100
+mute 1 2 3 = 1 0 1
+  prev: 0 1 0
+mute 1 2 3 = 0
+  prev: 1 0 1
+mute 1 17 = 1
+  error: SEQ_ERR_TRACK (track number out of range)
+mute 1 = 2
+  error: SEQ_ERR_VALUE (value out of range)
+state
+  seq: PLAYING beat 5.000 (t12600) tempo 120 tracks 3
+  track 1: notes 1 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520)
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520)
+  track 3: notes 1 ch 3 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520)

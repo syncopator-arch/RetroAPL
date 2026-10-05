@@ -1,0 +1,38 @@
+# Tempo changes mid-loop: beats and ticks carry on evenly, only the
+# time column changes pace. 120 bpm is 500 ms a beat; 60 bpm is 1000.
+open virtual
+track 1 60:1
+  takes over at beat 0.000 (t0)
+tempo
+  tempo: 120
+play continue
+  was playing: 0
+runto 2.5
+tempo 60
+  prev: 120
+runto 5
+tempo 240
+  prev: 60
+runto 7
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 60 v100
+  2.000 t5040 1000.000ms OFF ch1 60
+  2.000 t5040 1000.000ms ON  ch1 60 v100
+  3.000 t7560 1750.000ms OFF ch1 60
+  3.000 t7560 1750.000ms ON  ch1 60 v100
+  4.000 t10080 2750.000ms OFF ch1 60
+  4.000 t10080 2750.000ms ON  ch1 60 v100
+  5.000 t12600 3750.000ms OFF ch1 60
+  5.000 t12600 3750.000ms ON  ch1 60 v100
+  6.000 t15120 4000.000ms OFF ch1 60
+  6.000 t15120 4000.000ms ON  ch1 60 v100
+tempo 0.5
+  error: SEQ_ERR_TEMPO (tempo out of range)
+tempo 1001
+  error: SEQ_ERR_TEMPO (tempo out of range)
+tempo 1000
+  prev: 240
+tempo
+  tempo: 1000

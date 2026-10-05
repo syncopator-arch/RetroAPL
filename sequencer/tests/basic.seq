@@ -1,0 +1,11 @@
+# One 4-beat track looping: the example from the notes.
+open virtual
+track 1 60:1 62:1 64:1 r:1
+state
+play continue
+runto 8
+log
+state
+close
+log
+state

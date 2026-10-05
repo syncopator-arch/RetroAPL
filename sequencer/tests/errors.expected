@@ -1,0 +1,77 @@
+# Errors. Calls while closed; open twice; bad tracks, channels,
+# pitches, durations (a duration under one tick is rejected wherever
+# it falls; exactly one tick, 1/2520, is accepted); run_to while
+# stopped returns at once instead of hanging; a port name that isn't
+# one on any platform (Phase 3/6: whether a port exists is covered by
+# check_device on Linux, and by hand on Windows); test calls on a
+# device.
+track 1 60:1
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+play continue
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+tempo
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+tempo 100
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+mute 1 = 1
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+clear 1
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+arm
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+runto 4
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+close
+  closed: (none)
+open device nonsense
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+open virtual
+open virtual
+  error: SEQ_ERR_ALREADY_OPEN (sequencer already open)
+track 0 60:1
+  error: SEQ_ERR_TRACK (track number out of range)
+track 17 60:1
+  error: SEQ_ERR_TRACK (track number out of range)
+track 1:0 60:1
+  error: SEQ_ERR_CHANNEL (channel out of range)
+track 1:17 60:1
+  error: SEQ_ERR_CHANNEL (channel out of range)
+track 1 128:1
+  error: SEQ_ERR_PITCH (pitch out of range)
+track 1 -2:1
+  error: SEQ_ERR_PITCH (pitch out of range)
+track 1 60:1/2521
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:1 62:1 64:1/2521 65:1
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:0
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:-1
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:1000000001
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:1/2520 62:1/2520
+  takes over at beat 0.000 (t0)
+runto 4
+  error: SEQ_ERR_NOT_PLAYING (not playing)
+play continue
+  was playing: 0
+runto t5
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t1 0.198ms OFF ch1 60
+  0.000 t1 0.198ms ON  ch1 62 v100
+  0.001 t2 0.397ms OFF ch1 62
+  0.001 t2 0.397ms ON  ch1 60 v100
+  0.001 t3 0.595ms OFF ch1 60
+  0.001 t3 0.595ms ON  ch1 62 v100
+  0.002 t4 0.794ms OFF ch1 62
+  0.002 t4 0.794ms ON  ch1 60 v100
+vel 1 = 0
+  error: SEQ_ERR_VALUE (value out of range)
+vel 1 = 128
+  error: SEQ_ERR_VALUE (value out of range)
+loop 1 = 2
+  error: SEQ_ERR_VALUE (value out of range)
+play 3
+  error: SEQ_ERR_VALUE (value out of range)

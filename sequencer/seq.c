@@ -1,0 +1,1323 @@
+/*
+	seq.c -- MIDI sequencer library: state, playback thread, tracks.
+
+	See seq.h for the interface and MIDI_SEQUENCER_NOTES.md for the
+	design. One sequencer per process: everything lives in the static
+	object S, guarded by S.lock. Every public call takes the lock,
+	does its work quickly and returns; only seq_virtual_run_to() and
+	seq_close() wait (for the playback thread).
+
+	Time. The clock is counted in ticks (SEQ_TICKS_PER_BEAT per beat).
+	While playing, the tick for a clock time comes from an anchor: the
+	time and position of the last start, continue or tempo change.
+	    deadline(T) = anchor_ns + (T - anchor_tick) * ns_per_tick
+	Re-anchoring at each tempo change is what keeps the position from
+	jumping when the tempo changes mid-play.
+
+	The playback thread keeps S.done: every event before tick S.done
+	has been played. It finds the next event tick T, waits until its
+	deadline (or, in test mode, jumps there if T is before the
+	horizon), plays everything at T, and sets S.done = T + 1. A new
+	version or a beat wait is always scheduled at or after S.done, so
+	nothing can land on a tick the thread has already passed.
+
+	A track's current version is "live" once the thread has reached
+	its start point (start_point < S.done). A new version for a live
+	track waits in pend for the end of the current pass; for a track
+	that isn't live it replaces cur outright, since nothing of it has
+	played yet.
+
+	Clocks. Real time is always read from CLOCK_MONOTONIC (S.clk),
+	kept as ns since open. Timed waits use it too if
+	pthread_condattr_setclock() accepts it (glibc does); if not
+	(winpthreads, confirmed on Windows), see timed_wait(). Test mode:
+	S.vnow, simulated ns, moved only by the playback thread.
+
+	Floating point: positions and deadlines are computed in double.
+	Built with -ffp-contract=off so x86-64 and aarch64 round the same
+	way, which keeps the test logs identical on both.
+*/
+
+#include "seq.h"
+#include "seq_internal.h"
+
+#include <pthread.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#ifdef _WIN32
+#include <windows.h>	/* timed waits, see timed_wait() */
+#endif
+
+#define TPB SEQ_TICKS_PER_BEAT
+
+struct version {
+	int32_t  n;
+	int32_t *pitch;		/* n entries */
+	int64_t *start;		/* n + 1 entries: note starts in ticks,
+				   start[n] = loop length */
+	int      channel;	/* 1..16, fixed when submitted */
+};
+
+struct track {
+	struct version *cur;	/* playing (or about to start) */
+	struct version *pend;	/* waiting for cur's loop boundary */
+	int64_t start_point;	/* tick the current run began */
+	int64_t pass_base;	/* tick the current pass of cur began */
+	int32_t next;		/* index of cur's next note */
+	int     clear_req;	/* remove at the next boundary */
+
+	/* settings, kept across versions and seq_clear() */
+	int     channel;	/* 1..16 */
+	int     mute;
+	int     loop;
+	int     velocity;
+
+	/* the note this track has sounding (one at a time) */
+	int     snd_pitch;	/* -1 if none */
+	int     snd_chan;	/* 1..16 */
+	int64_t snd_off;	/* tick of its note-off */
+};
+
+static struct {
+	pthread_mutex_t lock;
+	pthread_cond_t  wake;	/* the playback thread waits here */
+	pthread_cond_t  held;	/* run_to, open and close wait here */
+	clockid_t       clk;
+	int             monotonic;
+
+	int             state;		/* enum seq_state */
+	int             closing;	/* seq_close() is ending the thread */
+	int             backend;	/* enum seq_backend */
+	const struct seq_output *out;
+	seq_notify_fn   notify;
+	void           *ctx;
+
+	pthread_t       thread;
+	int             quit;
+
+	struct track    tr[SEQ_MAX_TRACKS + 1];	/* [0] unused */
+	int             count[16][128];	/* sounding notes per channel/pitch */
+	unsigned char   lost[16][128];	/* sounding when the port was lost,
+					   or whose note-off was the write
+					   that failed: released on reopen
+					   (Phase 3) */
+
+	double          tempo;
+	int64_t         done;		/* events before this tick played */
+	double          stop_pos;	/* position while not PLAYING */
+	int64_t         anchor_ns;	/* while PLAYING */
+	double          anchor_tick;
+
+	int64_t         base_ns;	/* real clock at open */
+	int64_t         vnow;		/* test mode: simulated ns */
+	int64_t         horizon;	/* test mode: hold at this tick */
+	int             holding;	/* test mode: thread is holding */
+
+	struct seq_timing timing;	/* real clock only (Phase 3/6) */
+
+	int             wait_armed;
+	uint32_t        wait_id;
+	uint32_t        next_id;
+	int64_t         wait_tick;
+} S = { .lock = PTHREAD_MUTEX_INITIALIZER };
+
+static pthread_once_t init_once = PTHREAD_ONCE_INIT;
+
+#ifdef _WIN32
+/* Windows: set with every wake-up of the playback thread, for its timed
+   waits (see timed_wait()). */
+static HANDLE wake_ev;
+#endif
+
+/* Wakes the playback thread (stop, tempo, new track, close ...). */
+static void wake_thread(void)
+{
+	pthread_cond_broadcast(&S.wake);
+#ifdef _WIN32
+	SetEvent(wake_ev);
+#endif
+}
+
+static void init_conds(void)
+{
+	pthread_condattr_t a;
+
+	struct timespec ts;
+
+	pthread_condattr_init(&a);
+	S.clk = CLOCK_REALTIME;
+	S.monotonic = 0;
+#if defined(CLOCK_MONOTONIC)
+	/* the clock "now" is read from */
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+		S.clk = CLOCK_MONOTONIC;
+#ifndef SEQ_FORCE_REALTIME_WAIT	/* test switch: try the fallback */
+	/* the clock timed waits count on: the same one if possible */
+	if (S.clk == CLOCK_MONOTONIC
+	    && pthread_condattr_setclock(&a, CLOCK_MONOTONIC) == 0)
+		S.monotonic = 1;
+#endif
+#endif
+	(void)ts;
+	pthread_cond_init(&S.wake, &a);
+#ifdef _WIN32
+	wake_ev = CreateEvent(NULL, FALSE, FALSE, NULL);	/* auto-reset */
+#endif
+	pthread_condattr_destroy(&a);
+	pthread_cond_init(&S.held, NULL);
+}
+
+int seq_clock_is_monotonic(void)
+{
+	pthread_once(&init_once, init_conds);
+	return S.monotonic;
+}
+
+/* ── Time ─────────────────────────────────────────────────────────── */
+
+static int64_t real_ns(void)
+{
+	struct timespec ts;
+
+	clock_gettime(S.clk, &ts);
+	return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+
+static int is_virtual(void)
+{
+	return S.backend == SEQ_BACKEND_VIRTUAL;
+}
+
+/* Clock time since open, ns. */
+static int64_t now_ns(void)
+{
+	return is_virtual() ? S.vnow : real_ns() - S.base_ns;
+}
+
+static double ns_per_tick(void)
+{
+	return 60e9 / (S.tempo * TPB);
+}
+
+static int64_t ceil_i64(double x)
+{
+	int64_t i = (int64_t)x;		/* truncates toward zero */
+
+	return (i < x) ? i + 1 : i;
+}
+
+static int64_t floor_i64(double x)
+{
+	int64_t i = (int64_t)x;
+
+	return (i > x) ? i - 1 : i;
+}
+
+/* Clock time (ns since open) at which tick T is due. */
+static int64_t deadline(int64_t T)
+{
+	return S.anchor_ns + ceil_i64(((double)T - S.anchor_tick)
+	                              * ns_per_tick());
+}
+
+static int64_t next_event(void);
+
+/* Current main-clock position in ticks (fractional in real time). */
+static double cur_pos(void)
+{
+	double p;
+
+	if (S.state != SEQ_PLAYING)
+		return S.stop_pos;
+	if (is_virtual())
+		return (double)S.done;
+	p = S.anchor_tick + (double)(real_ns() - S.base_ns - S.anchor_ns)
+	                    / ns_per_tick();
+	return (p < 0) ? 0 : p;
+}
+
+/* Position for stamping a message sent outside the playback thread. */
+static int64_t stamp_tick(void)
+{
+	return floor_i64(cur_pos());
+}
+
+/* Earliest tick at which something new can be scheduled. */
+static int64_t avail_tick(void)
+{
+	int64_t t = ceil_i64(cur_pos());
+
+	return (t < S.done) ? S.done : t;
+}
+
+static int64_t next_beat(int64_t t)
+{
+	return ((t + TPB - 1) / TPB) * TPB;
+}
+
+/* ── Events to the caller ─────────────────────────────────────────── */
+
+static void notify(int kind, uint32_t id, int64_t beat, int reason)
+{
+	struct seq_event ev;
+
+	if (!S.notify)
+		return;
+	ev.kind = kind;
+	ev.request_id = id;
+	ev.beat = beat;
+	ev.reason = reason;
+	S.notify(S.ctx, &ev);
+}
+
+static void end_wait(int reason)
+{
+	if (S.wait_armed) {
+		S.wait_armed = 0;
+		notify(SEQ_EV_STOPPED, S.wait_id, 0, reason);
+	}
+}
+
+/* ── MIDI output and the note table ───────────────────────────────── */
+
+static void clear_sounding(void)
+{
+	int t;
+
+	memset(S.count, 0, sizeof S.count);
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+		S.tr[t].snd_pitch = -1;
+}
+
+/* The device stopped taking data: stop, keep tracks and position.
+   The notes still sounding are remembered in S.lost, so reopening can
+   release them on the synth (it never got their note-offs). */
+static void port_lost(int64_t tick)
+{
+	int ch, p;
+
+	for (ch = 0; ch < 16; ch++)
+		for (p = 0; p < 128; p++)
+			if (S.count[ch][p] > 0)
+				S.lost[ch][p] = 1;
+	S.state = SEQ_PORT_LOST;
+	S.stop_pos = (double)tick;
+	S.holding = 0;
+	clear_sounding();
+	S.out->close();
+	end_wait(SEQ_ERR_IO);
+	pthread_cond_broadcast(&S.held);
+}
+
+/* 0 if sent; -1 if not (port already lost, or lost by this write). */
+static int send3(int status, int d1, int d2, int64_t tick)
+{
+	unsigned char m[3];
+
+	if (S.state != SEQ_STOPPED && S.state != SEQ_PLAYING)
+		return -1;
+	m[0] = (unsigned char)status;
+	m[1] = (unsigned char)d1;
+	m[2] = (unsigned char)d2;
+	if (S.out->send(m, 3, tick, now_ns()) != 0) {
+		port_lost(tick);
+		return -1;
+	}
+	return 0;
+}
+
+static int note_on(struct track *tr, int pitch, int chan, int64_t off,
+                   int64_t tick)
+{
+	S.count[chan - 1][pitch]++;
+	tr->snd_pitch = pitch;
+	tr->snd_chan = chan;
+	tr->snd_off = off;
+	return send3(0x90 | (chan - 1), pitch, tr->velocity, tick);
+}
+
+/* Releases the track's sounding note; the note-off goes out only when
+   no other track still has that pitch sounding on that channel. */
+static int note_off(struct track *tr, int64_t tick)
+{
+	int *c, chan = tr->snd_chan, pitch = tr->snd_pitch;
+
+	if (pitch < 0)
+		return 0;
+	c = &S.count[chan - 1][pitch];
+	tr->snd_pitch = -1;
+	if (*c > 0 && --*c == 0) {
+		if (send3(0x80 | (chan - 1), pitch, 0, tick) != 0) {
+			S.lost[chan - 1][pitch] = 1;	/* never arrived */
+			return -1;
+		}
+	}
+	return 0;
+}
+
+/* Reopened after a lost port (Phase 3): note-off for every note the
+   synth may still be sounding, then All Notes Off (CC 123) on all 16
+   channels as a backstop for anything missed (some receivers ignore
+   CC 123, every one obeys a note-off). Each flag is cleared only once
+   its note-off has gone out, so if the port is lost again partway,
+   the next reopen sends the rest. 0 if all sent. */
+static int release_lost(int64_t tick)
+{
+	int ch, p;
+
+	for (ch = 0; ch < 16; ch++)
+		for (p = 0; p < 128; p++)
+			if (S.lost[ch][p]) {
+				if (send3(0x80 | ch, p, 0, tick) != 0)
+					return -1;
+				S.lost[ch][p] = 0;
+			}
+	for (ch = 0; ch < 16; ch++)
+		if (send3(0xB0 | ch, 123, 0, tick) != 0)
+			return -1;
+	return 0;
+}
+
+static void release_all(int64_t tick)
+{
+	int t;
+
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+		if (note_off(&S.tr[t], tick) != 0)
+			break;
+	if (S.state == SEQ_STOPPED || S.state == SEQ_PLAYING)
+		memset(S.count, 0, sizeof S.count);
+}
+
+/* ── Versions ─────────────────────────────────────────────────────── */
+
+static void free_version(struct version *v)
+{
+	if (v) {
+		free(v->pitch);
+		free(v->start);
+		free(v);
+	}
+}
+
+static void drop_versions(struct track *tr)
+{
+	free_version(tr->cur);
+	free_version(tr->pend);
+	tr->cur = tr->pend = NULL;
+	tr->clear_req = 0;
+}
+
+static int64_t length_of(const struct version *v)
+{
+	return v->start[v->n];
+}
+
+static int is_live(const struct track *tr)
+{
+	return tr->cur && tr->start_point < S.done;
+}
+
+static int is_open(void)
+{
+	return S.state != SEQ_CLOSED && !S.closing;
+}
+
+/* ── Playback ─────────────────────────────────────────────────────── */
+
+static int64_t next_event(void)
+{
+	int64_t m = INT64_MAX, e;
+	int t;
+
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+
+		if (tr->snd_pitch >= 0 && tr->snd_off < m)
+			m = tr->snd_off;
+		if (tr->cur) {
+			e = tr->pass_base + tr->cur->start[tr->next];
+			if (e < m)
+				m = e;
+		}
+	}
+	if (S.wait_armed && S.wait_tick < m)
+		m = S.wait_tick;
+	return m;
+}
+
+/* The end of a track's pass, at tick T. */
+static void boundary(struct track *tr, int64_t T)
+{
+	if (tr->clear_req) {
+		drop_versions(tr);
+		return;
+	}
+	if (tr->pend) {
+		free_version(tr->cur);
+		tr->cur = tr->pend;
+		tr->pend = NULL;
+	} else if (!tr->loop) {
+		free_version(tr->cur);
+		tr->cur = NULL;
+		return;
+	}
+	tr->pass_base = T;
+	tr->next = 0;
+}
+
+/* Plays everything due at tick T, in the order seq.h gives. Stops
+   early if the port is lost. */
+static void play_tick(int64_t T)
+{
+	int t;
+
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+
+		if (tr->snd_pitch >= 0 && tr->snd_off == T)
+			if (note_off(tr, T) != 0)
+				return;
+	}
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+
+		if (tr->cur && tr->next == tr->cur->n
+		    && tr->pass_base + length_of(tr->cur) == T)
+			boundary(tr, T);
+	}
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+		struct version *v = tr->cur;
+		int p;
+
+		if (!v || tr->next >= v->n
+		    || tr->pass_base + v->start[tr->next] != T)
+			continue;
+		p = v->pitch[tr->next];
+		tr->next++;
+		if (p != SEQ_REST && !tr->mute)
+			if (note_on(tr, p, v->channel,
+			            tr->pass_base + v->start[tr->next], T) != 0)
+				return;
+	}
+	if (S.wait_armed && S.wait_tick == T) {
+		S.wait_armed = 0;
+		notify(SEQ_EV_BEAT, S.wait_id, T / TPB, SEQ_OK);
+	}
+}
+
+/* Waits on S.wake until clock time when_ns (ns since open), or until
+   woken. If the condition variable couldn't be set to the monotonic
+   clock (winpthreads), the wait is capped at 50 ms and:
+   - Windows (Phase 6, Oct 4, 2026): a native wait on an event that
+     every wake-up sets (wake_thread()), for the time left on the
+     monotonic clock, in whole milliseconds rounded up. winpthreads'
+     timed waits can't be used: read in its source, it rechecks each
+     wait against GetTickCount64(), which moves only every ~15.6 ms
+     and ignores timeBeginPeriod(), so every wait ran on to the next
+     tick (measured on the person's machine with seqdemo -T: a 1 ms
+     wait took 15.4 ms even after timeBeginPeriod(1), while Sleep(1)
+     took 1.5 ms; playback was 9-10 ms late on average). A native
+     wait follows the 1 ms timer, as Sleep() does. Converting an
+     absolute time was a second, smaller problem
+     (GetSystemTimeAsFileTime() steps too). No time of day is
+     involved, so a change of the system time can't affect it. The
+     event may be left set by a wake-up that came while the thread
+     wasn't waiting; that only makes one wait end early, and the loop
+     simply waits again.
+   - elsewhere (only check_fallback, forcing this path on Linux): the
+     deadline is turned into a time of day for this one wait, so a
+     change of the system time can't stall playback or rush it for
+     longer than the cap. */
+static void timed_wait(int64_t when_ns)
+{
+	struct timespec ts;
+	int64_t abs;
+
+	if (S.monotonic) {
+		abs = S.base_ns + when_ns;
+	} else {
+		int64_t rel = when_ns - now_ns();
+
+		if (rel > 50000000)
+			rel = 50000000;
+		if (rel < 0)
+			rel = 0;
+#ifdef _WIN32
+		pthread_mutex_unlock(&S.lock);
+		WaitForSingleObject(wake_ev, (DWORD)((rel + 999999) / 1000000));
+		pthread_mutex_lock(&S.lock);
+		(void)ts;
+		(void)abs;
+		return;
+#else
+		clock_gettime(CLOCK_REALTIME, &ts);
+		abs = (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec + rel;
+#endif
+	}
+
+	ts.tv_sec = (time_t)(abs / 1000000000);
+	ts.tv_nsec = (long)(abs % 1000000000);
+	pthread_cond_timedwait(&S.wake, &S.lock, &ts);
+}
+
+static void *playback_thread(void *arg)
+{
+	(void)arg;
+	pthread_mutex_lock(&S.lock);
+	while (!S.quit) {
+		int64_t T;
+
+		if (S.state != SEQ_PLAYING) {
+			pthread_cond_wait(&S.wake, &S.lock);
+			continue;
+		}
+		T = next_event();
+		if (is_virtual()) {
+			if (T >= S.horizon) {
+				if (!S.holding) {
+					int64_t d = deadline(S.horizon);
+
+					S.done = S.horizon;
+					if (d > S.vnow)
+						S.vnow = d;
+					S.holding = 1;
+					pthread_cond_broadcast(&S.held);
+				}
+				pthread_cond_wait(&S.wake, &S.lock);
+				continue;
+			}
+			{
+				int64_t d = deadline(T);
+
+				if (d > S.vnow)
+					S.vnow = d;
+			}
+		} else {
+			int64_t late;
+
+			if (T == INT64_MAX) {
+				pthread_cond_wait(&S.wake, &S.lock);
+				continue;
+			}
+			late = now_ns() - deadline(T);
+			if (late < 0) {
+				timed_wait(deadline(T));
+				continue;
+			}
+			S.timing.ticks++;
+			S.timing.late_sum_ns += late;
+			if (late > S.timing.late_max_ns)
+				S.timing.late_max_ns = late;
+			if (late > 2000000)
+				S.timing.late_2ms++;
+		}
+		play_tick(T);
+		/* If the port was lost partway through T, T stays unplayed:
+		   continuing finishes what's left of it (each step skips
+		   what it has already done). */
+		if (S.state == SEQ_PLAYING && S.done <= T)
+			S.done = T + 1;
+	}
+	pthread_mutex_unlock(&S.lock);
+	return NULL;
+}
+
+/* ── Open, close, state ───────────────────────────────────────────── */
+
+static void reset_tracks(void)
+{
+	int t;
+
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+
+		memset(tr, 0, sizeof *tr);
+		tr->channel = t;
+		tr->loop = SEQ_DEFAULT_LOOP;
+		tr->velocity = SEQ_DEFAULT_VELOCITY;
+		tr->snd_pitch = -1;
+	}
+	memset(S.count, 0, sizeof S.count);
+}
+
+int seq_open(const struct seq_config *cfg)
+{
+	int r;
+
+	if (!cfg || cfg->backend < SEQ_BACKEND_DEVICE
+	    || cfg->backend > SEQ_BACKEND_LOG_REALTIME)
+		return SEQ_ERR_BACKEND;
+	pthread_once(&init_once, init_conds);
+	pthread_mutex_lock(&S.lock);
+	while (S.closing)
+		pthread_cond_wait(&S.held, &S.lock);
+
+	if (S.state == SEQ_STOPPED || S.state == SEQ_PLAYING) {
+		r = SEQ_ERR_ALREADY_OPEN;
+	} else if (S.state == SEQ_PORT_LOST) {
+		if (cfg->backend != S.backend) {
+			r = SEQ_ERR_BACKEND;
+		} else if ((r = S.out->open(cfg->port)) == SEQ_OK) {
+			S.notify = cfg->notify;
+			S.ctx = cfg->ctx;
+			S.state = SEQ_STOPPED;
+			if (release_lost((int64_t)S.stop_pos) != 0)
+				r = SEQ_ERR_IO;		/* lost again */
+		}
+	} else {
+		S.backend = cfg->backend;
+		S.out = (cfg->backend == SEQ_BACKEND_DEVICE)
+		        ? &seq_out_device : &seq_out_log;
+		if (S.out != &seq_out_device)
+			seq_log_reset();
+		r = S.out->open(cfg->port);
+		if (r == SEQ_OK) {
+			reset_tracks();
+			memset(S.lost, 0, sizeof S.lost);
+			memset(&S.timing, 0, sizeof S.timing);
+			S.notify = cfg->notify;
+			S.ctx = cfg->ctx;
+			S.tempo = SEQ_DEFAULT_TEMPO;
+			S.done = 0;
+			S.stop_pos = 0;
+			S.anchor_ns = 0;
+			S.anchor_tick = 0;
+			S.base_ns = real_ns();
+			S.vnow = 0;
+			S.horizon = 0;
+			S.holding = 0;
+			S.wait_armed = 0;
+			S.next_id = 0;
+			S.quit = 0;
+			if (pthread_create(&S.thread, NULL,
+			                   playback_thread, NULL) != 0) {
+				S.out->close();
+				r = SEQ_ERR_NOMEM;
+			} else {
+				S.state = SEQ_STOPPED;
+			}
+		}
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_close(int *closed, int *nclosed)
+{
+	int t, k = 0;
+
+	pthread_mutex_lock(&S.lock);
+	while (S.closing)
+		pthread_cond_wait(&S.held, &S.lock);
+	if (S.state == SEQ_CLOSED) {
+		pthread_mutex_unlock(&S.lock);
+		if (nclosed)
+			*nclosed = 0;
+		return SEQ_OK;
+	}
+	S.closing = 1;
+	if (S.state == SEQ_PLAYING)
+		release_all(stamp_tick());
+	end_wait(SEQ_OK);
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+		if (S.tr[t].cur || S.tr[t].pend) {
+			if (closed)
+				closed[k] = t;
+			k++;
+		}
+	S.quit = 1;
+	wake_thread();
+	pthread_cond_broadcast(&S.held);	/* releases any run_to */
+	pthread_mutex_unlock(&S.lock);
+
+	pthread_join(S.thread, NULL);
+
+	pthread_mutex_lock(&S.lock);
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+		drop_versions(&S.tr[t]);
+	if (S.state != SEQ_PORT_LOST)
+		S.out->close();
+	S.state = SEQ_CLOSED;
+	S.closing = 0;
+	pthread_cond_broadcast(&S.held);
+	pthread_mutex_unlock(&S.lock);
+	if (nclosed)
+		*nclosed = k;
+	return SEQ_OK;
+}
+
+int seq_get_state(int *state, int64_t *tick)
+{
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		*state = SEQ_CLOSED;
+		if (tick)
+			*tick = 0;
+	} else {
+		*state = S.state;
+		if (tick)
+			*tick = stamp_tick();
+	}
+	pthread_mutex_unlock(&S.lock);
+	return SEQ_OK;
+}
+
+int seq_get_tracks(struct seq_track_info *info, int *n)
+{
+	int t, k = 0;
+
+	pthread_mutex_lock(&S.lock);
+	if (is_open()) {
+		int64_t pos = stamp_tick();
+
+		for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+			struct track *tr = &S.tr[t];
+			struct seq_track_info *in = &info[k];
+			int live = is_live(tr);
+
+			if (!tr->cur && !tr->pend)
+				continue;
+			in->track = t;
+			/* the channel notes are sounding on now: the playing
+			   version's, or, with only a waiting version, the one
+			   it will start on (pend exists only when cur is
+			   live, so a waiting-only track's version is cur) */
+			in->channel = tr->cur ? tr->cur->channel
+			                      : tr->pend->channel;
+			in->mute = tr->mute;
+			in->loop = tr->loop;
+			in->velocity = tr->velocity;
+			in->notes = live ? tr->cur->n : 0;
+			in->length = live ? length_of(tr->cur) : 0;
+			in->pending = (tr->pend != NULL) || (tr->cur && !live);
+			in->position = 0;
+			if (live) {
+				int64_t q = pos - tr->pass_base;
+
+				if (q < 0)
+					q = 0;
+				in->position = q % in->length;
+			}
+			k++;
+		}
+	}
+	pthread_mutex_unlock(&S.lock);
+	*n = k;
+	return SEQ_OK;
+}
+
+static void sleep_ms(int ms)
+{
+	struct timespec ts;
+
+	ts.tv_sec = ms / 1000;
+	ts.tv_nsec = (long)(ms % 1000) * 1000000;
+	nanosleep(&ts, NULL);
+}
+
+void seq_panic(void)
+{
+	int got = 0, i, ch, p;
+	int64_t tick;
+	unsigned char m[3];
+
+	for (i = 0; i < 20 && !got; i++) {
+		if (pthread_mutex_trylock(&S.lock) == 0)
+			got = 1;
+		else
+			sleep_ms(5);
+	}
+	if ((S.state == SEQ_STOPPED || S.state == SEQ_PLAYING) && S.out) {
+		tick = stamp_tick();
+		for (ch = 0; ch < 16; ch++)
+			for (p = 0; p < 128; p++)
+				if (S.count[ch][p] > 0) {
+					m[0] = (unsigned char)(0x80 | ch);
+					m[1] = (unsigned char)p;
+					m[2] = 0;
+					S.out->send(m, 3, tick, now_ns());
+				}
+		for (ch = 0; ch < 16; ch++) {
+			m[0] = (unsigned char)(0xB0 | ch);
+			m[1] = 123;
+			m[2] = 0;
+			S.out->send(m, 3, tick, now_ns());
+		}
+		clear_sounding();
+	}
+	if (got)
+		pthread_mutex_unlock(&S.lock);
+}
+
+/* ── Tracks ───────────────────────────────────────────────────────── */
+
+static int bad_track(int t)
+{
+	return t < 1 || t > SEQ_MAX_TRACKS;
+}
+
+/* Converts a submission into a version: start ticks are the rounded
+   running sums of the durations, each at least one tick after the
+   last. */
+static int make_version(const int32_t *pitch, const double *dur,
+                        int32_t n, struct version **out)
+{
+	struct version *v;
+	double sum = 0;
+	int32_t i;
+
+	if (n < 1)
+		return SEQ_ERR_LENGTH;
+	for (i = 0; i < n; i++) {
+		if (pitch[i] != SEQ_REST && (pitch[i] < 0 || pitch[i] > 127))
+			return SEQ_ERR_PITCH;
+		/* a little slack, so 1/2520 computed in floating point
+		   still counts as one tick; also rejects NaN */
+		if (!(dur[i] * TPB >= 1.0 - 1e-9))
+			return SEQ_ERR_DURATION;
+		sum += dur[i];
+		if (!(sum <= SEQ_MAX_BEATS))
+			return SEQ_ERR_DURATION;
+	}
+	v = calloc(1, sizeof *v);
+	if (!v)
+		return SEQ_ERR_NOMEM;
+	v->pitch = malloc((size_t)n * sizeof *v->pitch);
+	v->start = malloc(((size_t)n + 1) * sizeof *v->start);
+	if (!v->pitch || !v->start) {
+		free_version(v);
+		return SEQ_ERR_NOMEM;
+	}
+	v->n = n;
+	memcpy(v->pitch, pitch, (size_t)n * sizeof *v->pitch);
+	v->start[0] = 0;
+	sum = 0;
+	for (i = 0; i < n; i++) {
+		int64_t s;
+
+		sum += dur[i];
+		s = (int64_t)(sum * TPB + 0.5);
+		if (s <= v->start[i])
+			s = v->start[i] + 1;
+		v->start[i + 1] = s;
+	}
+	*out = v;
+	return SEQ_OK;
+}
+
+int seq_submit_track(int track, int channel,
+                     const int32_t *pitch, const double *dur, int32_t n,
+                     int64_t *swap_tick)
+{
+	struct version *v = NULL;
+	struct track *tr;
+	int64_t swap;
+	int r;
+
+	if (bad_track(track))
+		return SEQ_ERR_TRACK;
+	if (channel != SEQ_UNCHANGED && (channel < 1 || channel > 16))
+		return SEQ_ERR_CHANNEL;
+	if ((r = make_version(pitch, dur, n, &v)) != SEQ_OK)
+		return r;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		pthread_mutex_unlock(&S.lock);
+		free_version(v);
+		return SEQ_ERR_NOT_OPEN;
+	}
+	tr = &S.tr[track];
+	if (channel != SEQ_UNCHANGED)
+		tr->channel = channel;
+	v->channel = tr->channel;
+	tr->clear_req = 0;
+	if (is_live(tr)) {
+		free_version(tr->pend);
+		tr->pend = v;
+		swap = tr->pass_base + length_of(tr->cur);
+	} else {
+		swap = tr->cur ? tr->start_point : next_beat(avail_tick());
+		free_version(tr->cur);
+		free_version(tr->pend);
+		tr->pend = NULL;
+		tr->cur = v;
+		tr->start_point = tr->pass_base = swap;
+		tr->next = 0;
+	}
+	wake_thread();
+	pthread_mutex_unlock(&S.lock);
+	if (swap_tick)
+		*swap_tick = swap;
+	return SEQ_OK;
+}
+
+/* Common front end for the list calls: checks every track (and value,
+   when lo <= hi) before anything changes. */
+static int check_list(const int *tracks, const int *values, int n,
+                      int lo, int hi)
+{
+	int i;
+
+	if (n < 0)
+		return SEQ_ERR_LENGTH;
+	for (i = 0; i < n; i++) {
+		if (bad_track(tracks[i]))
+			return SEQ_ERR_TRACK;
+		if (values && (values[i] < lo || values[i] > hi))
+			return SEQ_ERR_VALUE;
+	}
+	return SEQ_OK;
+}
+
+int seq_clear(const int *tracks, int n, int *prev)
+{
+	int i, r;
+
+	if ((r = check_list(tracks, NULL, n, 0, 0)) != SEQ_OK)
+		return r;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		pthread_mutex_unlock(&S.lock);
+		return SEQ_ERR_NOT_OPEN;
+	}
+	if (prev)
+		for (i = 0; i < n; i++)
+			prev[i] = S.tr[tracks[i]].cur || S.tr[tracks[i]].pend;
+	for (i = 0; i < n; i++) {
+		struct track *tr = &S.tr[tracks[i]];
+
+		if (S.state == SEQ_PLAYING && is_live(tr)) {
+			free_version(tr->pend);
+			tr->pend = NULL;
+			tr->clear_req = 1;
+		} else {
+			note_off(tr, stamp_tick());
+			drop_versions(tr);
+		}
+	}
+	wake_thread();
+	pthread_mutex_unlock(&S.lock);
+	return SEQ_OK;
+}
+
+enum { SET_MUTE, SET_LOOP, SET_VEL };
+
+static int set_list(int which, const int *tracks, const int *values,
+                    int n, int *prev)
+{
+	int i, r;
+	int lo = (which == SET_VEL) ? 1 : 0;
+	int hi = (which == SET_VEL) ? 127 : 1;
+
+	if ((r = check_list(tracks, values, n, lo, hi)) != SEQ_OK)
+		return r;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		pthread_mutex_unlock(&S.lock);
+		return SEQ_ERR_NOT_OPEN;
+	}
+	if (prev)
+		for (i = 0; i < n; i++) {
+			struct track *tr = &S.tr[tracks[i]];
+
+			prev[i] = which == SET_MUTE ? tr->mute
+			        : which == SET_LOOP ? tr->loop : tr->velocity;
+		}
+	for (i = 0; i < n; i++) {
+		struct track *tr = &S.tr[tracks[i]];
+
+		switch (which) {
+		case SET_MUTE:
+			tr->mute = values[i];
+			if (tr->mute)
+				note_off(tr, stamp_tick());
+			break;
+		case SET_LOOP:
+			tr->loop = values[i];
+			break;
+		default:
+			tr->velocity = values[i];
+			break;
+		}
+	}
+	wake_thread();
+	pthread_mutex_unlock(&S.lock);
+	return SEQ_OK;
+}
+
+int seq_set_mute(const int *tracks, const int *values, int n, int *prev)
+{
+	return set_list(SET_MUTE, tracks, values, n, prev);
+}
+
+int seq_set_loop(const int *tracks, const int *values, int n, int *prev)
+{
+	return set_list(SET_LOOP, tracks, values, n, prev);
+}
+
+int seq_set_velocity(const int *tracks, const int *values, int n, int *prev)
+{
+	return set_list(SET_VEL, tracks, values, n, prev);
+}
+
+/* ── Transport and tempo ──────────────────────────────────────────── */
+
+static void stop_playing(void)
+{
+	double p;
+	int64_t ne;
+
+	if (is_virtual()) {
+		p = (double)S.done;
+	} else {
+		/* never past an event the thread hasn't played yet */
+		p = cur_pos();
+		ne = next_event();
+		if (ne != INT64_MAX && p > (double)ne)
+			p = (double)ne;
+	}
+	release_all(floor_i64(p));
+	if (S.state != SEQ_PLAYING)	/* port lost while releasing */
+		return;
+	S.stop_pos = p;
+	S.state = SEQ_STOPPED;
+	S.holding = 0;
+	end_wait(SEQ_OK);
+	pthread_cond_broadcast(&S.held);
+}
+
+static void start_playing(double from)
+{
+	S.anchor_ns = now_ns();
+	S.anchor_tick = from;
+	S.state = SEQ_PLAYING;
+	S.holding = 0;
+	if (is_virtual())
+		S.horizon = S.done;	/* hold where it stopped */
+}
+
+int seq_play(int mode, int *prev)
+{
+	int t, r = SEQ_OK;
+
+	if (mode < SEQ_STOP || mode > SEQ_RESTART)
+		return SEQ_ERR_VALUE;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		pthread_mutex_unlock(&S.lock);
+		return SEQ_ERR_NOT_OPEN;
+	}
+	if (prev)
+		*prev = (S.state == SEQ_PLAYING);
+	if (mode == SEQ_STOP) {
+		if (S.state == SEQ_PLAYING)
+			stop_playing();
+	} else if (S.state == SEQ_PORT_LOST) {
+		r = SEQ_ERR_IO;
+	} else if (mode == SEQ_RESTART) {
+		if (S.state == SEQ_PLAYING) {
+			release_all(stamp_tick());
+			end_wait(SEQ_OK);
+		}
+		if (S.state == SEQ_PORT_LOST) {
+			r = SEQ_ERR_IO;
+		} else {
+			for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+				struct track *tr = &S.tr[t];
+
+				if (tr->clear_req) {
+					drop_versions(tr);
+					continue;
+				}
+				if (tr->pend) {
+					free_version(tr->cur);
+					tr->cur = tr->pend;
+					tr->pend = NULL;
+				}
+				tr->start_point = tr->pass_base = 0;
+				tr->next = 0;
+			}
+			S.done = 0;
+			S.horizon = 0;
+			start_playing(0);
+		}
+	} else if (S.state == SEQ_STOPPED) {	/* SEQ_CONTINUE */
+		start_playing(S.stop_pos);
+	}
+	wake_thread();
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_set_tempo(double bpm, double *prev)
+{
+	if (!(bpm >= SEQ_TEMPO_MIN && bpm <= SEQ_TEMPO_MAX))
+		return SEQ_ERR_TEMPO;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		pthread_mutex_unlock(&S.lock);
+		return SEQ_ERR_NOT_OPEN;
+	}
+	if (prev)
+		*prev = S.tempo;
+	if (S.state == SEQ_PLAYING) {
+		double p = cur_pos();
+
+		S.anchor_ns = now_ns();
+		S.anchor_tick = p;
+	}
+	S.tempo = bpm;
+	wake_thread();
+	pthread_mutex_unlock(&S.lock);
+	return SEQ_OK;
+}
+
+int seq_get_tempo(double *bpm)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open())
+		r = SEQ_ERR_NOT_OPEN;
+	else
+		*bpm = S.tempo;
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+/* ── Beat wait ────────────────────────────────────────────────────── */
+
+int seq_request_beat(uint32_t *request_id)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		r = SEQ_ERR_NOT_OPEN;
+	} else if (S.state != SEQ_PLAYING) {
+		r = SEQ_ERR_NOT_PLAYING;
+	} else {
+		if (++S.next_id == 0)
+			S.next_id = 1;
+		S.wait_id = S.next_id;
+		S.wait_tick = next_beat(avail_tick());
+		S.wait_armed = 1;
+		*request_id = S.wait_id;
+		wake_thread();
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_cancel_wait(uint32_t request_id)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open())
+		r = SEQ_ERR_NOT_OPEN;
+	else if (S.wait_armed && S.wait_id == request_id)
+		S.wait_armed = 0;
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+/* ── Test mode ────────────────────────────────────────────────────── */
+
+int seq_virtual_run_to(int64_t tick)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open())
+		r = SEQ_ERR_NOT_OPEN;
+	else if (S.backend != SEQ_BACKEND_VIRTUAL)
+		r = SEQ_ERR_BACKEND;
+	else if (S.state == SEQ_PORT_LOST)
+		r = SEQ_ERR_IO;
+	else if (S.state != SEQ_PLAYING)
+		r = SEQ_ERR_NOT_PLAYING;
+	else if (tick > S.done) {
+		S.horizon = tick;
+		S.holding = 0;
+		wake_thread();
+		while (S.state == SEQ_PLAYING && !S.closing
+		       && !(S.holding && S.done == tick))
+			pthread_cond_wait(&S.held, &S.lock);
+		if (S.state == SEQ_PORT_LOST)
+			r = SEQ_ERR_IO;
+		else if (S.state != SEQ_PLAYING || S.closing)
+			r = SEQ_ERR_NOT_PLAYING;
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_virtual_log(char *buf, size_t bufsize, size_t *len, int clear)
+{
+	int r;
+
+	pthread_mutex_lock(&S.lock);
+	if (is_open() && S.backend == SEQ_BACKEND_DEVICE)
+		r = SEQ_ERR_BACKEND;
+	else
+		r = seq_log_copy(buf, bufsize, len, clear);
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_virtual_fail_writes(int on)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (is_open() && S.backend == SEQ_BACKEND_DEVICE)
+		r = SEQ_ERR_BACKEND;
+	else
+		seq_log_fail(on != 0);
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+/* ── Timing (internal, seq_internal.h) ──────────────────────────── */
+
+void seq_get_timing(struct seq_timing *t, int reset)
+{
+	pthread_mutex_lock(&S.lock);
+	*t = S.timing;
+	if (reset)
+		memset(&S.timing, 0, sizeof S.timing);
+	pthread_mutex_unlock(&S.lock);
+}
+
+/* ── Messages ─────────────────────────────────────────────────────── */
+
+const char *seq_strerror(int err)
+{
+	switch (err) {
+	case SEQ_OK:               return "OK";
+	case SEQ_ERR_NOT_OPEN:     return "sequencer not open";
+	case SEQ_ERR_ALREADY_OPEN: return "sequencer already open";
+	case SEQ_ERR_PORT:         return "MIDI port could not be opened";
+	case SEQ_ERR_IO:           return "MIDI port lost";
+	case SEQ_ERR_TRACK:        return "track number out of range";
+	case SEQ_ERR_CHANNEL:      return "channel out of range";
+	case SEQ_ERR_PITCH:        return "pitch out of range";
+	case SEQ_ERR_DURATION:     return "bad duration";
+	case SEQ_ERR_LENGTH:       return "no notes";
+	case SEQ_ERR_VALUE:        return "value out of range";
+	case SEQ_ERR_TEMPO:        return "tempo out of range";
+	case SEQ_ERR_NOT_PLAYING:  return "not playing";
+	case SEQ_ERR_NOMEM:        return "out of memory";
+	case SEQ_ERR_BACKEND:      return "not valid for this backend";
+	case SEQ_ERR_PORT_BUSY:    return "MIDI port in use";
+	case SEQ_ERR_PORT_ACCESS:  return "no permission for MIDI port";
+	case SEQ_ERR_PORT_NAME:    return "MIDI port name not understood";
+	default:                   return "unknown error";
+	}
+}

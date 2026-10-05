@@ -1,0 +1,34 @@
+# Reopening after a lost port (Phase 3): the notes that were sounding
+# when it was lost get their note-offs at once, then All Notes Off
+# (CC 123) on all 16 channels, so nothing is left hanging on the synth.
+# Tracks 1 and 2 both sound 60 on channel 1 (one note-off, by the
+# count); track 3 has 66 sounding. The port is lost at beat 4 by the
+# note-off of 60 itself (track 2's, the one that reaches 0), which the
+# synth never got, so it is sent on reopen too.
+open virtual
+track 1 60:4
+track 2:1 60:4
+track 3 64:1 65:1 66:2
+play continue
+runto 3
+log
+failwrites on
+runto 5
+state
+log
+failwrites off
+open virtual
+log
+play continue
+runto 5
+log
+# lost again at beat 6, by track 3's note-off of 65 (60 on channel 1
+# is sounding): the same again
+runto 5.5
+log
+failwrites on
+runto 7
+failwrites off
+open virtual
+log
+close

@@ -1,0 +1,20 @@
+# Mute is immediate and releases the track's sounding note; unmuting
+# waits for the next note. Lists: one value for all, or one per track;
+# results are the previous settings. A bad entry fails the whole call.
+open virtual
+track 1 60:2
+track 2 64:2
+track 3 67:2
+play continue
+runto 1
+mute 1 2 = 1
+log
+runto 3
+mute 1 = 0
+runto 5
+log
+mute 1 2 3 = 1 0 1
+mute 1 2 3 = 0
+mute 1 17 = 1
+mute 1 = 2
+state

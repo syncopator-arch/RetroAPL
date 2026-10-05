@@ -1,0 +1,8 @@
+# Eight threads calling into the library at once while it plays on
+# the real clock: submit, mute, tempo, state, beat waits, clears.
+# Nothing to compare but "done"; check_tsan is where it matters.
+open realtime
+tempo 1000
+track 1 60:1
+play continue
+stress 1500

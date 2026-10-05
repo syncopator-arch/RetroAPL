@@ -1,0 +1,25 @@
+# Fractional durations: three 4/3-beat notes make an exact 4-beat loop
+# and stay on the beat after many passes; sevenths likewise. A
+# deliberately uneven loop (4.1 beats) phases against a 4-beat track,
+# the same way every pass.
+open virtual
+track 1 60:4/3 62:4/3 64:4/3
+track 2:2 72:1/7 73:1/7 74:1/7 75:1/7 76:1/7 77:1/7 78:1/7
+play continue
+runto 4.01
+log
+runto 3999.9
+logdrop
+runto 4001.01
+log
+close
+open virtual
+track 1 60:4
+track 2:2 72:4.1
+play continue
+runto 9
+log
+runto 40
+logdrop
+runto 42
+log

@@ -4,13 +4,15 @@ QACOM[1]  X←⎕IO ⍝ SET ⎕IO HERE, 'QUOTED'
 QACOM[2]  '⎕IO 1'
 QANEW[1]  ⎕IO←1
 QAOLD[1]  ⎕IO 0
-4 lines in 3 files
+SEQTWO[5]  N←V[⎕IO]
+5 lines in 4 files
      )FSEARCH ⎕I
 QACOM[1]  X←⎕IO ⍝ SET ⎕IO HERE, 'QUOTED'
 QACOM[2]  '⎕IO 1'
 QANEW[1]  ⎕IO←1
 QAOLD[1]  ⎕IO 0
-4 lines in 3 files
+SEQTWO[5]  N←V[⎕IO]
+5 lines in 4 files
      )FSEARCH ⎕IO 0
 QAOLD[1]  ⎕IO 0
 1 line in 1 file
