@@ -172,6 +172,7 @@ do_drav()
 short b,i,j;
 long lscan,lend,rend,rscan,acc = 0;
 long rtend,rtscan,ltend,ltscan;
+long rows;	/* result rows: every axis except rho[0] */
 struct ValEnt *te,*re,*le;
 union MultiP ls,rs,ts;
 int32_t *rho_array;
@@ -219,6 +220,17 @@ double dacc = 0.0;
 	}
 	TOTSCAN = 1L;
 	for (i=0;i<b;i++) TOTSCAN *= rho_array[i];
+
+	/* each side gives ltend/rtend elements (its own rho[0], or 1 for a
+	   lower-rank side) to every row of the result. A side that owes
+	   elements but is empty -- ⍬,5 1⍴⍳5, or (2 3⍴⍳6),0 3⍴0 -- has
+	   nothing to cycle over: the copy loop's wrap test (++ltscan ==
+	   ltend, with ltend = ve_length = 0) never fires, and every row read
+	   another element past its data. Length Error, before allocating. */
+	rows = 1L;
+	for (i=1;i<b;i++) rows *= rho_array[i];
+	if (rows && ((ltend && !le->ve_length) || (rtend && !re->ve_length)))
+		return(SET_ERR(ERR_LENGTH));
 
 	rtend = re->ve_length;
 	ltend = le->ve_length;
@@ -281,8 +293,12 @@ double dacc = 0.0;
 					break;
 			}
 			srctype = i;
-			lscan++;
-			if (++ltscan == ltend) 
+			/* R gives nothing to a row (equal rank, R's rho[0]
+			   is 0: M,2 0⍴0) -- start L's next row here, since
+			   the else branch's reset (++rscan == rend) can
+			   never fire with rend 0 and would read past R */
+			if (++lscan == lend && !rend) lscan = 0;
+			if (++ltscan == ltend)
 			{
 				ltscan = 0L;
 				ls.cp = DATA_AD(le);
@@ -375,13 +391,14 @@ double dacc = 0.0;
 	function only ever needs to emit two contiguous runs: all of L's
 	data, immediately followed by all of R's data (with element-by-
 	element type promotion when L and R differ in width, same as
-	do_drav()). No cyclic re-reading of either side is needed here the
-	way do_drav() needs it for its column-broadcast case: do_drav() may
-	have to repeat a lower-rank operand's contribution across many
-	*separate* output rows (hence its ltscan/rtscan wraparound), but
-	here the axis being grown IS the outermost one, so there's only ever
-	a single row-group to fill -- a lower-rank operand contributes its
-	data exactly once, laminated on as one extra "row", never repeated.
+	do_drav()). A lower-rank operand contributes exactly one "row"
+	(blksize elements), but its own data may be shorter than a row --
+	a scalar (M⍪0), or a short vector (10 20⍪1 5⍴⍳5) -- so each side's
+	read pointer wraps back to its start at its own ve_length, reusing
+	it cyclically the same way do_drav() reuses a short side for ','
+	(M,10 20). Without the wrap the copy ran off the end of the short
+	side's data into whatever followed it in the workspace (fixed V85).
+	A side that owes elements but is empty is a Length Error.
 
 	Rank/shape handling mirrors do_drav()'s exactly, just checked against
 	each operand's *own* outermost axis (ve_rho[rank-1]) instead of its
@@ -391,16 +408,18 @@ double dacc = 0.0;
 	outermost-axis size (a genuine row-count sum); when one side has
 	strictly lower rank, that side always contributes exactly one
 	lamination unit regardless of its own shape, matching do_drav()'s
-	existing comma semantics for rank-mismatched arguments. As with
-	do_drav(), the non-growing axes are trusted to already agree between
-	L and R (or to be one-element/scalar-broadcastable) -- no defensive
-	check that they do, same laxness do_drav() itself has.
+	existing comma semantics for rank-mismatched arguments. With equal
+	rank the non-growing axes are deliberately not checked: the result
+	takes them from the higher-rank side, or from L when the ranks are
+	equal, and the other side is reused cyclically to fill (B⍪A with A
+	2 by 3 and B 4 by 5 gives A's six values cycled through two 5-wide
+	rows) -- the same lax, wrap-around semantics as do_drav()'s ','.
+	The wrap keeps every read inside each side's own data.
 
 	Struct-array handling (the FLOATVS/dup_val indirection under case 4)
 	is carried over unchanged from do_drav(), adjusted only to track
-	absolute elements-consumed-so-far from L and R (lconsumed/rconsumed)
-	instead of do_drav()'s mod-boundary ltscan/rtscan, since there's no
-	wraparound to track here.
+	the next-element index into L and R (lconsumed/rconsumed, which wrap
+	at each side's ve_length like do_drav()'s ltscan/rtscan).
 */
 short
 do_drav1()
@@ -457,6 +476,14 @@ double dacc = 0.0;
 	for (i=0;i<b-1;i++) blksize *= rho_array[i];
 	TOTSCAN = blksize * rho_array[b-1];
 
+	/* a side that owes elements but has none to give (e.g. a lower-rank
+	   empty vector against a matrix with nonzero columns: ⍬⍪1 5⍴⍳5) has
+	   nothing to cycle over -- the copy loop below would read past its
+	   (empty) data. Length Error, checked before anything is allocated. */
+	if ((ltend && blksize && !le->ve_length) ||
+	    (rtend && blksize && !re->ve_length))
+		return(SET_ERR(ERR_LENGTH));
+
 	i = le->ve_vtype & BYTES_MASK;
 	j = re->ve_vtype & BYTES_MASK;
 	if (i == j && (re->ve_vtype | VARIABLE_BIT) == QUOT_CODE) 
@@ -498,13 +525,18 @@ double dacc = 0.0;
 
 	lscan = ltend * blksize;	/* elements still owed from L */
 	rscan = rtend * blksize;	/* elements still owed from R */
-	lconsumed = rconsumed = 0L;
-	while (TOTSCAN--) 
+	lconsumed = rconsumed = 0L;	/* index of the next element to read
+					   from each side; wraps at that side's
+					   own ve_length, so a lower-rank side
+					   shorter than one row (10 20⍪1 5⍴⍳5)
+					   is reused cyclically, the way
+					   do_drav() reuses it for ',' */
+	while (TOTSCAN--)
 	{
-		if (lscan) 
+		if (lscan)
 		{
 			lscan--;
-			switch (i) 
+			switch (i)
 			{
 				case 1:
 					acc = (long)(signed char)*ls.cp++;
@@ -520,10 +552,14 @@ double dacc = 0.0;
 					break;
 			}
 			srctype = i;
-			lconsumed++;
+			if (++lconsumed == le->ve_length)
+			{
+				lconsumed = 0L;
+				ls.cp = DATA_AD(le);
+			}
 		} else {
 			rscan--;
-			switch (j) 
+			switch (j)
 			{
 				case 1:
 					acc = (long)(signed char)*rs.cp++;
@@ -539,7 +575,11 @@ double dacc = 0.0;
 					break;
 			}
 			srctype = j;
-			rconsumed++;
+			if (++rconsumed == re->ve_length)
+			{
+				rconsumed = 0L;
+				rs.cp = DATA_AD(re);
+			}
 		}
 		switch (b) 
 		{
