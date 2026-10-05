@@ -45,16 +45,35 @@
 !/backend/Makefile
 !/backend/run_tests.sh
 
-# Regression tests: inputs, recorded transcripts, .fn fixtures.
-# tests/*.out (run output) stays ignored.
+# Regression tests: inputs, recorded transcripts, per-test apl_cli
+# options (.opts), .fn fixtures. tests/*.out (run output) stays ignored.
 !/backend/tests/
 /backend/tests/*
 !/backend/tests/*.apl
 !/backend/tests/*.expected
+!/backend/tests/*.opts
 !/backend/tests/fns/
 !/backend/tests/images/
 /backend/tests/fns/*
 !/backend/tests/fns/*.fn
+
+# --- sequencer/ ---------------------------------------------------------
+# MIDI sequencer library: source, makefile, test scripts and recorded
+# results. Objects, libseq.a, the seqtest*/seqdemo binaries and
+# tests/*.out (run output) stay ignored.
+!/sequencer/
+/sequencer/*
+!/sequencer/*.c
+!/sequencer/*.h
+!/sequencer/makefile
+!/sequencer/tests/
+/sequencer/tests/*
+!/sequencer/tests/*.seq
+!/sequencer/tests/*.expected
+!/sequencer/tests/device/
+/sequencer/tests/device/*
+!/sequencer/tests/device/*.seq
+!/sequencer/tests/device/*.expected
 
 # --- frontend/ ----------------------------------------------------------
 # build/ (CMake output) stays ignored.
