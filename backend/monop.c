@@ -1955,11 +1955,20 @@ contsort:;
 			swapdrop();
 			break;
 
-		case OP_CE:		/* bump up a storage step */
-		case OP_FL:		/* reduce to minimum storage */
+		case OP_CE:		/* ceiling; integers: bump up a storage step */
+		case OP_FL:		/* floor; integers: reduce to minimum storage */
+			/* A float argument gets a true ceiling/floor (V87; before,
+			   ⌈ left floats unchanged and ⌊ truncated toward zero, so
+			   ⌊¯2.1 was ¯2), then the result is narrowed to the
+			   smallest integer type that holds it, or kept as a float
+			   beyond int32 range. Integer arguments keep the original
+			   storage-width behavior, on purpose: ⌈ widens one step
+			   (byte -> short -> int32 -> float), ⌊ narrows to the
+			   minimum. Values are unchanged either way. Rounding is
+			   exact: no ⎕CT yet, see backlog. */
 			j = ve->ve_rank;
 			l = ve->ve_length;
-			if (c == OP_FL) {
+			if (c == OP_FL || (ve->ve_vtype & BYTES_MASK) == FLOATSIZE) {
 				dacc2 = 0.0;
 				acc2  = 0L;
 				m     = l;
@@ -1978,9 +1987,11 @@ contsort:;
 							break;
 						case FLOATSIZE:
 							dacc = *mp.dp++;
+							dacc = (c == OP_CE) ? ceil(dacc) : floor(dacc);
 							break;
 					}
 					if (i == FLOATSIZE) {
+						if (!isfinite(dacc))       dacc2 = HUGE_VAL;	/* stays float */
 						if (dacc > dacc2)         dacc2 = dacc;
 						if ((-1.0 - dacc) > dacc2) dacc2 = -1.0 - dacc;
 					} else {
@@ -2023,8 +2034,9 @@ isint:;
 			tp.cp = DATA_AD(te);
 			mp.cp = DATA_AD(ve);
 			while (j--) te->ve_rho[j] = ve->ve_rho[j];
-			m = l;
-			j = ve->ve_vtype & BYTES_MASK;
+			m    = l;
+			j    = ve->ve_vtype & BYTES_MASK;
+			dacc = 0.0;	/* always set below; quiets gcc's maybe-uninitialized */
 			while (m--) {
 				switch (j) {
 					case 1:
@@ -2037,8 +2049,11 @@ isint:;
 						acc = *mp.lp++;
 						break;
 					case FLOATSIZE:
+						/* same rounding as the scan above; only
+						   narrowed when the scan found it fits */
 						dacc = *mp.dp++;
-						acc  = (int32_t)dacc;
+						dacc = (c == OP_CE) ? ceil(dacc) : floor(dacc);
+						if (i != FLOATSIZE) acc = (int32_t)dacc;
 						break;
 				}
 				switch (i) {

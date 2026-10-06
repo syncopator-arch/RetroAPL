@@ -50,7 +50,7 @@ OPS [7] push float
      →0
 OPS [7] monop: ⌈
      →0
-2.5
+3
 OPS [8] push quote
      →0
 OPS [8] push quote
