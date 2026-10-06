@@ -35,13 +35,17 @@ Windows from the same source.
   symbols, and pasting Unicode APL converts back, so code moves easily
   between RetroAPL and documents, email or other APLs.
 - **Printing** of the session or a function, to a printer or PDF.
-- **Supports most classic APL\360 glyphs and syntax, with two notable exceptions,
+- **Supports most classic APL\360 glyphs and syntax.** With two notable exceptions,
   domino and bracket dimension syntax-- the latter mitigated by the fact it 
   supports the first dimension variations of dyadic / \ and , (⌿ ⍀ ⍪)
 - **A few later APL features have been added, including quad functions,
   the squad glyph and a rudimentary nested array functionality.
 - **`apl_cli`**, a command-line version of the interpreter that reads and
   writes UTF-8, used for the regression tests.
+- **MIDI Sequencer.** Uses quad functions to communicate with MIDI
+  sequencer background process.  Multiple tracks of loops or one shots.
+  Send it sequences of notes and control playback via APL expressions.
+  
 
 The list of primitives supported by RetroAPL is here: [`aplhome/resources/primitive_help.md`](aplhome/resources/primitive_help.md)
 The full list of system commands and quad functions, with what each one
