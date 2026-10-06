@@ -10,8 +10,8 @@ otherwise.
 
 ## Settable functions: `⎕IO←n` and `⎕IO n`
 
-`⎕INTDIV`, `⎕RL`, `⎕WI`, `⎕IO` and `⎕DIG` report a setting when used
-alone and change it when given a value. The value can be given two
+`⎕INTDIV`, `⎕RL`, `⎕WI`, `⎕IO`, `⎕DIG`, `⎕SEQTEMPO` and `⎕SEQPLAY`
+report a setting when used alone and change it when given a value. The value can be given two
 ways:
 
 - `⎕IO←0`, the assignment form, as for an APL system variable.
@@ -753,3 +753,277 @@ left out, including negative `dx,dy`. If either handle isn't open, the
 call does nothing. `Length Error` if the right argument doesn't have
 1, 3 or 7 elements; `Domain Error` if `sw` or `sh` is negative.
 
+---
+
+## Sequencer Functions
+
+The sequencer plays MIDI tracks in the background, looping them while
+APL keeps working, and takes a new version of a track at that track's
+next loop boundary so music never stops for an update.
+
+A track is a 2-row matrix: row 1 pitches, row 2 durations in beats.
+Pitches are MIDI note numbers `0`–`127` (`0` is the lowest C, a real
+note); `¯1` is a rest. Durations must be greater than `0` and may be
+fractional (`0.5`, `4÷3`); thirds, fifths and sevenths of a beat are
+kept exact, so tracks never drift apart.
+
+Tracks are numbered `1`–`16` and channels `1`–`16`, whatever `⎕IO` is.
+A track's channel starts as its own number (so track 10 plays on the
+General MIDI drum channel unless changed) and keeps whatever channel it
+was last given.
+
+**Track lists.** `⎕SEQMUTE`, `⎕SEQLOOP`, `⎕SEQVEL` and `⎕SEQCLEAR` take
+a list of tracks and apply to all of them at the same instant. The
+other argument is one value for all of them or one per track. The
+result is the previous setting for each track listed. Only `⎕SEQTRACK`
+reads two numbers on the left as track and channel; to the list
+functions, `1 3` is tracks 1 and 3.
+
+**Whole numbers.** Arguments that must be whole numbers (tracks,
+channels, pitches, velocities, settings) may be given as floats as long
+as they're whole: `8÷2` is fine as a track number. A fraction is a
+`Domain Error`.
+
+**States.** The sequencer is closed, stopped, playing, or "port lost":
+the device stopped taking data, for example because its cable was
+unplugged. Playback then stops and the port closes, but tracks and
+settings are kept. Use `⎕SEQSTATE` to check which state it's in
+without risking an error. Every function except `⎕SEQOPEN`,
+`⎕SEQCLOSE`, `⎕SEQSTATE` and `⎕SEQLOG` gives `Sequencer Not Open` when
+closed.
+
+A basic session:
+
+```
+⎕SEQOPEN 'hw:3,0,0'
+M ← 2 8⍴60 62 64 65 67 65 64 62, 8⍴1
+1 ⎕SEQTRACK M
+⎕SEQTEMPO←100
+⎕SEQPLAY←1
+1 ⎕SEQTRACK M2          ⍝ takes over at the next 8-beat boundary
+⎕SEQPLAY←0
+⎕SEQCLOSE
+```
+
+`⎕SEQOPEN 'port'`
+
+Opens the MIDI output port and readies the sequencer, stopped, with no
+tracks, at tempo 120. On Linux `port` names a raw MIDI device the way
+ALSA does, such as `'hw:3,0,0'` (card 3, device 0, subdevice 0), or
+`'hw:3,0'` (any free subdevice) or `'hw:3'` (device 0); upper or lower
+case. On Windows it's the device number, as text or a number.
+
+The result says whether it worked, so a program can test for a missing
+or busy device without being stopped by an error:
+
+| Result | Meaning |
+| --- | --- |
+| `1` | opened |
+| `0` | no such port |
+| `¯1` | in use (by another program, or every subdevice taken) |
+| `¯2` | no permission (Linux: not in the `audio` group) |
+
+Test with `1=⎕SEQOPEN port`. `⎕SEQOPEN` on a sequencer that is already
+open is an error, so to open it only if needed, test the state from
+`⎕SEQSTATE` first: greater than `0` means open.
+
+```
+S←(,⎕SEQSTATE)[⎕IO+1]   ⍝ the state: row 1, column 2
+→(S>0)/READY            ⍝ already open: skip ⎕SEQOPEN
+```
+ After the port was lost, `⎕SEQOPEN` opens a
+port again (it may be a different one) and keeps the tracks, settings
+and position, so `⎕SEQPLAY←1` carries on where it stopped. Nothing
+opens the sequencer automatically; a workspace's boot function can.
+`Sequencer Already Open` if it's open and the port is working. `MIDI
+Port Lost` if a port reopened after a loss fails again at once.
+`Domain Error` if `port` isn't text (or a number, on Windows), or isn't
+a port name at all (`'nonsense'`). `Rank Error` if it's
+a character matrix.
+
+`⎕SEQCLOSE`
+
+Stops playback, turns off every sounding note, closes the port and
+discards all tracks and settings. Works in every state, including after
+the port was lost, and never gives an error. Returns the numbers of the
+tracks that held something, or an empty vector if none did (including
+when already closed).
+
+`track ⎕SEQTRACK M`
+
+`track,channel ⎕SEQTRACK M`
+
+Gives `track` a new version, the 2-row matrix `M`. A track holds one
+note at a time; chords are spread across tracks. If the track has a
+version playing, the new one waits and takes over at the end of the
+track's current loop, so the music doesn't break and the track stays
+in step with itself. If the track has nothing playing (never used,
+cleared, or a play-once track that has finished), the new version
+starts from its first note on the next beat. This is the same whether
+or not the sequencer is playing; before the first start, at beat 0,
+it takes over as soon as playback starts. Sending another version
+before it takes over replaces the waiting one. Sending a finished
+play-once track again plays it again.
+
+Returns the beat at which the version takes over, counting from the
+start of playback. That's as things stand when it returns: a restart
+(`⎕SEQPLAY←2`), a `⎕SEQCLEAR` of the track or a newer version can
+change it. A tempo change doesn't.
+
+With `channel`, the track plays on that channel from this version on,
+and keeps it for later versions sent without one.
+
+```
+1 ⎕SEQTRACK M2          ⍝ at beat 5.3, track 1 playing 8-beat loops
+8
+3 ⎕SEQTRACK B           ⍝ track 3 had nothing playing
+6
+2 5 ⎕SEQTRACK C         ⍝ new track 2, on channel 5 from now on
+6
+```
+
+`Length Error` if the left argument isn't 1 or 2 elements, or `M`
+doesn't have exactly 2 rows or has no columns. `Rank Error` if `M`
+isn't a matrix, or the left argument isn't a scalar or vector. `Domain
+Error` if the track or channel isn't `1`–`16`, a pitch isn't `0`–`127`
+or `¯1`, a duration isn't greater than `0` (or is too short to time:
+under 1/2520 of a beat), or either argument is text.
+
+`⎕SEQCLEAR tracks`
+
+Removes the tracks given, each at the end of its current loop (at once
+if nothing is playing). Their settings are kept for later versions.
+Returns those of the given tracks that held something, as `⎕SEQCLOSE`
+does. An empty list gives an empty result. `Domain Error` if a track
+isn't `1`–`16`. `Rank Error` if `tracks` is a matrix.
+
+```
+⎕SEQCLEAR 2 4           ⍝ only track 4 held anything
+4
+```
+
+`tracks ⎕SEQMUTE flags`
+
+Mutes (`1`) or unmutes (`0`) tracks, at once; muting turns off the
+track's sounding notes. A muted track keeps its place, so unmuting
+brings it back in time with everything else. Returns the previous
+settings: a scalar if `tracks` is one, otherwise a vector. `Domain
+Error` if a track isn't `1`–`16` or a flag isn't `0` or `1`. `Length
+Error` if `flags` isn't one value or one per track. `Rank Error` if
+either argument is a matrix.
+
+```
+1 3 ⎕SEQMUTE 1          ⍝ mute tracks 1 and 3
+0 0
+1 3 ⎕SEQMUTE 0 1        ⍝ unmute 1, keep 3 muted
+1 1
+```
+
+`tracks ⎕SEQLOOP flags`
+
+Sets whether tracks loop (`1`, the default) or play once and fall
+silent (`0`), from each track's next loop boundary. To play a
+finished play-once track again, send it again with `⎕SEQTRACK`.
+Returns the previous settings. Same errors as `⎕SEQMUTE`.
+
+```
+2 ⎕SEQLOOP 0            ⍝ track 2 plays once more, then stops
+1
+```
+
+`tracks ⎕SEQVEL velocities`
+
+Sets how hard notes are struck, `1`–`127` (default `100`), for notes
+started from now on. Returns the previous settings. `Domain Error` if a
+velocity isn't `1`–`127`. `Length Error` as for `⎕SEQMUTE`.
+
+```
+1 3 ⎕SEQVEL 100 70      ⍝ track 3 softer
+100 100
+```
+
+`⎕SEQTEMPO`
+
+`⎕SEQTEMPO←bpm` or `⎕SEQTEMPO bpm`
+
+Gets or sets the tempo in beats per minute, `1`–`1000`, fractions
+allowed (default `120`). Takes effect at once and keeps every track in
+place. Setting returns the *prior* value (see Settable functions at
+the top). `Domain Error` outside `1`–`1000`. `Length Error` if `bpm`
+isn't a single number. `Sequencer Not Open` when closed, even when
+just reporting (`⎕SEQSTATE` never fails).
+
+`⎕SEQPLAY`
+
+`⎕SEQPLAY←n` or `⎕SEQPLAY n`
+
+Starts and stops playback. `0` stops: a pause, turning off sounding
+notes but keeping tracks, settings and position. `1` continues from
+where it stopped. `2` restarts from beat 0: every track starts again
+from its first note, and any waiting versions take over at once. On
+the first start `1` and `2` are the same. Used alone, reports `1` if playing, `0` if not; setting returns the *prior*
+value. The beat keeps counting while playing even if every track is
+silent. `Domain Error` if `n` isn't `0`, `1` or `2`. `MIDI Port Lost`
+if starting after the port was lost; open it again with `⎕SEQOPEN`
+first. `Sequencer Not Open` when closed, even when just reporting.
+
+`⎕SEQSTATE`
+
+Reports everything about the sequencer as a matrix, never giving an
+error. Column 1 says what each row is: `0` for the sequencer itself, a
+track number for a track. The sequencer row comes first, then one row
+per track in use (holding notes, or a new version waiting), in track
+order. A version counts as waiting until the beat it takes over at has
+been reached, so a track sent before the first start shows as waiting
+(column 2 `0`, column 8 `1`) until playback starts. When closed, only
+the sequencer row is there.
+
+| Column | Sequencer row | Track row |
+| --- | --- | --- |
+| 1 | `0` | track number |
+| 2 | state: `2` playing, `1` stopped, `0` closed, `¯1` port lost (greater than `0` means open) | notes in the playing version (`0` if only a waiting one) |
+| 3 | current beat | channel the track is playing on (with only a waiting version, the one it will start on) |
+| 4 | tempo | mute (`0`/`1`) |
+| 5 | number of track rows | loop (`0`/`1`) |
+| 6 | `0` | velocity |
+| 7 | `0` | loop length in beats |
+| 8 | `0` | new version waiting (`0`/`1`) |
+| 9 | `0` | position within the playing version's current loop, in beats |
+
+More columns and more kinds of row may be added later, so pick rows by
+column 1 rather than by position (other than the sequencer row being
+first):
+
+```
+S ← ⎕SEQSTATE
+S[1;2]                ⍝ state
+(S[;1]>0)/S[;1]       ⍝ tracks in use
+3∊S[;1]               ⍝ is track 3 in use?
+S[S[;1]⍳3;]           ⍝ track 3's row
+```
+
+---
+
+## Sequencer Test Functions
+
+`⎕SEQRUNTO beat` and `⎕SEQLOG` exist in every build but work only with
+the sequencer's test backend, which runs on a simulated clock and
+writes to a log instead of a device. The regression tests turn it on
+with `apl_cli -S`: every `⎕SEQOPEN` then opens the test backend,
+whatever port it names. With a real port open, both give `Domain
+Error`.
+
+`⎕SEQRUNTO` instantly plays everything before `beat` and holds there,
+so a version sent while held exactly on a loop boundary takes over at
+that boundary. Returns the beat it holds at (to the nearest 1/2520).
+A beat at or before the current one does nothing. `Domain Error` if
+the sequencer isn't playing (it would never get there) or `beat` is
+negative.
+
+`⎕SEQLOG` returns the log since the last `⎕SEQLOG` (or since the open)
+as a character matrix, one line per MIDI message, and empties it, so
+each call shows only what's new:
+beat, exact tick, simulated time since open, message
+(`8.000 t20160 4000.000ms ON  ch1 60 v100`). Nothing new gives a 0×0
+matrix. It still works after `⎕SEQCLOSE`, so the closing note-offs
+can be read.

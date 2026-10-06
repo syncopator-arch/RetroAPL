@@ -16,11 +16,11 @@ The hall around that room was all windows so you could see the computer. They wa
 
 ## Typewriter terminals
 
-In those days computers were not very interactive. You fed cards into a hopper, waited for the job to run and got a result on the line printer. There wasn't much turnaround. The early attempts at interactivity needed some kind of I/O device, and at the time there really wasn't one. Video terminals didn't exist yet because the technology hadn't progressed that far. Television existed, but the ability to generate real-time text on a screen wasn't there yet.
+In those days computers were not very interactive. You fed cards into a hopper, waited for the job to run and got a result on the line printer. Turnaround was far from immediate. The early attempts at interactivity needed *some* kind of I/O device, and at the time they were limited. Video terminals didn't exist yet because the technology hadn't progressed that far. Television existed, but the ability to generate real-time text on a screen wasn't there yet.
 
-So most input devices of that era that were interactive at all were based on modified typewriters. The Friden Flexowriter went back as far as the '50s. It was a big, heavy machine full of solenoids to drive the typewriter mechanics. All that extra mechanism, needed so the computer could type on it as well as a person, made it much larger than a typewriter.
+So most input devices of that era that were interactive at all were based on modified typewriters. The Friden Flexowriter went back at least as far as the 1950s. It was a big, heavy machine full of solenoids to drive the typewriter mechanics. All that extra mechanism needed so the computer could type on it and not just a person, made it larger and heavier than a typewriter.
 
-But IBM had an edge because they had a leading-edge typewriter at the time: the IBM Selectric. It used a type ball that reduced how far the keys had to throw to hit the paper, so it could run faster. All the symbols were right there on the type ball, which would rotate into position and strike the paper through a ribbon just like classic typewriters did. Being relatively fast was an advantage, and IBM decided to use it with their computers.
+But IBM had an edge because they had a leading-edge typewriter at the time: the IBM Selectric. It used a type ball that reduced how far the keys had to throw to hit the paper, so it could run a little faster. All the symbols were right there on the type ball, which would rotate into position and strike the paper through a ribbon just like classic typewriters did. Being a little faster was an advantage, and IBM decided to use it with their computers.
 
 ## Why APL looked the way it did
 
@@ -28,17 +28,17 @@ APL came about largely because it fit that scenario. The type balls were interch
 
 The language was designed that way mainly because typing took a long time. A complex program with a lot of text would take forever to print. Printing out an entire Fortran program would take several minutes at best, so it wasn't very interactive. They needed a very terse language, and APL is what came out of that: single symbols that could do complex operations and be combined in various ways.
 
-That's what they had in this classroom, and students could use it whenever there wasn't a class. You could use the demo login each terminal had or sign up for your own account, where your work would still be there the next day. With a demo login nothing lasted. You'd log out, somebody else would log in and it would be cleared out for them.
+That's what they had in this classroom, and students could use it whenever there wasn't a class. You could use the demo login each terminal had or sign up for your own account, where your work would still be there the next day. With a demo login nothing lasted. You'd log out, somebody else would log in and it would be cleared out for them. You could load a library workspace and run some programs, but couldn't save anything you did for a next day's login.
 
-I was fascinated by this thing. Wow, what else can it do? We did our impedance plots by running a program in a public workspace from these terminals. And the terminals were readily available because there weren't that many classes held there. The room was often free for students to walk in and sit down at a terminal.
+I was fascinated by this thing. Wow, what else can it do? We did our impedance plots by running a program in a library workspace from these terminals. And the terminals were readily available because there weren't actually that many classes held there. The room was often free for students to walk in and sit down at a terminal, and there were a few other places on campus where a terminal could be available.
 
 ## The 2741 and overstrikes
 
 The terminals were IBM 2741s. They were essentially Selectric typewriters built into a desk with a lot more mechanics so they could do everything they needed to do with the computer. They had a pedestal full of circuit cards that communicated with the computer and translated back and forth between the human and the machine.
 
-You could write short programs in APL, and listing a famous APL one-liner would only take a few seconds. Baud rates on these things were not very high. By the end of the modem days we were talking about 19.2k or faster; the 2741 ran at 134.5 baud, about 15 characters per second. But because APL was so brief and concise and yet so capable, it fit the hardware availiable well. A lot of people think APL was ahead of its time. No, it was a product of its time. It's still around, but it's evolved a lot and they've added a lot to it.
+You could write short programs in APL, and listing a famous APL one-liner would only take a few seconds. Baud rates on these things were not very high. By the end of the modem days we were talking at about 19.2k or faster; the 2741 ran at 134.5 baud, about 15 characters per second. But because APL was so brief and concise and yet so capable, it fit the hardware availiable well. A lot of people think APL was ahead of its time. No, it was a product of its time. It's still around, but it's evolved a lot and they've added a lot to it. But there was something about those original days that was special.  For one, you didn't have to learn where every possible APL symbols were on the keyboard because many were created via overstrikes.
 
-The symbols worked well with the 2741 because of overstrikes. You made an overstrike symbol by typing a character, backspacing and typing another character on top of it. So you only had to learn where the basic symbols were on the keyboard, and there weren't that many of them. Maybe half of the symbols or fewer were on a key by themselves and the rest were combinations of two. You didn't have to learn a massive keyboard with a key for every symbol because overstrikes gave you more combinations from the same smaller set.
+The base symbols worked well with the 2741 because of overstrikes. You made an overstrike symbol by typing a character, backspacing and typing another character on top of it. So you only had to learn where the basic symbols were on the keyboard, and there weren't that many of them. Maybe half of the symbols or fewer were on a key by themselves and the rest were combinations of two. You didn't have to learn a massive keyboard with a key for every last symbol because overstrikes gave you more combinations from the smaller, easier to learn and remember, base set.  That's something more modern APLs haven't preserved.
 
 ## From System/360 to System/370
 
@@ -50,11 +50,11 @@ I learned APL, took some classes in it and learned to love it. There were a lot 
 
 After I left school I didn't get to see APL much. Personal computers started coming in, and I got my first one around 1976: an IMSAI 8080 that I soldered together from a kit myself. Somebody had produced a free tiny APL that was vector-only and ran on it, and I remember playing with that.
 
-I worked for Tektronix for about four years fixing oscilloscopes, and I bought and built my IMSAI while I was there. Tektronix was a great place to work, but I wanted to get more into software and they weren't doing that, at least not in the field offices I was working in. So I found another job, learned to code in C and spent the next 40-some years as a software developer. I only retired in 2023. I always enjoyed software and I still do.
+I worked for Tektronix for about four years fixing oscilloscopes, and I bought and built my IMSAI while I was there. Tektronix was a great place to work, but I wanted to get more into software and they weren't doing that, at least not in the field offices I was working in. So I found another job, learned to code in C and spent the next 40-some years as a software developer. I then retired in 2023. I always enjoyed software and I still do.
 
 ## Building my own APL
 
-At some point in the 1980s, after I'd learned C, I decided to put my knowledge of APL to use because I missed it. I hadn't seen any real APL in years. There were some PC packages, and IBM released an APL for the IBM PC at some point. But they weren't cheap and didn't excite me enough to buy. Instead I took a C compiler and started working on my own.
+At some point in the 1980s, after I'd learned C, I decided to put my knowledge of APL to use because I missed it. I hadn't seen any real APL in years. There were some PC packages, and IBM released an APL for the IBM PC at some point. But they weren't cheap and didn't excite me enough to buy. Instead I took a C compiler and started working on my own version.
 
 I put together an initial APL interpreter using what I knew about workspace structures and how APL worked, which was quite a bit, and got it going. It was far from complete and had bugs, but it did a lot of things I could have fun with. I used it as a desk calculator and expanded it a little over time. One thing my version had that the others didn't seem to have as much was interfacing with the outside world: running other programs and collecting their results, and graphics.
 
@@ -82,7 +82,7 @@ I also added some graphics features that could open a graphics window and plot a
 
 Once I retired I started to think about it a little more and play with it a little more. And then AI came along. I retired right about when AI started completely transforming the computer industry and software development. So I thought, let's see what happens if I give this thing to Claude and tell it to make some enhancements, fix some bugs or make an adjustment.
 
-I learned fairly quickly how to keep Claude on track, which is the most important thing. You have to write a good plan up front and be really clear about what you want. If you leave anything to chance, that's what you'll get: random chance. Also don't let a context go on too long. It gets cluttered with stuff that's not important to the business at hand, and that's when you get hallucinations. So when things have gotten complex enough, start a new chat with a fresh context. I keep a few files prepared with the basics I want in every chat, upload them and say, OK, now I want to focus on this different aspect. That came together pretty well, and I was ready to go great guns on further enhancing and fleshing out the program.
+I learned fairly quickly how to keep Claude on track, which is the most important thing. You have to write a good plan up front and be really clear about what you want. If you leave anything to chance, that's what you'll get: random chance. Also don't let a context go on too long. It builds up old details that are no longer important to the business at hand, and that's when you get hallucinations. So when things have gotten complex enough, start a new chat with a fresh context. I keep a few files prepared with the basics I want in every chat, upload them and say, OK, now I want to focus on this different aspect. That came together pretty well, and I was ready to go great guns on further enhancing and fleshing out the program.
 
 ## Porting to 64-bit Linux
 
@@ -94,7 +94,7 @@ So it turned out to be major surgery to convert it from stored pointers to offse
 
 Once it was running I started to wonder what else I could get this code to do, and I started adding features. I had a wish list of things I would have liked to add. But I've been developing software for 45 years or so, and developing software takes a lot of focus, especially when it's complex. This was getting pretty complex. I'm retired and I'm getting old. My brain still works, but I don't want to concentrate that deeply on that stuff anymore. I did that for a long time as a job, didn't really want that in retirement.
 
-That's what AI is good at. Some people may not like AI or doing things with AI, but an AI can write code way faster than any human can. That's one thing I've learned from Claude. It can write code so much faster than I ever could, or than anybody I've ever heard of could. It can do things in a couple of minutes that would take a human programmer hours. That's one reason software is becoming more and more an AI thing. But it does take guidance, quite a bit of it, and I learned how to give that guidance, at least as things were at the time I did this. Things are evolving quickly in AI and maybe there's less need for as much guidance now. That remains to be seen.
+That's what AI is good at. Some people may not like AI or doing things with AI, but an AI can write code way faster than any human can. That's one thing I've learned from Claude. It can write code so much faster than I ever could, or than anybody I've ever heard of could. It can do things in a couple of minutes that would take a human programmer hours. That's one reason software is becoming more and more an AI thing. But it does take guidance, quite a bit of it, and I learned how to give that guidance, at least as things were at the time I did this. You have to be clear about what you want, because if you don't know what you want or can't communicate it, what you get is going to be unpredictable, AI will fill in the gaps with something but it might not be the best fit.  Things are evolving quickly in AI and maybe there's less need for as much guidance now. That remains to be seen.
 
 ## Qt 6 and portability
 
@@ -108,10 +108,12 @@ I haven't followed the evolution of APL much since those early days, and I didn'
 
 ## Learning it
 
-To learn RetroAPL's flavor of APL, a good resource is one of the classic texts, *APL: An Interactive Approach* by Gilman and Rose. The first edition is what I learned on. Later editions are good too, though they cover APL2 features like nested arrays that RetroAPL doesn't support. Then again, if you're looking to extend the codebase with those features later editions could come in handy. I've got a copy of the third edition as well which would also be a good choice. I added the squad glyph after I saw it in the third edition and realized it'd be easy to add and potentially useful.
+To learn RetroAPL's flavor of APL, a good resource is one of the classic texts, *APL: An Interactive Approach* by Gilman and Rose. The first edition is what I learned on. Later editions are good too, though they cover APL2 features like nested arrays that RetroAPL doesn't support. Then again, if you're looking to extend the codebase with those features later editions could come in handy. I've got a copy of the third edition as well which would also be a good choice. I added the squad glyph after I saw it in the third edition and realized it'd be easy to add and potentially useful. Also, my APL does't always give you a Length Error when array dimensions mismatch, it'll re-use elements until they do match which can be useful.
 
 ## Open source
 
 There are probably other things I could say about the program, but this is really more about the history. I've always had a soft spot in my heart for APL. It was the first language I ever learned, on the first computer I ever encountered, and it's been fun to revisit it in my retirement years.
 
 So I'm open-sourcing it. By the time you're reading this it's probably already out there. Have fun with it if you feel like it, and maybe get some sense of what it was like on the original 2741. And maybe actually find it useful.
+
+
