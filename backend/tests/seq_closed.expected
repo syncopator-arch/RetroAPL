@@ -1,6 +1,6 @@
 Clear WS
      ⎕SEQSTATE
-  0  0  0  0  0  0  0  0  0  0
+  0  0  0  0  0  0  0  0  0  0  0
      ⎕SEQCLOSE
 
      ⍴⎕SEQCLOSE
@@ -37,12 +37,12 @@ Sequencer Not Open
 Sequencer Not Open
      ⍴⎕SEQLOG
 0 0
-     ⎕SEQOPEN 'nonsense' ⍝ k3 slot 0 compiles to byte 0x60, the comment character
+     ⎕SEQOPEN '' ⍝ k3 slot 0 compiles to byte 0x60, the comment character
      ^
 Domain Error
      ⎕SEQOPEN 1 2⍴'AB'
      ^
 Rank Error
      ⎕SEQSTATE
-  0  0  0  0  0  0  0  0  0  0
+  0  0  0  0  0  0  0  0  0  0  0
      

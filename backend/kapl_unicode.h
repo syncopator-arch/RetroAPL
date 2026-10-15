@@ -5,11 +5,10 @@
 	on the backend headers or on Qt. Used by the command-line front end
 	(apl_cli.c) for UTF-8 input and output.
 
-	The core table is a C copy of kapl_unicode_mapping.hpp's
-	KaplToUnicodeTable[], which the Qt front end uses for clipboard
-	copy/paste. The two must stay identical -- check_kapl_tables.sh
-	compares them. See kapl_unicode.c for the input-only alias table,
-	which has no counterpart in the .hpp.
+	The core table and the input-only alias table are C copies of
+	kapl_unicode_mapping.hpp's KaplToUnicodeTable[] and KaplAliasTable[],
+	which the Qt front end uses for clipboard copy/paste. Each pair must
+	stay identical -- kapl_unicode_test compares them (`make check`).
 */
 
 #ifndef KAPL_UNICODE_H

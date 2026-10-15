@@ -10,7 +10,7 @@ otherwise.
 
 ## Settable functions: `⎕IO←n` and `⎕IO n`
 
-`⎕INTDIV`, `⎕RL`, `⎕WI`, `⎕IO`, `⎕DIG`, `⎕SEQTEMPO` and `⎕SEQPLAY`
+`⎕INTDIV`, `⎕RL`, `⎕WI`, `⎕IO`, `⎕DIG`, `⎕SEQTEMPO`, `⎕SEQPLAY` and `⎕SEQBEAT`
 report a setting when used alone and change it when given a value. The value can be given two
 ways:
 
@@ -490,20 +490,26 @@ don't repeat the first point as the last. Self-intersecting shapes
 (like a figure-8) fill correctly with no special handling needed.
 `Length Error` if the count is odd or under 3 vertices.
 
-`⎕WCLICK wnums`
+`⎕WCLICK list`
 
-Waits for a left-click in any of the given windows, blocking execution
-until it happens (the windows themselves keep repainting and
-responding normally while you wait). Returns `handle,x,y` on a click;
-returns an empty vector if the wait is cancelled (Escape, Ctrl+C) or one
-of the armed windows closes first — these two cases aren't
-distinguished. Only open, non-hidden windows are waited on — handles
-that aren't open and hidden windows are skipped (a minimized window
-still counts, since you can restore it and click). If none of the
-windows given can be clicked, returns an empty vector right away
-instead of waiting — not an error, since a window you closed just
-before the call is treated the same as one closed during the wait.
-`Length Error` if no handles are given.
+Waits for a left-click in any of the windows in `list`, blocking
+execution until it happens (the windows themselves keep repainting and
+responding normally while you wait). Returns `handle,x,y` on a click.
+`⎕WCLICK` and `⎕EVWAIT` are the same function under two names, so
+`list` may also hold `¯1` to wait for the sequencer's beat at the same
+time; `⎕EVWAIT` under Sequencer Functions describes the wait in full.
+In short: the result is an empty vector if the wait is cancelled
+(Escape, Ctrl+C) or one of the windows waited on closes first, and
+these cases aren't distinguished. After Ctrl+C the rest of the line
+still runs, then the interrupt is reported. Only open, non-hidden
+windows are waited on — handles that aren't open and hidden windows
+are skipped (a minimized window still counts, since you can restore it
+and click). If nothing in `list` can be waited on, returns an empty
+vector right away instead of waiting — not an error, since a window
+you closed just before the call is treated the same as one closed
+during the wait. `Length Error` if `list` is empty, `Rank Error` if
+it's a matrix, `Domain Error` for text, a fraction, or a negative
+number other than `¯1`.
 
 `wnum ⎕WPIXEL <x,y point list>`
 
@@ -761,19 +767,25 @@ The sequencer plays MIDI tracks in the background, looping them while
 APL keeps working, and takes a new version of a track at that track's
 next loop boundary so music never stops for an update.
 
-A track is a 2-row matrix: row 1 pitches, row 2 durations in beats.
-Pitches are MIDI note numbers `0`–`127` (`0` is the lowest C, a real
-note); `¯1` is a rest. Durations must be greater than `0` and may be
-fractional (`0.5`, `4÷3`); thirds, fifths and sevenths of a beat are
-kept exact, so tracks never drift apart.
+A track is a matrix of 2 to 5 rows, one column per note: row 1
+pitches, row 2 steps (how long until the next note starts) in beats,
+and optionally row 3 velocities, row 4 lengths (how long each note
+sounds) in beats and row 5 channels. Pitches are MIDI note numbers
+`0`–`127` (`0` is the lowest C, a real note); `¯1` is a rest. Steps
+must be greater than `0` and may be fractional (`0.5`, `4÷3`); thirds,
+fifths and sevenths of a beat are kept exact, so tracks never drift
+apart. A beat is whatever `⎕SEQTEMPO` makes it: at `140` a step of
+`0.5` lasts about 214 ms, and the same matrix plays faster or slower
+as the tempo changes. Rows 3–5 are described under `⎕SEQTRACK`.
 
 Tracks are numbered `1`–`16` and channels `1`–`16`, whatever `⎕IO` is.
 A track's channel starts as its own number (so track 10 plays on the
 General MIDI drum channel unless changed) and keeps whatever channel it
 was last given.
 
-**Track lists.** `⎕SEQMUTE`, `⎕SEQLOOP`, `⎕SEQVEL` and `⎕SEQCLEAR` take
-a list of tracks and apply to all of them at the same instant. The
+**Track lists.** `⎕SEQMUTE`, `⎕SEQLOOP`, `⎕SEQVEL`, `⎕SEQGATE`,
+`⎕SEQNOTES` and `⎕SEQCLEAR` take a list of tracks and apply to all of them at the same
+instant. The
 other argument is one value for all of them or one per track. The
 result is the previous setting for each track listed. Only `⎕SEQTRACK`
 reads two numbers on the left as track and channel; to the list
@@ -782,15 +794,16 @@ functions, `1 3` is tracks 1 and 3.
 **Whole numbers.** Arguments that must be whole numbers (tracks,
 channels, pitches, velocities, settings) may be given as floats as long
 as they're whole: `8÷2` is fine as a track number. A fraction is a
-`Domain Error`.
+`Domain Error`. Steps, lengths and the gate are never limited to whole
+numbers.
 
 **States.** The sequencer is closed, stopped, playing, or "port lost":
 the device stopped taking data, for example because its cable was
 unplugged. Playback then stops and the port closes, but tracks and
 settings are kept. Use `⎕SEQSTATE` to check which state it's in
 without risking an error. Every function except `⎕SEQOPEN`,
-`⎕SEQCLOSE`, `⎕SEQSTATE` and `⎕SEQLOG` gives `Sequencer Not Open` when
-closed.
+`⎕SEQCLOSE`, `⎕SEQSTATE`, `⎕SEQPORTS` and `⎕SEQLOG` gives `Sequencer
+Not Open` when closed.
 
 A basic session:
 
@@ -808,10 +821,24 @@ M ← 2 8⍴60 62 64 65 67 65 64 62, 8⍴1
 `⎕SEQOPEN 'port'`
 
 Opens the MIDI output port and readies the sequencer, stopped, with no
-tracks, at tempo 120. On Linux `port` names a raw MIDI device the way
-ALSA does, such as `'hw:3,0,0'` (card 3, device 0, subdevice 0), or
-`'hw:3,0'` (any free subdevice) or `'hw:3'` (device 0); upper or lower
-case. On Windows it's the device number, as text or a number.
+tracks, at tempo 120. `port` is either the port's system name or part
+of its device name:
+
+- On Linux the system name is the way ALSA names a raw MIDI device,
+  such as `'hw:3,0,0'` (card 3, device 0, subdevice 0), or `'hw:3,0'`
+  (any free subdevice) or `'hw:3'` (device 0). On Windows it's the
+  device number, as text or a number.
+- Anything else is a device name: the first port in `⎕SEQPORTS`'s list
+  whose label contains it is opened, so `⎕SEQOPEN 'U2MIDI'` opens the
+  port labelled `U2MIDI Pro / U2MIDI Pro MIDI 1`. A device name keeps
+  working when card or device numbers change, as they can when USB
+  devices come up in a different order, or after an unplug. The name
+  is looked up afresh each time a port is opened. Only the first
+  matching port is tried; to choose another port of the same device,
+  give more of its label (`'MIDI 2'`), or its system name.
+
+Upper or lower case doesn't matter in either form. In a label, any
+character outside plain ASCII shows as `?` and is matched as `?`.
 
 The result says whether it worked, so a program can test for a missing
 or busy device without being stopped by an error:
@@ -819,9 +846,9 @@ or busy device without being stopped by an error:
 | Result | Meaning |
 | --- | --- |
 | `1` | opened |
-| `0` | no such port |
+| `0` | no such port (for a device name: no port's label contains it) |
 | `¯1` | in use (by another program, or every subdevice taken) |
-| `¯2` | no permission (Linux: not in the `audio` group) |
+| `¯2` | no permission (Linux: not in the `audio` group). For a device name, also when no label matched but some device couldn't be read for lack of permission, since that is the likelier reason |
 
 Test with `1=⎕SEQOPEN port`. `⎕SEQOPEN` on a sequencer that is already
 open is an error, so to open it only if needed, test the state from
@@ -831,15 +858,16 @@ open is an error, so to open it only if needed, test the state from
 S←(,⎕SEQSTATE)[⎕IO+1]   ⍝ the state: row 1, column 2
 →(S>0)/READY            ⍝ already open: skip ⎕SEQOPEN
 ```
- After the port was lost, `⎕SEQOPEN` opens a
-port again (it may be a different one) and keeps the tracks, settings
-and position, so `⎕SEQPLAY←1` carries on where it stopped. Nothing
-opens the sequencer automatically; a workspace's boot function can.
-`Sequencer Already Open` if it's open and the port is working. `MIDI
-Port Lost` if a port reopened after a loss fails again at once.
-`Domain Error` if `port` isn't text (or a number, on Windows), or isn't
-a port name at all (`'nonsense'`). `Rank Error` if it's
-a character matrix.
+
+After the port was lost, `⎕SEQOPEN` opens a port again (it may be a
+different one) and keeps the tracks, settings and position, so
+`⎕SEQPLAY←1` carries on where it stopped. Nothing opens the sequencer
+automatically; a workspace's boot function can. `Sequencer Already
+Open` if it's open and the port is working. `MIDI Port Lost` if a port
+reopened after a loss fails again at once. `Domain Error` if `port`
+isn't text (or a number, on Windows), is empty, or (Linux) starts with
+`hw:` but isn't one of the forms above. `Rank Error` if it's a
+character matrix.
 
 `⎕SEQCLOSE`
 
@@ -849,21 +877,42 @@ the port was lost, and never gives an error. Returns the numbers of the
 tracks that held something, or an empty vector if none did (including
 when already closed).
 
+`⎕SEQPORTS`
+
+The MIDI output ports this machine has, as a character matrix with one
+row per port: the port's system name (what `⎕SEQOPEN` takes), then its
+label, the device's own names, which a device name given to `⎕SEQOPEN`
+is matched against:
+
+```
+      ⎕SEQPORTS
+hw:3,0,0  U2MIDI Pro / U2MIDI Pro MIDI 1
+```
+
+The rows are in the order a device name is matched in, so the first row
+whose label contains a name is the port that name opens. On Linux the
+label is the card, device and subdevice names (repeats left out); on
+Windows, the device name. Any character outside plain ASCII shows as
+`?`. A device that can't be read for lack of permission (Linux: not in
+the `audio` group) isn't listed. With no ports the result is a 0×0
+matrix. Works whether the sequencer is open or closed, and never gives
+an error.
+
 `track ⎕SEQTRACK M`
 
 `track,channel ⎕SEQTRACK M`
 
-Gives `track` a new version, the 2-row matrix `M`. A track holds one
-note at a time; chords are spread across tracks. If the track has a
-version playing, the new one waits and takes over at the end of the
-track's current loop, so the music doesn't break and the track stays
-in step with itself. If the track has nothing playing (never used,
-cleared, or a play-once track that has finished), the new version
-starts from its first note on the next beat. This is the same whether
-or not the sequencer is playing; before the first start, at beat 0,
-it takes over as soon as playback starts. Sending another version
-before it takes over replaces the waiting one. Sending a finished
-play-once track again plays it again.
+Gives `track` a new version, the matrix `M` (2 to 5 rows). A track
+holds one note at a time; chords are spread across tracks. If the
+track has a version playing, the new one waits and takes over at the
+end of the track's current loop, so the music doesn't break and the
+track stays in step with itself. If the track has nothing playing
+(never used, cleared, or a play-once track that has finished), the new
+version starts from its first note on the next beat. This is the same
+whether or not the sequencer is playing; before the first start, at
+beat 0, it takes over as soon as playback starts. Sending another
+version before it takes over replaces the waiting one. Sending a
+finished play-once track again plays it again.
 
 Returns the beat at which the version takes over, counting from the
 start of playback. That's as things stand when it returns: a restart
@@ -882,12 +931,38 @@ and keeps it for later versions sent without one.
 6
 ```
 
-`Length Error` if the left argument isn't 1 or 2 elements, or `M`
-doesn't have exactly 2 rows or has no columns. `Rank Error` if `M`
+Rows 3–5 give each note its own setting; `¯1` in any of them means the
+track's setting for that note. For a rest they aren't looked at, so
+anything there is accepted.
+
+- **Row 3, velocity** `1`–`127`. It is scaled by the track's velocity
+  (`⎕SEQVEL`): the note is played at its own velocity times the
+  track's, divided by `100`, rounded and kept within `1`–`127`. At the
+  default track velocity of `100` it plays as written; a lower track
+  velocity turns the whole track down while keeping its accents.
+- **Row 4, length** in beats: how long the note sounds, from at least
+  1/2520 of a beat up. A length longer than the step is shortened to
+  the step, so the note runs into the next one, as every note does
+  without row 4. `¯1` sounds the track's gate (`⎕SEQGATE`) times the
+  step.
+- **Row 5, channel** `1`–`16`, for that note alone. The track's own
+  channel doesn't change.
+
+```
+M←3 4⍴60 62 64 65, 1 1 1 1, 100 70 70 ¯1    ⍝ accent the first note
+1 ⎕SEQTRACK M
+M←4 2⍴60 67, 0.5 0.5, ¯1 ¯1, 0.4 ¯1          ⍝ 60 sounds 0.4 of its 0.5
+1 ⎕SEQTRACK M
+```
+
+`Length Error` if the left argument isn't 1 or 2 elements, or `M` has
+fewer than 2 or more than 5 rows, or no columns. `Rank Error` if `M`
 isn't a matrix, or the left argument isn't a scalar or vector. `Domain
-Error` if the track or channel isn't `1`–`16`, a pitch isn't `0`–`127`
-or `¯1`, a duration isn't greater than `0` (or is too short to time:
-under 1/2520 of a beat), or either argument is text.
+Error` if the track or a channel isn't `1`–`16`, a pitch isn't
+`0`–`127` or `¯1`, a step isn't greater than `0` (or is too short to
+time: under 1/2520 of a beat), a velocity isn't `1`–`127` or `¯1`, a
+length isn't at least 1/2520 of a beat or `¯1`, a velocity or channel
+is a fraction, or either argument is text.
 
 `⎕SEQCLEAR tracks`
 
@@ -934,12 +1009,62 @@ Returns the previous settings. Same errors as `⎕SEQMUTE`.
 `tracks ⎕SEQVEL velocities`
 
 Sets how hard notes are struck, `1`–`127` (default `100`), for notes
-started from now on. Returns the previous settings. `Domain Error` if a
-velocity isn't `1`–`127`. `Length Error` as for `⎕SEQMUTE`.
+started from now on. Notes with a velocity of their own (row 3 of the
+track's matrix) are scaled by it instead: played at their velocity
+times this, divided by `100`. Returns the previous settings. `Domain
+Error` if a velocity isn't `1`–`127`. `Length Error` as for
+`⎕SEQMUTE`.
 
 ```
 1 3 ⎕SEQVEL 100 70      ⍝ track 3 softer
 100 100
+```
+
+`tracks ⎕SEQGATE fractions`
+
+Sets how much of each note's step it sounds, as a fraction greater
+than `0` and at most `1` (default `1`, the whole step), for notes
+started from now on. At `0.5` a note sounds for half its step and is
+silent for the other half; shorter values make the track more
+detached. The note-off is never less than 1/2520 of a beat after the
+note-on. A note with a length of its own (row 4 of the track's matrix)
+keeps it; the gate applies to notes with no row 4 or `¯1` there. Kept
+for later versions and through `⎕SEQCLEAR`, like the other settings.
+Returns the previous settings. `Domain Error` if a fraction isn't
+greater than `0` and at most `1`. `Length Error` as for `⎕SEQMUTE`.
+
+```
+1 2 ⎕SEQGATE 0.5        ⍝ tracks 1 and 2 detached
+1 1
+1 ⎕SEQGATE 1            ⍝ track 1 legato again
+0.5
+```
+
+`tracks ⎕SEQNOTES flags`
+
+Sets whether tracks report their notes to `⎕EVWAIT ¯1` (`1`) or not
+(`0`, the default). A wait on `¯1` then returns when a reporting track
+starts a note, saying which note (see `⎕EVWAIT`). This is how a
+program keeps in step with the music: with a melody or a drum track
+itself, or with a track written just for that. Reporting is separate
+from muting: a muted track that reports sends nothing to the synth but
+still reports, so a silent track of regular notes is a clock (quarter
+notes for the beat, eighths or triplets for finer steps), and one of a
+few widely spaced notes gives cues, its pitches saying which cue. To
+silence a track's sound and its reports, set both. A rest never
+reports.
+
+Turning a track's reports on starts it afresh (nothing it played
+before counts); turning them off forgets anything it hadn't reported
+yet. Like the other track settings, the setting stays through new
+versions and `⎕SEQCLEAR` and goes at `⎕SEQCLOSE`. Returns the previous
+settings. Same errors as `⎕SEQMUTE`.
+
+```
+1 4 ⎕SEQNOTES 1         ⍝ the melody and a cue track report
+0 0
+4 ⎕SEQMUTE 1            ⍝ the cue track is never heard
+0
 ```
 
 `⎕SEQTEMPO`
@@ -967,6 +1092,19 @@ silent. `Domain Error` if `n` isn't `0`, `1` or `2`. `MIDI Port Lost`
 if starting after the port was lost; open it again with `⎕SEQOPEN`
 first. `Sequencer Not Open` when closed, even when just reporting.
 
+`⎕SEQBEAT`
+
+`⎕SEQBEAT←n` or `⎕SEQBEAT n`
+
+Sets whether a wait on `¯1` also reports beats (`1`) or not (`0`).
+**Off by default**, from every `⎕SEQOPEN` on: until Phase 7c, beats
+were always reported, so a program written to wait for beats needs
+`⎕SEQBEAT←1` after opening. Used alone, reports the setting; setting
+returns the *prior* value (see Settable functions at the top). Kept
+when the port is opened again after it was lost. `Domain Error` if `n`
+isn't `0` or `1`. `Length Error` if it isn't a single number.
+`Sequencer Not Open` when closed, even when just reporting.
+
 `⎕SEQSTATE`
 
 Reports everything about the sequencer as a matrix, never giving an
@@ -982,13 +1120,15 @@ the sequencer row is there.
 | --- | --- | --- |
 | 1 | `0` | track number |
 | 2 | state: `2` playing, `1` stopped, `0` closed, `¯1` port lost (greater than `0` means open) | notes in the playing version (`0` if only a waiting one) |
-| 3 | current beat | channel the track is playing on (with only a waiting version, the one it will start on) |
+| 3 | current beat | the track's channel (with only a waiting version, the one it will start on); notes with a channel of their own (row 5) aren't shown here |
 | 4 | tempo | mute (`0`/`1`) |
 | 5 | number of track rows | loop (`0`/`1`) |
-| 6 | `0` | velocity |
-| 7 | `0` | loop length in beats |
+| 6 | beats reported (`⎕SEQBEAT`, `0`/`1`) | velocity |
+| 7 | how late the last notes were reported, in milliseconds (see `⎕EVWAIT`) | loop length in beats |
 | 8 | `0` | new version waiting (`0`/`1`) |
 | 9 | `0` | position within the playing version's current loop, in beats |
+| 10 | `0` | notes reported (`⎕SEQNOTES`, `0`/`1`) |
+| 11 | `0` | gate (`⎕SEQGATE`) |
 
 More columns and more kinds of row may be added later, so pick rows by
 column 1 rather than by position (other than the sequencer row being
@@ -1004,54 +1144,140 @@ S[S[;1]⍳3;]           ⍝ track 3's row
 
 `⎕EVWAIT list`
 
-Waits for the next event from a source in `list` and returns what
-happened. For now the only source is `¯1`, the sequencer, and its only
-events are beats; window numbers (clicks) come later. The result is
-numbers only: the source first, then the kind of event, then whatever
-that kind reports, so different kinds may give different lengths.
+Waits for the next event from any source in `list` and returns what
+happened. A source is a graphics window number (a left click in that
+window) or `¯1`, the sequencer (notes from the tracks `⎕SEQNOTES` set
+to report, and beats if `⎕SEQBEAT` is on). `⎕WCLICK` is the same
+function under its graphics name: the two behave identically. The
+result is numbers only, and different kinds of event give different
+lengths. A click starts with the window number, which is never
+negative; anything else starts with its source, then the kind of
+event, then whatever that kind reports.
 
 | Result | Meaning |
 | --- | --- |
-| `¯1 1 B` | a beat: `B` is the beat number |
+| `w x y` | a left click in window `w` at `x,y` |
+| `¯1 1 B` | a beat: `B` is the beat number (only with `⎕SEQBEAT←1`) |
 | `¯1 2 S` | the music stopped during the wait: `S` is the new state, as in `⎕SEQSTATE` (`1` stopped, `0` closed, `¯1` port lost) |
-| empty | nothing to wait for: the sequencer wasn't playing when the wait began |
+| `¯1 3 N t p i k …` | notes: `N` notes of four numbers each (see below) |
+| empty | nothing in `list` could be waited on; a window waited on closed; Escape; Ctrl+C |
 
-Each call waits for the next beat from now; beats aren't saved up
-while APL is busy. The beat number counts whole beats from `0` at
-`⎕SEQOPEN` and at a restart (`⎕SEQPLAY←2`), and isn't reset when a
-track loops, so a jump shows beats that went by while the program was
-busy (`1237` after `1234` means two were missed), and `8|B` gives the
-place in an 8-beat pattern started at beat 0. The beat arrives the
-moment its notes go out.
+**Notes.** When reporting tracks start notes at the same moment (a
+chord spread over several tracks), they come together in one result,
+in track order, four numbers each: the track, the pitch, the note's
+index (its column in the track's matrix, counting rests as columns,
+in `⎕IO`, so `M[;i]` is the note) and a count, normally `1`. The
+program decides which matter: `(E[⎕IO+2],4)⍴3↓E` makes them a matrix,
+one row per note. The index starts again with each new version of a
+track.
 
-Once the music stops, every call returns at once, so a loop must test
-the result. `2↑E` turns an empty result into `0 0`, so one test covers
-both "stopped" and "nothing to wait for". In a function:
+Notes are not lost while the program is busy. Each reporting track
+keeps its latest note not yet reported, and the count says how many
+notes the track started since the last one reported, that one
+included. A wait with notes outstanding returns them all at once, in
+one result (so their order is lost), however long ago they started.
+A program that keeps up always sees `1`; one that falls behind gets
+the latest note with a larger count and never falls further behind.
+A count over `1` means the program wasn't waiting when those notes
+started: it was busy, or handling a click, or not calling `⎕EVWAIT`
+for a while. A count of `1` means nothing was missed, not that the
+note was reported as it started: a wait called late, but before the
+track's next note, returns at once with that note and a count of `1`.
+How late it was shows in column 7 of `⎕SEQSTATE`'s first row: the
+milliseconds from the start of the newest note in the last result to
+the moment it was reported, at the current tempo. A wait that was
+already waiting gives well under a millisecond (the system's own
+delay in sending the note; about 0.2–0.5 on Linux); a value much
+larger than that means the program came back late, and shows how
+stale its notes were.
+It stays until the next notes are reported, so a loop being tuned can
+show it after each wait (`⎕←E,(⎕SEQSTATE)[1;7]`). Beats aren't
+measured; `0` until the first notes after `⎕SEQOPEN`.
+This holds even when the music has stopped: notes outstanding are
+returned before the wait skips the sequencer. A restart
+(`⎕SEQPLAY←2`) forgets them.
+
+**Beats** are different: with `⎕SEQBEAT←1`, each call waits for the
+next beat from now, and beats aren't saved up while APL is busy. The
+beat number counts whole beats from `0` at `⎕SEQOPEN` and at a restart
+(`⎕SEQPLAY←2`), and isn't reset when a track loops, so a jump shows
+beats that went by while the program was busy (`1237` after `1234`
+means two were missed), and `8|B` gives the place in an 8-beat pattern
+started at beat 0. A beat that falls at the same moment as reported
+notes isn't reported: the notes end that wait. Right after
+`⎕SEQPLAY←1` the first beat returned is usually `1`: beat `0` is
+already under way.
+
+Events arrive the moment their notes go out. Clicks aren't saved up
+either: a click with no wait waiting on its window is dropped.
+
+Only sources that can produce something are waited on: windows that
+are open and not hidden (a minimized window counts), and the sequencer
+when it has notes outstanding, or while it's playing with beats on or
+with a reporting track that has notes. If none of `list` qualifies,
+the result is empty at once, so `⎕EVWAIT ¯1` never hangs when nothing
+is playing or nothing reports. (A reporting track made only of rests
+still counts, and a wait on it alone lasts until Escape or Ctrl+C.) A
+window waited on closing ends the wait with an empty result, even if
+other sources are still waited on; the next wait skips it. A stop is
+reported as an event instead (`¯1 2 S`), and later waits skip the
+sequencer until it plays again.
+
+Once the music stops, every call on `¯1` alone returns at once, so a
+loop must test the result. `2↑E` turns an empty result into `0 0`, so
+one test covers both "stopped" and "nothing to wait for". A function
+drawing a frame for each note of track 1, its pitch choosing the
+picture:
 
 ```
 L:E←⎕EVWAIT ¯1
-→(∨/¯1 1≠2↑E)/0        ⍝ not a beat: leave
-DRAW 4|E[⎕IO+2]        ⍝ one of four frames, in step with the beat
+→(∨/¯1 3≠2↑E)/0        ⍝ not notes: leave
+N←(E[⎕IO+2],4)⍴3↓E     ⍝ one row per note: track, pitch, index, count
+DRAW N[⎕IO;⎕IO+1]      ⍝ the first row's pitch
 →L
 ```
 
-A track sent just after a beat that's not yet playing starts on the
-next beat, so "wait for a beat, then send" starts it in step. A new
-version of a playing track still waits for that track's loop to end;
-if the beat returned *is* the loop boundary, that boundary has already
-passed and the version takes over one loop later, so send variations
-during the loop rather than on its last beat.
-
-Right after `⎕SEQPLAY←1` the first beat returned is usually `1`: beat
-`0` is already under way. Ctrl+C interrupts a wait (and the line it's
-on) within about a twentieth of a second; Escape does the same for now.
-Closing the window during a wait ends it (`¯1 2 0`). `Length Error` if
-`list` is empty, `Rank Error` if it's a matrix, `Domain Error` for
-anything but `¯1` in it.
+Waiting on the sequencer and a window `W` together:
 
 ```
-⎕EVWAIT ¯1              ⍝ next beat
-¯1 1 17
+L:E←⎕EVWAIT ¯1,W
+→(0=⍴E)/0              ⍝ Escape, W closed, or nothing to wait for
+→(¯1≠E[⎕IO])/CLK       ⍝ a click in W
+→(3≠E[⎕IO+1])/0        ⍝ the music stopped
+STEP (E[⎕IO+2],4)⍴3↓E  ⍝ notes
+→L
+CLK:MARK E[⎕IO+1 2]    ⍝ the click's x,y
+→L
+```
+
+A track sent just after an event that's not yet playing starts on the
+next beat. A new version of a playing track still waits for that
+track's loop to end; if the event returned was on the loop boundary,
+that boundary has already passed and the version takes over one loop
+later, so send variations during the loop rather than on its last
+note.
+
+Escape, pressed in the terminal or in a graphics window, ends a wait
+with an empty result and the program carries on; notes that came
+meanwhile are still outstanding for the next wait. With nothing
+waiting, Escape does nothing; Ctrl+C is the only key that interrupts.
+Ctrl+C during a wait ends it with an empty result within about a
+twentieth of a second, the rest of the line still runs, and then the
+interrupt is reported and the function suspended, as for any line:
+after `X←⎕EVWAIT ¯1`, `X` is empty. Another wait later on the same
+line returns empty at once. Closing the main window during a wait ends
+it (`¯1 2 0` if the sequencer was waited on). `Length Error` if `list`
+is empty, `Rank Error` if it's a matrix, `Domain Error` for text, a
+fraction, or a negative number other than `¯1`.
+
+```
+1 ⎕SEQNOTES 1
+0
+⎕EVWAIT ¯1              ⍝ track 1 starts pitch 62, column 2
+¯1 3 1 1 62 2 1
+⎕SEQBEAT←1
+⎕EVWAIT ¯1,W            ⍝ next event, or a click in W
+3 120 45
 ```
 
 ---
@@ -1062,8 +1288,10 @@ anything but `¯1` in it.
 the sequencer's test backend, which runs on a simulated clock and
 writes to a log instead of a device. The regression tests turn it on
 with `apl_cli -S`: every `⎕SEQOPEN` then opens the test backend,
-whatever port it names. With a real port open, both give `Domain
-Error`.
+whatever port it names (a device name too: nothing is looked up), and
+`⎕SEQPORTS` returns a fixed list of three test ports instead of the
+machine's, so a test reads the same wherever it runs. With a real port
+open, `⎕SEQRUNTO` and `⎕SEQLOG` give `Domain Error`.
 
 `⎕SEQRUNTO` instantly plays everything before `beat` and holds there,
 so a version sent while held exactly on a loop boundary takes over at
@@ -1080,13 +1308,17 @@ beat, exact tick, simulated time since open, message
 matrix. It still works after `⎕SEQCLOSE`, so the closing note-offs
 can be read.
 
-On the test backend, `⎕EVWAIT ¯1` plays everything up to and including
-the next beat at once and returns it, holding just past that beat, so
-a wait never takes real time and gives the same beat on every run.
-Right after `⎕SEQPLAY←1` it returns beat `0`, since the simulated
-clock hasn't moved.
+On the test backend, a wait with `¯1` in its list (`⎕EVWAIT` or
+`⎕WCLICK`) first takes any events posted with `⎕EVPOST` (below); if
+none ends it, it plays at once up to and including the wait's event
+(the next reported note, or beat) and returns it, holding just past
+it, so a wait never takes real time and gives the same result on every
+run. Right after `⎕SEQPLAY←1` it returns what happens at beat `0`,
+since the simulated clock hasn't moved. If nothing comes within 10000
+beats (a reporting track made only of rests, say), the wait gives
+`Domain Error` instead of waiting forever.
 
-`⎕EVPOST kind,values` feeds window events to `⎕WCLICK` in `apl_cli`,
+`⎕EVPOST kind,values` feeds window events to `⎕WCLICK`/`⎕EVWAIT` in `apl_cli`,
 the command-line front end the regression tests use, which has no real
 windows to click (its windows are a table that remembers their state
 but draws nothing). Each event goes to the waits that come after it,
@@ -1100,8 +1332,9 @@ rest for the next wait. The first number says which event:
 | `3` | Escape |
 | `4` | Ctrl+C |
 
-Returns how many events are now waiting. A `⎕WCLICK` with nothing
-posted to end it gives `Domain Error` instead of waiting forever. In
+Returns how many events are now waiting. A wait with nothing posted to
+end it, and nothing from the sequencer to wait for, gives `Domain
+Error` instead of waiting forever. In
 the GUI `⎕EVPOST` always gives `Domain Error`; so does an unknown kind,
 a fraction, or a full queue (64 events). `Length Error` for the wrong
 number of values, `Rank Error` for a matrix.

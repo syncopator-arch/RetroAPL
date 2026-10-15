@@ -23,7 +23,9 @@ runto 4
   error: SEQ_ERR_NOT_OPEN (sequencer not open)
 close
   closed: (none)
-open device nonsense
+# not understood (Phase 8: any other name is looked up as a device
+# name, so the empty name is the one that is never a port)
+open device
   error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
 open virtual
 open virtual

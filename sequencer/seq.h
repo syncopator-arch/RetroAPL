@@ -2,7 +2,12 @@
 	seq.h -- MIDI sequencer library, public interface.
 	Agreed Oct 4, 2026 (Phase 1); Phase 2 additions marked "Phase 2";
 	Phase 7c (note events, the beat switch, the event wait; Oct 12,
-	2026) marked "Phase 7c", all added without changing what was there.
+	2026) marked "Phase 7c"; Phase 8 (opening a port by device name,
+	the port list; per-note velocity, length and channel, the gate;
+	Oct 15, 2026) marked "Phase 8". All added without
+	changing what was there, except that a name not in the "hw:" form
+	(Linux) or not a number (Windows), once SEQ_ERR_PORT_NAME, is now
+	looked up as a device name (Phase 8).
 
 	Lives in sequencer/ at the project root, beside backend/ and
 	frontend/. The only contact surface between the APL interpreter's
@@ -88,6 +93,8 @@ extern "C" {	/* main.cpp's stopEngine() calls seq_close() */
 /* Defaults for a track that has never been set. */
 #define SEQ_DEFAULT_VELOCITY 100   /* 1..127 */
 #define SEQ_DEFAULT_LOOP     1
+#define SEQ_DEFAULT_GATE     1.0   /* Phase 8: notes sound their whole
+                                      step */
 /* default channel = track number */
 
 #define SEQ_MAX_BEATS       1e9    /* longest track, beats (Phase 2;
@@ -131,9 +138,11 @@ enum seq_err {
 				   subdevice taken) */
 	SEQ_ERR_PORT_ACCESS,	/* no permission (Linux: not in the audio
 				   group; never on Windows) */
-	SEQ_ERR_PORT_NAME,	/* port name not understood (Linux:
-				   "hw:C", "hw:C,D" or "hw:C,D,S";
-				   Windows: a device number) */
+	SEQ_ERR_PORT_NAME,	/* port name not understood. Since
+				   Phase 8 only an empty name, or (Linux)
+				   one starting "hw:" that isn't "hw:C",
+				   "hw:C,D" or "hw:C,D,S": any other name
+				   is looked up as a device name */
 	/* Phase 7c, added at the end like the Phase 3 codes. */
 	SEQ_ERR_NO_EVENT	/* seq_request_event(): playing, but
 				   nothing can produce an event (beats
@@ -214,7 +223,8 @@ struct seq_config {
 	const char   *port;	/* DEVICE: "hw:C,D,S" on Linux (Phase 3:
 				   also "hw:C,D", any free subdevice, and
 				   "hw:C", device 0), a device number as
-				   text ("0") on Windows.
+				   text ("0") on Windows; or (Phase 8) a
+				   device name, see seq_open().
 				   Log backends: ignored. */
 	seq_notify_fn notify;	/* may be NULL: no events */
 	void         *ctx;	/* passed back to notify */
@@ -233,8 +243,42 @@ struct seq_config {
    From STOPPED or PLAYING: SEQ_ERR_ALREADY_OPEN.
    A device that can't be opened gives SEQ_ERR_PORT (no such port),
    SEQ_ERR_PORT_BUSY, SEQ_ERR_PORT_ACCESS or SEQ_ERR_PORT_NAME
-   (Phase 3). Opening never waits for a busy port. */
+   (Phase 3). Opening never waits for a busy port.
+
+   Opening by device name (Phase 8, agreed Oct 15, 2026). A port that
+   isn't in the "hw:" form (Linux; the prefix in either case) or all
+   digits (Windows) is a device name: the first port in
+   seq_dev_list()'s order whose label contains it, ignoring the case of
+   A-Z, is opened ("u2midi" opens "U2MIDI Pro / U2MIDI Pro MIDI 1").
+   No match is SEQ_ERR_PORT, as for a port that isn't there, or
+   SEQ_ERR_PORT_ACCESS if a card was left out of the list for lack of
+   permission (Linux: the audio group covers every card, so that is
+   the likelier reason); an empty name is SEQ_ERR_PORT_NAME (it would
+   match everything). The name is
+   looked up at every open, so reopening after a lost port finds the
+   device again even if it came back under another card or device
+   number. Only the first match is tried: if that port is busy the
+   result is SEQ_ERR_PORT_BUSY, even if a later one would match. */
 int seq_open(const struct seq_config *cfg);
+
+/* Output ports (Phase 8; internal since Phase 3, for seqdemo -l).
+   Fills up to max entries in the order a device name is matched in,
+   and returns how many ports there are (may be more than max). Doesn't
+   need the sequencer open; safe from any thread.
+   Linux: every raw MIDI output subdevice of cards 0..31, "hw:C,D,S",
+   labelled with its card, device and subdevice names; a card that
+   can't be opened (no permission) is left out.
+   Windows: every WinMM output device, by number, labelled with its
+   name.
+   Labels are plain ASCII: any byte outside 32..126 becomes '?', so
+   what a list shows is exactly what a name is matched against. */
+#define SEQ_MAX_PORTS 128	/* enough for any real setup; a name is
+				   matched against the first this many */
+struct seq_port_info {
+	char port[40];		/* what seq_open() takes */
+	char name[120];		/* label: card / device / subdevice names */
+};
+int seq_dev_list(struct seq_port_info *ports, int max);
 
 /* From any state: stops playback, sends note-off for every sounding
    note, ends the playback thread, closes the port if open, discards
@@ -280,6 +324,7 @@ struct seq_track_info {
 				   no playing version) */
 	int     report;		/* Phase 7c: 1 if it reports note events
 				   (seq_set_notes()) */
+	double  gate;		/* Phase 8: seq_set_gate() */
 };
 
 /* Fills info (room for SEQ_MAX_TRACKS) in ascending track order, all
@@ -337,6 +382,31 @@ int seq_submit_track(int track, int channel,
                      const int32_t *pitch, const double *dur, int32_t n,
                      int64_t *swap_tick);
 
+/* Phase 8 (agreed Oct 15, 2026): seq_submit_track() with, per note, a
+   velocity, a sounding length and a channel; seq_submit_track() is
+   this with all three NULL. Each array may be NULL (not given), and an
+   entry of SEQ_UNCHANGED (-1; -1.0 for len) means the track's setting.
+   For a rest the three are ignored, whatever they hold.
+
+   vel   1..127, scaled by the track's velocity (seq_set_velocity()):
+         sent as vel * track velocity / 100, rounded, kept to 1..127,
+         so at the default 100 it plays as written. SEQ_ERR_VALUE
+         outside 1..127.
+   len   how long the note sounds, beats, at least one tick
+         (SEQ_ERR_DURATION otherwise). The note-off falls that many
+         ticks (rounded) after the note's start, but never past the
+         next note's start: a longer length is shortened to the step
+         (dur), so a track still sounds one note at a time. -1: the
+         track's gate (seq_set_gate()) times the step.
+   chan  1..16 for this note alone (SEQ_ERR_CHANNEL otherwise); the
+         track's channel, and seq_get_tracks()'s report of it, don't
+         change. -1: the version's channel. */
+int seq_submit_track_ex(int track, int channel,
+                        const int32_t *pitch, const double *dur,
+                        const int32_t *vel, const double *len,
+                        const int32_t *chan, int32_t n,
+                        int64_t *swap_tick);
+
 /* The list calls below take n tracks and apply them all under one
    lock, so a list takes effect at a single instant. values has n
    entries (the glue extends a single APL value to all n). prev (may be
@@ -370,6 +440,16 @@ int seq_set_velocity(const int *tracks, const int *values, int n, int *prev);
    and seq_clear(), like the other settings; a restart (SEQ_RESTART)
    discards what every track has outstanding. */
 int seq_set_notes(const int *tracks, const int *values, int n, int *prev);
+
+/* Phase 8: the gate, the fraction of each note's step it sounds when it
+   has no length of its own: greater than 0, at most 1 (SEQ_ERR_VALUE
+   otherwise); default 1, the whole step. The note-off falls at the
+   rounded fraction of the step, at least one tick after the note-on.
+   Applies to notes started from now on (a sounding note keeps its
+   note-off). Kept through new versions and seq_clear(), like the
+   other settings. prev (may be NULL) receives the previous values. */
+int seq_set_gate(const int *tracks, const double *values, int n,
+                 double *prev);
 
 /* ── Transport and tempo ─────────────────────────────────────────── */
 

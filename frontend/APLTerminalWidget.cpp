@@ -44,13 +44,13 @@ static QString translateClipboardTextToKapl(const QString &text)
     result.reserve(text.size());
     for (QChar ch : text) {
         uint code = ch.unicode();
-        if (code < 0x80) {
-            // Plain ASCII (letters, digits, common punctuation, control
-            // chars like \n) is already identical whether interpreted as
-            // raw KAPL index or literal ASCII -- pass through unchanged.
-            result.append(ch);
-            continue;
-        }
+        // Every character goes through the lookup, ASCII included: plain
+        // ASCII (letters, digits, punctuation, control chars like \n)
+        // comes back unchanged, except '|', which becomes stile (0xCD) --
+        // as a raw 0x7C the engine reads it as OR, so 5|7 gave 1. The
+        // lookup also takes the paste-only aliases (U+2227 for and, Greek
+        // rho/iota/..., see kapl_unicode_mapping.hpp), which used to
+        // become '?' below.
         int kaplByte = unicodeToKaplByte(static_cast<char32_t>(code));
         if (kaplByte >= 0) {
             result.append(QChar(static_cast<ushort>(kaplByte)));

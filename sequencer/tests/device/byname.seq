@@ -1,0 +1,77 @@
+# Opening a port by device name (Phase 8, fake device): the first port
+# in the list whose label contains the name, ignoring case. Labels are
+# plain ASCII (a byte outside 32..126 shows as ?), and a name is matched
+# against the label as listed. No match is "no such port"; a malformed
+# hw: name, or an empty one, is "not understood". The name is looked up
+# again at every open, so a device that comes back as another card is
+# found again, including when reopening after a lost port.
+fakedev port 1 0 2
+fakedev port 3 0 1
+fakedev name 3 U2MIDI Pro
+fakedev port 5 0 1
+fakedev name 5 Caf\xe9 Synth
+ports
+# a name, in either case (the library folds A-Z itself)
+open device u2midi
+close
+open device U2MIDI PRO
+fakedev log
+close
+# a subdevice's own name: the second port of card 1
+open device midi 0-1
+fakedev log
+close
+# several match: the first in the list (hw:1,0,0)
+open device fake
+fakedev log
+close
+# only the first match is tried: busy, though hw:1,0,1 is free
+fakedev busy 1 0 0
+open device fake
+fakedev free 1 0 0
+# ? in a name is only itself
+open device caf? synth
+close
+open device caf?? synth
+open device nothing like it
+devdiag
+# the hw: form as before, now in either case; a malformed one
+open device HW:3,0,0
+close
+open device hw:x
+open device
+fakedev log
+# the cable comes back as card 4: the name finds it there
+fakedev unplug 3
+open device u2midi
+fakedev port 4 0 1
+fakedev name 4 U2MIDI Pro
+open device u2midi
+fakedev log
+close
+# no match while a card can't be read (no permission): that is the
+# likelier reason, so "no permission" rather than "no such port"
+fakedev deny 1
+open device nothing like it
+devdiag
+open device u2midi
+close
+# lost while playing, back as card 6: reopening by name finds it, and
+# the held note is released there. Tempo 120, a beat is 500 ms; the
+# port is lost at beat 2 by 45's note-off, with 60 still sounding.
+open device u2midi
+track 1 45:2 52:2
+track 2 60:4
+play continue
+sleep 250
+fakedev unplug 4
+sleep 1000
+state
+fakedev port 6 0 1
+fakedev name 6 U2MIDI Pro
+fakedev log
+open device u2midi
+state
+devdiag
+close
+fakedev log

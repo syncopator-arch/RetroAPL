@@ -12,6 +12,6 @@
 1 ⎕SEQVEL 70
 ⎕SEQRUNTO 4
 ⍴⎕SEQLOG
-⎕SEQOPEN 'nonsense' ⍝ k3 slot 0 compiles to byte 0x60, the comment character
+⎕SEQOPEN '' ⍝ k3 slot 0 compiles to byte 0x60, the comment character
 ⎕SEQOPEN 1 2⍴'AB'
 ⎕SEQSTATE

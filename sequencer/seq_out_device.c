@@ -6,6 +6,9 @@
 	"hw:C,D,S", "hw:C,D" (any free subdevice) or "hw:C" (device 0).
 	Windows (Phase 6, brought forward Oct 4, 2026): WinMM, the port
 	being an output device number as text ("0").
+	Either (Phase 8, Oct 15, 2026): any other name is a device name,
+	looked up in seq_dev_list() at each open (find_port() below; the
+	rule is in seq.h at seq_open()).
 	Elsewhere: a placeholder that fails to open (SEQ_ERR_PORT).
 
 	Every call is made with the sequencer's lock held (seq_panic()
@@ -156,6 +159,71 @@ static const char *number(const char *s, int max, int *v)
 	return s;
 }
 
+/* ── Opening by device name (Phase 8) ────────────────────────────── */
+
+static int lower(int c)
+{
+	return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
+}
+
+/* 1 if hay contains needle, ignoring the case of A-Z (the same
+   folding the interpreter's glue and ⎕LCASE do). An empty needle
+   never gets here. */
+static int contains(const char *hay, const char *needle)
+{
+	const char *h, *n;
+
+	for (; *hay; hay++) {
+		for (h = hay, n = needle; *n && lower(*h) == lower(*n); h++, n++)
+			;
+		if (!*n)
+			return 1;
+	}
+	return 0;
+}
+
+/* Labels are plain ASCII (seq.h, seq_dev_list()). */
+static void ascii_only(char *s)
+{
+	for (; *s; s++)
+		if ((unsigned char)*s < 32 || (unsigned char)*s > 126)
+			*s = '?';
+}
+
+/* seq_dev_list(), also saying whether any card was left out for lack
+   of permission (Linux; never on Windows). Per platform, below. */
+static int dev_list(struct seq_port_info *ports, int max, int *denied);
+
+int seq_dev_list(struct seq_port_info *ports, int max)
+{
+	int denied;
+
+	return dev_list(ports, max, &denied);
+}
+
+/* Finds the first output port whose label contains name and puts its
+   port into port (size bytes): SEQ_OK. No match is SEQ_ERR_PORT, or
+   SEQ_ERR_PORT_ACCESS if some card couldn't be read for lack of
+   permission (the device may well be there: on Linux the permission,
+   the audio group, covers every card at once, so a name given while
+   not in the group says why rather than "no such port"). Called from
+   dev_open(), so with the sequencer's lock held: the list can be
+   static. */
+static int find_port(const char *name, char *port, size_t size)
+{
+	static struct seq_port_info list[SEQ_MAX_PORTS];
+	int i, denied, n = dev_list(list, SEQ_MAX_PORTS, &denied);
+
+	if (n > SEQ_MAX_PORTS)
+		n = SEQ_MAX_PORTS;
+	for (i = 0; i < n; i++)
+		if (contains(list[i].name, name)) {
+			snprintf(port, size, "%s", list[i].port);
+			return SEQ_OK;
+		}
+	return denied ? SEQ_ERR_PORT_ACCESS : SEQ_ERR_PORT;
+}
+
 #endif
 
 #if defined(__linux__)
@@ -189,6 +257,13 @@ static void fail_errno(const char *step, int e)
 	fail(step, e, e ? strerror(e) : "");
 }
 
+/* Starts "hw:", in either case (Phase 8: anything else is a device
+   name). */
+static int is_hw(const char *port)
+{
+	return lower(port[0]) == 'h' && lower(port[1]) == 'w' && port[2] == ':';
+}
+
 /* "hw:C", "hw:C,D", "hw:C,D,S". 1 if understood. */
 static int parse_port(const char *port, int *card, int *dev, int *sub)
 {
@@ -196,7 +271,7 @@ static int parse_port(const char *port, int *card, int *dev, int *sub)
 
 	*dev = 0;
 	*sub = -1;
-	if (!port || strncmp(port, "hw:", 3) != 0)
+	if (!port || !is_hw(port))
 		return 0;
 	if (!(p = number(port + 3, 255, card)))
 		return 0;
@@ -227,10 +302,19 @@ static int open_error(int e)
 static int dev_open(const char *port)
 {
 	int card, dev, sub, ctl, e;
-	char path[64];
+	char path[64], named[40];
 	struct snd_rawmidi_info info;
 
 	diag_reset();
+	if (port && *port && !is_hw(port)) {	/* a device name (Phase 8) */
+		if ((e = find_port(port, named, sizeof named)) != SEQ_OK) {
+			fail("find by name", 0, e == SEQ_ERR_PORT_ACCESS
+			     ? "no port with that name, and a card was"
+			       " refused: no permission" : "no port with that name");
+			return e;
+		}
+		port = named;
+	}
 	if (!parse_port(port, &card, &dev, &sub)) {
 		fail_errno("port name", 0);
 		return SEQ_ERR_PORT_NAME;
@@ -367,10 +451,11 @@ static void add_name(char *buf, size_t size, const unsigned char *s)
 	snprintf(buf + n, size - n, "%s%s", n ? " / " : "", t);
 }
 
-int seq_dev_list(struct seq_port_info *ports, int max)
+static int dev_list(struct seq_port_info *ports, int max, int *denied)
 {
 	int card, count = 0;
 
+	*denied = 0;
 	for (card = 0; card < 32; card++) {
 		struct snd_ctl_card_info ci;
 		char path[64];
@@ -378,8 +463,11 @@ int seq_dev_list(struct seq_port_info *ports, int max)
 
 		snprintf(path, sizeof path, "/dev/snd/controlC%d", card);
 		ctl = SYS_OPEN(path, O_RDONLY | O_CLOEXEC);
-		if (ctl < 0)
+		if (ctl < 0) {
+			if (errno == EACCES || errno == EPERM)
+				*denied = 1;
 			continue;
+		}
 		memset(&ci, 0, sizeof ci);
 		SYS_IOCTL(ctl, SNDRV_CTL_IOCTL_CARD_INFO, &ci);
 		while (SYS_IOCTL(ctl, SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE, &dev) == 0
@@ -409,6 +497,7 @@ int seq_dev_list(struct seq_port_info *ports, int max)
 					add_name(p->name, sizeof p->name, ci.name);
 					add_name(p->name, sizeof p->name, ri.name);
 					add_name(p->name, sizeof p->name, ri.subname);
+					ascii_only(p->name);
 				}
 				count++;
 			}
@@ -436,13 +525,37 @@ static void fail_mm(const char *step, MMRESULT r)
 	fail(step, (int)r, text);
 }
 
+/* All digits (a device number). */
+static int all_digits(const char *s)
+{
+	if (!*s)
+		return 0;
+	for (; *s; s++)
+		if (*s < '0' || *s > '9')
+			return 0;
+	return 1;
+}
+
 static int dev_open(const char *port)
 {
 	int id;
 	const char *p;
+	char named[40];
 	MMRESULT r;
 
 	diag_reset();
+	/* Phase 8: anything but a number is a device name, including one
+	   that starts with digits (Windows names a second device of the
+	   same kind "2- ...") */
+	if (port && *port && !all_digits(port)) {
+		int e = find_port(port, named, sizeof named);
+
+		if (e != SEQ_OK) {
+			fail("find by name", 0, "no port with that name");
+			return e;
+		}
+		port = named;
+	}
 	if (!port || !(p = number(port, 99999, &id)) || *p != '\0') {
 		fail("port name", 0, "");
 		return SEQ_ERR_PORT_NAME;
@@ -510,10 +623,12 @@ static void dev_close(void)
 	diag_closed(t0);
 }
 
-int seq_dev_list(struct seq_port_info *ports, int max)
+static int dev_list(struct seq_port_info *ports, int max, int *denied)
 {
 	UINT i, n = midiOutGetNumDevs();
 	int count = 0;
+
+	*denied = 0;
 
 	for (i = 0; i < n; i++) {
 		MIDIOUTCAPSA caps;
@@ -525,6 +640,7 @@ int seq_dev_list(struct seq_port_info *ports, int max)
 			         "%u", (unsigned)i);
 			snprintf(ports[count].name, sizeof ports[count].name,
 			         "%s", caps.szPname);
+			ascii_only(ports[count].name);
 		}
 		count++;
 	}

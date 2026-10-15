@@ -14,7 +14,9 @@ clear 1
 arm
 runto 4
 close
-open device nonsense
+# not understood (Phase 8: any other name is looked up as a device
+# name, so the empty name is the one that is never a port)
+open device
 open virtual
 open virtual
 track 0 60:1

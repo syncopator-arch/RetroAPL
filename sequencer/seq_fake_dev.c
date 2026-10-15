@@ -10,6 +10,8 @@
 	  fakedev free C D S       and released again
 	  fakedev inonly C D       device D on card C has input only
 	  fakedev deny C           opening card C's files gives EACCES
+	  fakedev name C TEXT...   card C's name (default "Fake card C");
+	                           \xHH is the byte HH (Phase 8)
 	  fakedev room N|all       the output buffer takes N more bytes
 	                           (short write, then EAGAIN), or all
 	  fakedev drain            room again for everything; wakes poll()
@@ -23,6 +25,7 @@
 
 #include "seq_fake_dev.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -49,6 +52,7 @@ static struct {
 	int deny;
 	int gone;			/* unplugged */
 	int inonly[MAXDEV];		/* input only: no output stream */
+	char name[80];			/* "" : "Fake card C" (Phase 8) */
 } card[MAXCARD];
 
 static struct {
@@ -227,8 +231,12 @@ int fake_ioctl(int fd, unsigned long req, void *arg)
 	else if (req == SNDRV_CTL_IOCTL_CARD_INFO && fds[i].ctl) {
 		struct snd_ctl_card_info *ci = arg;
 
-		snprintf((char *)ci->name, sizeof ci->name, "Fake card %d",
-		         fds[i].card);
+		if (card[fds[i].card].name[0])
+			snprintf((char *)ci->name, sizeof ci->name, "%s",
+			         card[fds[i].card].name);
+		else
+			snprintf((char *)ci->name, sizeof ci->name, "Fake card %d",
+			         fds[i].card);
 	} else if (req == SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE && fds[i].ctl) {
 		int d = *(int *)arg + 1, c = fds[i].card;
 
@@ -376,6 +384,31 @@ static int num(const char *s, int lo, int hi, int *v)
 	return 1;
 }
 
+/* Phase 8: the words from w[i] on, joined by single spaces, with
+   \xHH as the byte HH, into card c's name. 0 if malformed. */
+static int set_name(int c, char **w, int i, int nw)
+{
+	char *d = card[c].name, *end = d + sizeof card[c].name - 1;
+	const char *p;
+	unsigned v;
+
+	for (; i < nw; i++) {
+		if (d > card[c].name && d < end)
+			*d++ = ' ';
+		for (p = w[i]; *p && d < end; p++) {
+			if (p[0] == '\\' && p[1] == 'x' && isxdigit((unsigned char)p[2])
+			    && isxdigit((unsigned char)p[3])
+			    && sscanf(p + 2, "%2x", &v) == 1) {
+				*d++ = (char)v;
+				p += 3;
+			} else
+				*d++ = *p;
+		}
+	}
+	*d = '\0';
+	return card[c].name[0] != '\0';
+}
+
 int fake_command(char **w, int nw, void *outp)
 {
 	FILE *out = outp;
@@ -396,6 +429,8 @@ int fake_command(char **w, int nw, void *outp)
 		card[c].inonly[d] = 1;
 	else if (!strcmp(w[1], "deny") && nw == 3 && num(w[2], 0, MAXCARD - 1, &c))
 		card[c].deny = 1;
+	else if (!strcmp(w[1], "name") && nw >= 4 && num(w[2], 0, MAXCARD - 1, &c))
+		ok = set_name(c, w, 3, nw);
 	else if (!strcmp(w[1], "room") && nw == 3) {
 		if (!strcmp(w[2], "all"))
 			room = -1;

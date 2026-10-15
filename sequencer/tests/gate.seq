@@ -1,0 +1,49 @@
+# Phase 8: the gate (seq_set_gate()), the fraction of its step a note
+# with no length of its own sounds: (0, 1], default 1. Applies to notes
+# started from then on; kept through new versions and seq_clear();
+# reset at close. A note's own length takes precedence.
+open virtual
+state
+gate 1 = 1/2
+state
+# half of each step: 1-beat steps end at .5, the 1/3-beat step at 1/6
+track 1 60:1 62:1 64:1/3 65:2/3
+play continue
+runto 3
+log
+# a note's own length wins over the gate; - takes the gate
+track 1 60:1:-:3/4 62:1:-:-
+runto 6
+log
+# changed while a note sounds (62, started at beat 6 with the gate at
+# 1/2): it keeps its note-off at 6.5; 60 at 7 has its own length; 62
+# at 8 takes the new gate, 0.25 of its step
+runto 6.25
+gate 1 = 1/4
+runto 9
+log
+# very small: at least one tick (62 at beat 10)
+gate 1 = 1/100000
+runto 11
+log
+# kept through a new version and seq_clear(); several tracks at once,
+# one value per track
+clear 1
+track 1 60:1
+state
+gate 1 2 = 1 0.75
+gate 1 2 = 0.3
+# errors, nothing changed: 0, over 1, negative, a bad track
+gate 1 = 0
+gate 1 = 1.5
+gate 1 = -1/2
+gate 17 = 1/2
+state
+close
+# reset at close
+open virtual
+track 1 60:1
+state
+gate 1 = 1/2
+close
+gate 1 = 1/2

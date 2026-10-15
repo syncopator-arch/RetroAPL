@@ -50,18 +50,22 @@ open device hw:x
   error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
 open device hw:1,0,
   error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
-open device 1,0,0
-  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
 open device hw:1,0,0,0
   error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
 open device hw:256
   error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
 open device hw:01234
   error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+# not hw: (Phase 8): a device name, looked up and not found; the
+# list is read (card 1's control device), nothing is opened
+open device 1,0,0
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
 devdiag
-  failed: port name (no error code)
+  failed: find by name (no port with that name)
   writes 0, waited 0, subdevice -1
 fakedev log
+  open controlC1: ok
+  close controlC1
 # no such card, device or subdevice (the kernel gives ENODEV for a
 # subdevice past the last)
 open device hw:2,0,0

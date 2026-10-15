@@ -6,7 +6,8 @@
 	    seqdemo -T
 
 	PORT     Linux: hw:C,D,S, hw:C,D or hw:C; Windows: a device number
-	         (seqdemo -l lists them)
+	         (seqdemo -l lists them); or, either (Phase 8), part of a
+	         port's name as listed, any case: the first match opens
 	-l       list the output ports and exit
 	-T       timer test and exit: how long 1 ms waits really take
 	         (Windows: before and after timeBeginPeriod(1))
@@ -289,10 +290,11 @@ static void usage(void)
 	        " PORT\n       seqdemo -l    (list ports)\n"
 	        "       seqdemo -T    (timer test)\n"
 #ifdef _WIN32
-	        "  PORT: a device number\n"
+	        "  PORT: a device number,\n"
 #else
-	        "  PORT: hw:C,D,S, hw:C,D or hw:C\n"
+	        "  PORT: hw:C,D,S, hw:C,D or hw:C,\n"
 #endif
+	        "        or part of a port's name (seqdemo -l)\n"
 	        );
 	exit(2);
 }

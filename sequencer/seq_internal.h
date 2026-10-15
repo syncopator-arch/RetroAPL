@@ -55,16 +55,8 @@ struct seq_dev_diag {
 };
 void seq_dev_get_diag(struct seq_dev_diag *d);
 
-/* Output ports (Phase 3, for seqdemo -l; a preview of the Phase 8
-   list a settings UI would choose from). Fills up to max entries and
-   returns how many there are (may exceed max). Linux: every raw MIDI
-   output subdevice, "hw:C,D,S"; Windows: every WinMM output device,
-   by number. Doesn't need the sequencer open. */
-struct seq_port_info {
-	char port[40];		/* what seq_open() takes */
-	char name[120];		/* card / device / subdevice names */
-};
-int seq_dev_list(struct seq_port_info *ports, int max);
+/* Output ports: seq_dev_list() and struct seq_port_info moved to
+   seq.h in Phase 8 (Oct 15, 2026), for the interpreter's ⎕SEQPORTS. */
 
 /* Playback timing on the real clock (Phase 3/6, seq.c): how late each
    tick went out compared with when it was due. The virtual clock

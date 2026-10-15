@@ -7,10 +7,12 @@
 
 	Behavior deliberately matches the Qt front end's clipboard
 	translation (APLTerminalWidget.cpp: translateClipboardTextToKapl()
-	for input, kaplByteToClipboardUnicode() for output), with one
-	addition: an input-only alias table, below, so that the common
-	alternate codepoints for APL glyphs (Greek letters for rho/iota/etc.,
-	U+2227 for and, and so on) are accepted instead of becoming '?'.
+	for input, kaplByteToClipboardUnicode() for output), including the
+	input-only alias table, below, so that the common alternate
+	codepoints for APL glyphs (Greek letters for rho/iota/etc., U+2227
+	for and, and so on) are accepted instead of becoming '?'. The GUI
+	got its copy of the aliases (KaplAliasTable[]) in October 2026;
+	before that it had none.
 
 	Output direction: bytes below 0x80 pass through; bytes 0x80-0xFF
 	use the table, or pass through as the Latin-1 codepoint of the same
@@ -19,7 +21,7 @@
 	Input direction: aliases first, then ASCII passes through, then the
 	table (reverse lookup), then 0x80-0xFF passes through as a raw byte,
 	and anything else is unmappable (-1; the string converter
-	substitutes '?'). Identical to the GUI's paste, apart from aliases.
+	substitutes '?'). Same result as the GUI's paste.
 */
 
 #include <stddef.h>
@@ -32,9 +34,9 @@ struct kapl_entry {
 
 /*
  * Core table -- MUST match KaplToUnicodeTable[] in
- * kapl_unicode_mapping.hpp entry for entry. check_kapl_tables.sh
- * compares everything between the BEGIN/END markers against the .hpp,
- * so keep one {0xKK, 0xUUUU}, entry per line in exactly that form.
+ * kapl_unicode_mapping.hpp entry for entry. kapl_unicode_test compares
+ * it against the pairs between the .hpp's BEGIN/END KAPL TABLE markers;
+ * keep one {0xKK, 0xUUUU}, entry per line in exactly that form in both.
  */
 /* BEGIN KAPL TABLE */
 static const struct kapl_entry kapl_table[] = {
@@ -97,13 +99,16 @@ static const struct kapl_entry kapl_table[] = {
 
 /*
  * Input-only aliases: alternate codepoints for the same glyph, accepted
- * on input but never produced on output. No counterpart in the .hpp.
+ * on input but never produced on output. MUST match KaplAliasTable[] in
+ * kapl_unicode_mapping.hpp (kapl_unicode_test compares the pairs between
+ * its BEGIN/END KAPL ALIASES markers).
  *
  * The first entry is a correctness fix, not a convenience. The core
  * table maps stile (0xCD) to plain '|' on output, but the input path
  * passes ASCII straight through, so '|' would come back as font byte
- * 0x7C -- which alt_input_proc() turns into a different internal code
- * from a typed stile. The GUI's paste has the same gap today.
+ * 0x7C -- which alt_input_proc() turns into the internal code for OR,
+ * not residue (5|7 gives 1, not 2). The GUI's paste had the same gap
+ * until it got the alias table (October 2026).
  */
 static const struct kapl_entry kapl_alias[] = {
 	{0xCD, 0x007C},	/* | vertical line       -> stile           */

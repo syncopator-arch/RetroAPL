@@ -21,10 +21,12 @@ fakedev log
 # names not understood (nothing is opened)
 open device hw:x
 open device hw:1,0,
-open device 1,0,0
 open device hw:1,0,0,0
 open device hw:256
 open device hw:01234
+# not hw: (Phase 8): a device name, looked up and not found; the
+# list is read (card 1's control device), nothing is opened
+open device 1,0,0
 devdiag
 fakedev log
 # no such card, device or subdevice (the kernel gives ENODEV for a

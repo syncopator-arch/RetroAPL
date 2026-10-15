@@ -18,13 +18,22 @@
 	copied to the transcript):
 
 	  open virtual | realtime | device PORT
+	                            PORT may be a device name of several
+	                            words, or left out: an empty name
+	                            (Phase 8)
 	  close
 	  track T[:C] P:D P:D ...   P a pitch 0..127, or r (or -1) for a
 	                            rest; D beats: 1, 0.5, 4/3, 1/7 ...
+	                            Phase 8: P:D:V:L:C, each extra field
+	                            optional (V velocity, L length in
+	                            beats, C channel); - for the track's
+	                            setting. Any extra field on any note
+	                            uses seq_submit_track_ex().
 	  clear T ...
 	  mute T ... = V ...        one V for all, or one per track
 	  loop T ... = V ...
 	  vel  T ... = V ...
+	  gate T ... = F ...        Phase 8: F a fraction (1/2, 0.75)
 	  play stop | continue | restart
 	  tempo [BPM]               bare: report
 	  runto X                   X in beats (8, 4/3) or ticks (t20160)
@@ -356,11 +365,16 @@ static void show_state(void)
 	for (i = 0; i < n; i++) {
 		beats(c, sizeof c, info[i].length);
 		beats(d, sizeof d, info[i].position);
+		/* Phase 8: the gate likewise, only when not 1 */
+		char g[40] = "";
+
+		if (info[i].gate != 1.0)
+			snprintf(g, sizeof g, " gate %g", info[i].gate);
 		fprintf(out, "  track %d: notes %d ch %d mute %d loop %d vel %d"
-		        " length %s pending %d position %s%s\n",
+		        " length %s pending %d position %s%s%s\n",
 		        info[i].track, (int)info[i].notes, info[i].channel,
 		        info[i].mute, info[i].loop, info[i].velocity, c,
-		        info[i].pending, d, info[i].report ? " notes 1" : "");
+		        info[i].pending, d, info[i].report ? " notes 1" : "", g);
 	}
 }
 
@@ -455,11 +469,49 @@ static void stress(int ms)
 
 static uint32_t last_id;
 
+/* Phase 8: an optional extra field of a note ("-" or missing: the
+   track's setting). 0 if malformed. */
+static int extra_int(char **f, int32_t *v)
+{
+	char *c;
+	int x;
+
+	*v = SEQ_UNCHANGED;
+	if (!*f)
+		return 1;
+	c = strchr(*f, ':');
+	if (c)
+		*c = '\0';
+	if (strcmp(*f, "-") != 0) {
+		if (!parse_int(*f, &x))
+			return 0;
+		*v = x;
+	}
+	*f = c ? c + 1 : NULL;
+	return 1;
+}
+
+static int extra_num(char **f, double *v)
+{
+	char *c;
+
+	*v = -1.0;
+	if (!*f)
+		return 1;
+	c = strchr(*f, ':');
+	if (c)
+		*c = '\0';
+	if (strcmp(*f, "-") != 0 && !parse_num(*f, v))
+		return 0;
+	*f = c ? c + 1 : NULL;
+	return 1;
+}
+
 static void do_track(char **w, int nw)
 {
-	static int32_t pitch[MAXNOTES];
-	static double dur[MAXNOTES];
-	int track, chan = SEQ_UNCHANGED, i, n = 0;
+	static int32_t pitch[MAXNOTES], vel[MAXNOTES], ch[MAXNOTES];
+	static double dur[MAXNOTES], len[MAXNOTES];
+	int track, chan = SEQ_UNCHANGED, i, n = 0, extra = 0, r;
 	char *colon, buf[64];
 	int64_t swap;
 
@@ -485,10 +537,24 @@ static void do_track(char **w, int nw)
 		else if (!parse_int(w[i], &p))
 			goto bad;
 		pitch[n] = p;
-		if (!parse_num(c + 1, &dur[n]))
-			goto bad;
+		{
+			char *f = strchr(c + 1, ':');	/* Phase 8 fields */
+
+			if (f) {
+				*f++ = '\0';
+				extra = 1;
+			}
+			if (!parse_num(c + 1, &dur[n]))
+				goto bad;
+			if (!extra_int(&f, &vel[n]) || !extra_num(&f, &len[n])
+			    || !extra_int(&f, &ch[n]) || f)
+				goto bad;
+		}
 	}
-	if (report(seq_submit_track(track, chan, pitch, dur, n, &swap)))
+	r = extra ? seq_submit_track_ex(track, chan, pitch, dur, vel, len, ch,
+	                                n, &swap)
+	          : seq_submit_track(track, chan, pitch, dur, n, &swap);
+	if (report(r))
 		return;
 	beats(buf, sizeof buf, swap);
 	fprintf(out, "  takes over at beat %s\n", buf);
@@ -512,6 +578,8 @@ static void do_line(char *line)
 
 	if (strcmp(cmd, "open") == 0) {
 		struct seq_config cfg;
+		char port[256];
+		int k;
 
 		memset(&cfg, 0, sizeof cfg);
 		cfg.notify = on_event;
@@ -519,9 +587,14 @@ static void do_line(char *line)
 			cfg.backend = SEQ_BACKEND_VIRTUAL;
 		else if (nw >= 2 && strcmp(w[1], "realtime") == 0)
 			cfg.backend = SEQ_BACKEND_LOG_REALTIME;
-		else if (nw >= 3 && strcmp(w[1], "device") == 0) {
+		else if (nw >= 2 && strcmp(w[1], "device") == 0) {
 			cfg.backend = SEQ_BACKEND_DEVICE;
-			cfg.port = w[2];
+			port[0] = '\0';	/* the words rejoined (Phase 8) */
+			for (k = 2; k < nw; k++)
+				snprintf(port + strlen(port),
+				         sizeof port - strlen(port), "%s%s",
+				         k > 2 ? " " : "", w[k]);
+			cfg.port = port;
 		} else
 			goto bad;
 		report(seq_open(&cfg));
@@ -547,6 +620,29 @@ static void do_line(char *line)
 		  : seq_set_velocity(tracks, values, n, prev);
 		if (!report(r))
 			print_ints("prev", prev, n);
+	} else if (strcmp(cmd, "gate") == 0) {
+		double gv[SEQ_MAX_TRACKS * 2], gp[SEQ_MAX_TRACKS * 2];
+		int k, eq = -1, nv = 0;
+
+		for (k = 1; k < nw; k++)
+			if (strcmp(w[k], "=") == 0)
+				eq = k;
+		if (eq < 0 || !parse_list(w + 1, eq - 1, tracks, NULL, &n))
+			goto bad;
+		for (k = eq + 1; k < nw; k++)
+			if (nv >= SEQ_MAX_TRACKS * 2 || !parse_num(w[k], &gv[nv++]))
+				goto bad;
+		if (nv == 1)
+			for (k = 1; k < n; k++)
+				gv[k] = gv[0];
+		else if (nv != n)
+			goto bad;
+		if (!report(seq_set_gate(tracks, gv, n, gp))) {
+			fprintf(out, "  prev:");
+			for (k = 0; k < n; k++)
+				fprintf(out, " %g", gp[k]);
+			fprintf(out, "\n");
+		}
 	} else if (strcmp(cmd, "play") == 0) {
 		int mode;
 
@@ -656,11 +752,11 @@ static void do_line(char *line)
 			goto bad;
 		sleep_ms(v);
 	} else if (strcmp(cmd, "ports") == 0) {
-		struct seq_port_info pi[32];
-		int k, np = seq_dev_list(pi, 32);
+		struct seq_port_info pi[SEQ_MAX_PORTS];
+		int k, np = seq_dev_list(pi, SEQ_MAX_PORTS);
 
 		fprintf(out, "  %d port%s\n", np, np == 1 ? "" : "s");
-		for (k = 0; k < np && k < 32; k++)
+		for (k = 0; k < np && k < SEQ_MAX_PORTS; k++)
 			fprintf(out, "  %s  %s\n", pi[k].port, pi[k].name);
 	} else if (strcmp(cmd, "devdiag") == 0) {
 		struct seq_dev_diag dg;

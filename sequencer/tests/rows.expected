@@ -1,0 +1,129 @@
+# Phase 8: per-note velocity, length and channel (the matrix's rows 3-5,
+# seq_submit_track_ex()). A note is P:D:V:L:C; - is the track's setting.
+#
+# Velocity: the note's own times the track's velocity / 100, rounded,
+# kept to 1..127. At the default 100 it plays as written; - is the
+# track's velocity itself.
+open virtual
+track 1 60:1:80 62:1:- 64:1:127 65:1:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 4
+log
+  0.000 t0 0.000ms ON  ch1 60 v80
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 62 v100
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms ON  ch1 64 v127
+  3.000 t7560 1500.000ms OFF ch1 64
+  3.000 t7560 1500.000ms ON  ch1 65 v1
+# track velocity 50: 80 -> 40, - -> 50, 127 -> 64 (63.5 rounds up),
+# 1 -> 1 (0.5 rounds up; never 0, which would be a note-off)
+vel 1 = 50
+  prev: 100
+runto 8
+log
+  4.000 t10080 2000.000ms OFF ch1 65
+  4.000 t10080 2000.000ms ON  ch1 60 v40
+  5.000 t12600 2500.000ms OFF ch1 60
+  5.000 t12600 2500.000ms ON  ch1 62 v50
+  6.000 t15120 3000.000ms OFF ch1 62
+  6.000 t15120 3000.000ms ON  ch1 64 v64
+  7.000 t17640 3500.000ms OFF ch1 64
+  7.000 t17640 3500.000ms ON  ch1 65 v1
+# track velocity 127: 80 -> 102 (101.6), 127 -> 127 (161, kept to 127)
+vel 1 = 127
+  prev: 50
+runto 12
+log
+  8.000 t20160 4000.000ms OFF ch1 65
+  8.000 t20160 4000.000ms ON  ch1 60 v102
+  9.000 t22680 4500.000ms OFF ch1 60
+  9.000 t22680 4500.000ms ON  ch1 62 v127
+  10.000 t25200 5000.000ms OFF ch1 62
+  10.000 t25200 5000.000ms ON  ch1 64 v127
+  11.000 t27720 5500.000ms OFF ch1 64
+  11.000 t27720 5500.000ms ON  ch1 65 v1
+close
+  closed: 1
+#
+# Length: the note-off comes that long after the note-on, rounded to a
+# tick; a length longer than the step is shortened to it (62: 2 beats
+# in a 1-beat step, so as before, off where 64 starts); one tick is the
+# shortest (65). - is the whole step, as always.
+open virtual
+track 1 60:1:-:1/2 62:1:-:2 64:1:-:- 65:1/2:-:1/2520 r:1/2:-:7
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 4
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.500 t1260 250.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 62 v100
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms ON  ch1 64 v100
+  3.000 t7560 1500.000ms OFF ch1 64
+  3.000 t7560 1500.000ms ON  ch1 65 v100
+  3.000 t7561 1500.198ms OFF ch1 65
+state
+  seq: PLAYING beat 4.000 (t10080) tempo 120 tracks 1
+  track 1: notes 5 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 0.000 (t0)
+close
+  closed: 1
+#
+# Channel: per note, for that note only. The track's channel (1) is
+# what the state shows. Track 2 sounds 60 on channel 5 for 2 beats;
+# track 1's 60 on channel 5 is a re-strike, and its note-off doesn't
+# cut track 2's note: the off goes out only when both have ended.
+open virtual
+track 2:5 60:2
+  takes over at beat 0.000 (t0)
+track 1 60:1:-:-:5 62:1:-:-:- r:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 3
+log
+  0.000 t0 0.000ms ON  ch5 60 v100
+  0.000 t0 0.000ms ON  ch5 60 v100
+  1.000 t2520 500.000ms ON  ch1 62 v100
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms OFF ch5 60
+  2.000 t5040 1000.000ms ON  ch5 60 v100
+state
+  seq: PLAYING beat 3.000 (t7560) tempo 120 tracks 2
+  track 1: notes 3 ch 1 mute 0 loop 1 vel 100 length 3.000 (t7560) pending 0 position 0.000 (t0)
+  track 2: notes 1 ch 5 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520)
+close
+  closed: 1 2
+#
+# Errors, nothing changed: velocity 0 or 128, length 0, under a tick,
+# or negative other than -1, channel 0 or 17. Rests aren't looked at,
+# whatever their extra fields hold.
+open virtual
+track 1 60:1:0
+  error: SEQ_ERR_VALUE (value out of range)
+track 1 60:1:128
+  error: SEQ_ERR_VALUE (value out of range)
+track 1 60:1:-:0
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:1:-:1/5040
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:1:-:-2
+  error: SEQ_ERR_DURATION (bad duration)
+track 1 60:1:-:-:0
+  error: SEQ_ERR_CHANNEL (channel out of range)
+track 1 60:1:-:-:17
+  error: SEQ_ERR_CHANNEL (channel out of range)
+track 1 r:1:0:0:99 60:1:90:1/2:16
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 2
+log
+  1.000 t2520 500.000ms ON  ch16 60 v90
+  1.500 t3780 750.000ms OFF ch16 60
+close
+  closed: 1

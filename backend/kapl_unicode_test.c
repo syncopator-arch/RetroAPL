@@ -7,10 +7,11 @@
 	    cc -o kapl_unicode_test kapl_unicode_test.c
 	    ./kapl_unicode_test [path to kapl_unicode_mapping.hpp, or its directory]
 
-	With a path, it also checks that kapl_unicode.c's core table matches
-	the Qt front end's KaplToUnicodeTable[] entry for entry -- the two
-	copies must never drift apart. (This replaced check_kapl_tables.sh,
-	whose shell tools behaved differently under Windows shells.)
+	With a path, it also checks that kapl_unicode.c's core table and
+	alias table match the Qt front end's KaplToUnicodeTable[] and
+	KaplAliasTable[] entry for entry -- the copies must never drift
+	apart. (This replaced check_kapl_tables.sh, whose shell tools behaved
+	differently under Windows shells.)
 
 	Prints each failure and a summary; exit status is the failure count
 	(0 = all passed).
@@ -101,6 +102,7 @@ test_utf8_in(void)
 	expect_font("X\xE2\x86\x90\xE2\x8D\xB4\xE2\x8D\xB3" "3",
 		"X\xFB\xD2\xC9" "3", 0, "X<-rho iota 3");
 	expect_font("\xCF\x81\xCE\xB9", "\xD2\xC9", 0, "Greek rho iota aliases");
+	expect_font("1\xE2\x88\xA7" "0", "1^0", 0, "U+2227 and becomes font 0x5E");
 	expect_font("5|7", "5\xCD" "7", 0, "ASCII bar becomes stile");
 	expect_font("\xC3\xA9", "\xE9", 0, "e-acute passes through");
 	expect_font("\xF0\x9F\x98\x80" "A", "?A", KAPL_BADCHARS, "emoji");
@@ -140,20 +142,61 @@ test_utf8_out(void)
 }
 
 /*
- * Compare the core table against kapl_unicode_mapping.hpp. Every
- * "{0xKK, 0xUUUU}" pair in the .hpp file must appear in kapl_table[] and
- * vice versa. path may name the file or the directory containing it.
+ * Compare kapl_unicode.c's tables against kapl_unicode_mapping.hpp's.
+ * The .hpp marks each table with a pair of comment lines, "BEGIN KAPL
+ * TABLE"/"END KAPL TABLE" and "BEGIN KAPL ALIASES"/"END KAPL ALIASES";
+ * every "{0xKK, 0xUUUU}" pair between a table's markers must appear in
+ * the matching C table and vice versa (pairs, not positions: order and
+ * repeated font bytes don't matter). path may name the file or the
+ * directory containing it.
  */
+static void
+compare_section(const char *buf, const char *fname, const char *what,
+	const char *begin, const char *end_mark,
+	const struct kapl_entry *tab, int tabsize)
+{
+	unsigned hk[256], hu[256];
+	int nh = 0, i, j, found;
+	unsigned k, u;
+	const char *b, *e, *p;
+
+	b = strstr(buf, begin);
+	e = b ? strstr(b, end_mark) : NULL;
+	if (!b || !e) {
+		CHECK(0, "%s: no \"%s\" ... \"%s\" markers", fname, begin, end_mark);
+		return;
+	}
+	for (p = strstr(b, "{0x"); p && p < e; p = strstr(p + 1, "{0x")) {
+		if (sscanf(p, "{0x%x , 0x%x}", &k, &u) == 2 && nh < 256) {
+			hk[nh] = k;
+			hu[nh] = u;
+			nh++;
+		}
+	}
+	CHECK(nh > 0, "%s: no %s entries found between the markers", fname, what);
+	if (!nh) return;
+
+	for (i = 0; i < nh; i++) {
+		for (found = 0, j = 0; j < tabsize && !found; j++)
+			found = (tab[j].kapl == hk[i] && tab[j].unicode == hu[i]);
+		CHECK(found, "%s only in .hpp: {0x%02X, 0x%04X}", what, hk[i], hu[i]);
+	}
+	for (j = 0; j < tabsize; j++) {
+		for (found = 0, i = 0; i < nh && !found; i++)
+			found = (tab[j].kapl == hk[i] && tab[j].unicode == hu[i]);
+		CHECK(found, "%s only in kapl_unicode.c: {0x%02X, 0x%04X}", what,
+			tab[j].kapl, (unsigned)tab[j].unicode);
+	}
+	printf("kapl_unicode_test: compared %d %s entries against %s\n",
+		nh, what, fname);
+}
+
 static void
 test_hpp_match(const char *path)
 {
 	static char buf[65536];
 	char fname[1024];
-	unsigned hk[256], hu[256];
-	int nh = 0, i, j, found;
-	unsigned k, u;
 	size_t n;
-	char *p;
 	FILE *fp;
 
 	snprintf(fname, sizeof fname, "%s/kapl_unicode_mapping.hpp", path);
@@ -171,28 +214,10 @@ test_hpp_match(const char *path)
 	buf[n] = '\0';
 	CHECK(n < sizeof buf - 1, "%s: larger than expected, may be truncated", fname);
 
-	for (p = strstr(buf, "{0x"); p; p = strstr(p + 1, "{0x")) {
-		if (sscanf(p, "{0x%x , 0x%x}", &k, &u) == 2 && nh < 256) {
-			hk[nh] = k;
-			hu[nh] = u;
-			nh++;
-		}
-	}
-	CHECK(nh > 0, "%s: no table entries found (wrong file?)", fname);
-	if (!nh) return;
-
-	for (i = 0; i < nh; i++) {
-		for (found = 0, j = 0; j < KAPL_TABLE_SIZE && !found; j++)
-			found = (kapl_table[j].kapl == hk[i] && kapl_table[j].unicode == hu[i]);
-		CHECK(found, "only in .hpp: {0x%02X, 0x%04X}", hk[i], hu[i]);
-	}
-	for (j = 0; j < KAPL_TABLE_SIZE; j++) {
-		for (found = 0, i = 0; i < nh && !found; i++)
-			found = (kapl_table[j].kapl == hk[i] && kapl_table[j].unicode == hu[i]);
-		CHECK(found, "only in kapl_unicode.c: {0x%02X, 0x%04X}",
-			kapl_table[j].kapl, (unsigned)kapl_table[j].unicode);
-	}
-	printf("kapl_unicode_test: compared %d entries against %s\n", nh, fname);
+	compare_section(buf, fname, "table", "BEGIN KAPL TABLE", "END KAPL TABLE",
+		kapl_table, KAPL_TABLE_SIZE);
+	compare_section(buf, fname, "alias", "BEGIN KAPL ALIASES", "END KAPL ALIASES",
+		kapl_alias, KAPL_ALIAS_SIZE);
 }
 
 int

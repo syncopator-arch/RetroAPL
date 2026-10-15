@@ -1,0 +1,289 @@
+# Opening a port by device name (Phase 8, fake device): the first port
+# in the list whose label contains the name, ignoring case. Labels are
+# plain ASCII (a byte outside 32..126 shows as ?), and a name is matched
+# against the label as listed. No match is "no such port"; a malformed
+# hw: name, or an empty one, is "not understood". The name is looked up
+# again at every open, so a device that comes back as another card is
+# found again, including when reopening after a lost port.
+fakedev port 1 0 2
+fakedev port 3 0 1
+fakedev name 3 U2MIDI Pro
+fakedev port 5 0 1
+fakedev name 5 Caf\xe9 Synth
+ports
+  4 ports
+  hw:1,0,0  Fake card 1 / Fake MIDI 0 / Fake MIDI 0-0
+  hw:1,0,1  Fake card 1 / Fake MIDI 0 / Fake MIDI 0-1
+  hw:3,0,0  U2MIDI Pro / Fake MIDI 0 / Fake MIDI 0-0
+  hw:5,0,0  Caf? Synth / Fake MIDI 0 / Fake MIDI 0-0
+# a name, in either case (the library folds A-Z itself)
+open device u2midi
+close
+  closed: (none)
+open device U2MIDI PRO
+fakedev log
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC3: ok
+  ioctl prefer-subdevice 0
+  open midiC3D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC3
+  close midiC3D0 sub 0
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC3: ok
+  ioctl prefer-subdevice 0
+  open midiC3D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC3
+close
+  closed: (none)
+# a subdevice's own name: the second port of card 1
+open device midi 0-1
+fakedev log
+  close midiC3D0 sub 0
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC1: ok
+  ioctl prefer-subdevice 1
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 1
+  close controlC1
+close
+  closed: (none)
+# several match: the first in the list (hw:1,0,0)
+open device fake
+fakedev log
+  close midiC1D0 sub 1
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC1: ok
+  ioctl prefer-subdevice 0
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC1
+close
+  closed: (none)
+# only the first match is tried: busy, though hw:1,0,1 is free
+fakedev busy 1 0 0
+open device fake
+  error: SEQ_ERR_PORT_BUSY (MIDI port in use)
+fakedev free 1 0 0
+# ? in a name is only itself
+open device caf? synth
+close
+  closed: (none)
+open device caf?? synth
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+open device nothing like it
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+devdiag
+  failed: find by name (no port with that name)
+  writes 0, waited 0, subdevice -1
+# the hw: form as before, now in either case; a malformed one
+open device HW:3,0,0
+close
+  closed: (none)
+open device hw:x
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+open device
+  error: SEQ_ERR_PORT_NAME (MIDI port name not understood)
+fakedev log
+  close midiC1D0 sub 0
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC1: ok
+  ioctl prefer-subdevice 0
+  open midiC1D0 nonblock: Device or resource busy
+  close controlC1
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC5: ok
+  ioctl prefer-subdevice 0
+  open midiC5D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC5
+  close midiC5D0 sub 0
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC1: ok
+  close controlC1
+  open controlC3: ok
+  close controlC3
+  open controlC5: ok
+  close controlC5
+  open controlC3: ok
+  ioctl prefer-subdevice 0
+  open midiC3D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC3
+  close midiC3D0 sub 0
+# the cable comes back as card 4: the name finds it there
+fakedev unplug 3
+open device u2midi
+  error: SEQ_ERR_PORT (MIDI port could not be opened)
+fakedev port 4 0 1
+fakedev name 4 U2MIDI Pro
+open device u2midi
+fakedev log
+  open controlC1: ok
+  close controlC1
+  open controlC3: No such file or directory
+  open controlC5: ok
+  close controlC5
+  open controlC1: ok
+  close controlC1
+  open controlC3: No such file or directory
+  open controlC4: ok
+  close controlC4
+  open controlC5: ok
+  close controlC5
+  open controlC4: ok
+  ioctl prefer-subdevice 0
+  open midiC4D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC4
+close
+  closed: (none)
+# no match while a card can't be read (no permission): that is the
+# likelier reason, so "no permission" rather than "no such port"
+fakedev deny 1
+open device nothing like it
+  error: SEQ_ERR_PORT_ACCESS (no permission for MIDI port)
+devdiag
+  failed: find by name (no port with that name, and a card was refused: no permission)
+  writes 0, waited 0, subdevice -1
+open device u2midi
+close
+  closed: (none)
+# lost while playing, back as card 6: reopening by name finds it, and
+# the held note is released there. Tempo 120, a beat is 500 ms; the
+# port is lost at beat 2 by 45's note-off, with 60 still sounding.
+open device u2midi
+track 1 45:2 52:2
+  takes over at beat 0.000 (t0)
+track 2 60:4
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+sleep 250
+fakedev unplug 4
+sleep 1000
+state
+  seq: PORT_LOST beat 2.000 (t5040) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+fakedev port 6 0 1
+fakedev name 6 U2MIDI Pro
+fakedev log
+  close midiC4D0 sub 0
+  open controlC1: Permission denied
+  open controlC3: No such file or directory
+  open controlC4: ok
+  close controlC4
+  open controlC5: ok
+  close controlC5
+  open controlC1: Permission denied
+  open controlC3: No such file or directory
+  open controlC4: ok
+  close controlC4
+  open controlC5: ok
+  close controlC5
+  open controlC4: ok
+  ioctl prefer-subdevice 0
+  open midiC4D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC4
+  close midiC4D0 sub 0
+  open controlC1: Permission denied
+  open controlC3: No such file or directory
+  open controlC4: ok
+  close controlC4
+  open controlC5: ok
+  close controlC5
+  open controlC4: ok
+  ioctl prefer-subdevice 0
+  open midiC4D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC4
+  write 90 2d 64
+  write 91 3c 64
+  write: No such device
+  close midiC4D0 sub 0
+open device u2midi
+state
+  seq: STOPPED beat 2.000 (t5040) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040)
+devdiag
+  failed: (none)
+  writes 18, waited 0, subdevice 0
+close
+  closed: 1 2
+fakedev log
+  open controlC1: Permission denied
+  open controlC3: No such file or directory
+  open controlC4: No such file or directory
+  open controlC5: ok
+  close controlC5
+  open controlC6: ok
+  close controlC6
+  open controlC6: ok
+  ioctl prefer-subdevice 0
+  open midiC6D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC6
+  write 80 2d 00
+  write 81 3c 00
+  write b0 7b 00
+  write b1 7b 00
+  write b2 7b 00
+  write b3 7b 00
+  write b4 7b 00
+  write b5 7b 00
+  write b6 7b 00
+  write b7 7b 00
+  write b8 7b 00
+  write b9 7b 00
+  write ba 7b 00
+  write bb 7b 00
+  write bc 7b 00
+  write bd 7b 00
+  write be 7b 00
+  write bf 7b 00
+  close midiC6D0 sub 0

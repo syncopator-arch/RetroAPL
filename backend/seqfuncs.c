@@ -24,6 +24,16 @@
 	default from then on), and the wait arms the library's event wait
 	(seq_request_event()) instead of its beat wait.
 
+	Phase 8, step 1 (Oct 15, 2026): ⎕SEQOPEN takes a device name (the
+	library looks it up; any port name that isn't "hw:..." on Linux or
+	a number on Windows is one), and ⎕SEQPORTS (slot 16) lists the
+	output ports.
+
+	Phase 8, step 2 (Oct 15, 2026): ⎕SEQTRACK's matrix may have 3 to 5
+	rows: per-note velocity, length and channel after the pitches and
+	steps; ⎕SEQGATE (slot 17) sets each track's gate; ⎕SEQSTATE's
+	track rows gain column 11, the gate.
+
 	House rules followed here:
 	  - Every function produces a new value: arguments are copied out
 	    of the workspace first (into malloc'd C arrays -- the library
@@ -82,6 +92,8 @@ UCHAR seq_fnames[] = {
 	'E','V','P','O','S','T',0,		/* 13 test: apl_cli only (Phase 7a) */
 	'S','E','Q','N','O','T','E','S',0,	/* 14 note events (Phase 7c) */
 	'S','E','Q','B','E','A','T',0,		/* 15 beat events (Phase 7c) */
+	'S','E','Q','P','O','R','T','S',0,	/* 16 the output ports (Phase 8) */
+	'S','E','Q','G','A','T','E',0,		/* 17 the gate (Phase 8) */
 	0,0,0
 };
 
@@ -102,6 +114,8 @@ UCHAR seq_ftypes[] = {
 	MONAD,		/* 13 EVPOST kind,values */
 	DYAD,		/* 14 tracks SEQNOTES flags */
 	MONAD_OPT,	/* 15 SEQBEAT, SEQBEAT←0/1 */
+	NILAD,		/* 16 SEQPORTS */
+	DYAD,		/* 17 tracks SEQGATE fractions */
 	0
 };
 
@@ -111,11 +125,15 @@ UCHAR seq_ftypes[] = {
 	the in-memory log), whatever port it names, so a program written
 	for a real port runs unchanged under the regression tests. The
 	argument is still checked for type. Never set by the GUI.
+	Phase 8: a device name opens it too (nothing is looked up), and
+	⎕SEQPORTS returns a fixed list (ports_test[] below) instead of the
+	machine's ports, so a test reads the same on every machine.
 */
 int seqf_virtual = 0;
 
 #define TPB	((double)SEQ_TICKS_PER_BEAT)
-#define NCOLS	10			/* ⎕SEQSTATE columns (10th: 7c) */
+#define NCOLS	11			/* ⎕SEQSTATE columns (10th: 7c;
+					   11th, the gate: Phase 8) */
 #define EV_LIMIT 10000			/* beats the virtual clock runs
 					   looking for a wait's event (7c) */
 #define PORT_MAX 255			/* longest port name accepted */
@@ -443,7 +461,13 @@ done:
    directly). A name the library can't parse is a Domain Error: that's
    a mistake in the program, not a missing device. The name is passed
    as its bytes, as ⎕FOPEN passes a file name. Windows also takes the
-   device number as a number. */
+   device number as a number.
+   Phase 8 (Oct 15, 2026): any other text is a device name, which the
+   library looks up in its port list (the first port whose label
+   contains it, ignoring case); no match is 0, no such port (¯2 if a
+   device couldn't be read for lack of permission). So only
+   '' and (Linux) a malformed 'hw:...' are still Domain Errors;
+   'nonsense', a Domain Error before, now gives 0. */
 static short
 f_open(struct ValEnt *re)
 {
@@ -461,10 +485,9 @@ f_open(struct ValEnt *re)
 		port[n] = '\0';
 		/* Case doesn't matter (agreed Oct 5, 2026): the APL keyboard
 		   types upper case, and 'HW:3,0,0' should work without
-		   ⎕LCASE. Same change ⎕LCASE makes. Every name the library
-		   takes now is lower case or digits ("hw:C,D,S" on Linux, a
-		   number on Windows); opening by device name (Phase 8) will
-		   have to match names case-insensitively. */
+		   ⎕LCASE. Same change ⎕LCASE makes. A device name (Phase 8)
+		   is matched by the library ignoring the case of A-Z, so
+		   'U2MIDI' finds "U2MIDI Pro". */
 		for (i = 0; i < n; i++)
 			if (port[i] >= 'A' && port[i] <= 'Z') port[i] += 32;
 	}
@@ -510,17 +533,22 @@ f_close(void)
 	return push_ints(closed, n, 0);
 }
 
-/* t SEQTRACK M, or t c SEQTRACK M. M: 2 rows (pitches, durations in
+/* t SEQTRACK M, or t c SEQTRACK M. M: 2 rows (pitches, steps in
    beats), at least one column. Result: the beat at which this version
-   takes over. */
+   takes over.
+   Phase 8 (agreed Oct 15, 2026): 3 to 5 rows. Row 3 velocity, row 4
+   length in beats, row 5 channel, each per note; ¯1 is the track's
+   setting. Whole numbers in rows 3 and 5 (a fraction is a Domain
+   Error), as for pitches. A rest's rows 3-5 aren't looked at at all,
+   so anything there is accepted; the library checks the ranges. */
 static short
 f_track(struct ValEnt *le, struct ValEnt *re)
 {
-	int32_t track, channel, cols, i, v;
-	int32_t *pitch;
-	double *dur;
+	int32_t track, channel, cols, rows, i, v;
+	int32_t *pitch, *vel = NULL, *chan = NULL;
+	double *dur, *len = NULL;
 	int64_t swap;
-	short e;
+	short e = 0;
 	int r;
 
 	/* left: track, or track and channel */
@@ -535,39 +563,106 @@ f_track(struct ValEnt *le, struct ValEnt *re)
 	if (le->ve_length == 2 && channel == SEQ_UNCHANGED)
 		return SET_ERR(ERR_DOMAIN);
 
-	/* right: the 2×N matrix. ve_rho is columns first: rho[0] is N,
-	   rho[1] the row count (parse.h, struct ValEnt). */
+	/* right: the 2×N to 5×N matrix. ve_rho is columns first: rho[0]
+	   is N, rho[1] the row count (parse.h, struct ValEnt); the data is
+	   row by row, so row k's column i is element k*N + i. */
 	if (!is_numeric(re)) return SET_ERR(ERR_DOMAIN);
 	if (re->ve_rank != 2) return SET_ERR(ERR_RANK);
-	if (re->ve_rho[1] != 2 || re->ve_rho[0] < 1) return SET_ERR(ERR_LENGTH);
+	rows = re->ve_rho[1];
+	if (rows < 2 || rows > 5 || re->ve_rho[0] < 1) return SET_ERR(ERR_LENGTH);
 	cols = re->ve_rho[0];
 
 	pitch = malloc((size_t)cols * sizeof(int32_t));
 	dur = malloc((size_t)cols * sizeof(double));
-	if (!pitch || !dur)
+	if (rows >= 3) vel = malloc((size_t)cols * sizeof(int32_t));
+	if (rows >= 4) len = malloc((size_t)cols * sizeof(double));
+	if (rows >= 5) chan = malloc((size_t)cols * sizeof(int32_t));
+	if (!pitch || !dur || (rows >= 3 && !vel) || (rows >= 4 && !len)
+	    || (rows >= 5 && !chan))
 	{
-		free(pitch);
-		free(dur);
-		return SET_ERR(ERR_NOMEM);
+		e = SET_ERR(ERR_NOMEM);
+		goto done;
 	}
 	for (i = 0; i < cols; i++)
 	{
-		if ((e = whole(re, i, &v)) != 0)
-		{
-			free(pitch);
-			free(dur);
-			return e;
-		}
+		if ((e = whole(re, i, &v)) != 0) goto done;
 		pitch[i] = v;
 		dur[i] = elem(re, cols + i);
+		if (rows >= 3) vel[i] = SEQ_UNCHANGED;
+		if (rows >= 4) len[i] = -1.0;
+		if (rows >= 5) chan[i] = SEQ_UNCHANGED;
+		if (v == SEQ_REST) continue;	/* rows 3-5 not looked at */
+		if (rows >= 3 && (e = whole(re, 2 * cols + i, &vel[i])) != 0)
+			goto done;
+		if (rows >= 4) len[i] = elem(re, 3 * cols + i);
+		if (rows >= 5 && (e = whole(re, 4 * cols + i, &chan[i])) != 0)
+			goto done;
 	}
 
-	r = seq_submit_track((int)track, (int)channel, pitch, dur, cols, &swap);
+	if (rows == 2)
+		r = seq_submit_track((int)track, (int)channel, pitch, dur, cols,
+		                     &swap);
+	else
+		r = seq_submit_track_ex((int)track, (int)channel, pitch, dur,
+		                        vel, len, chan, cols, &swap);
+	if (r != SEQ_OK)
+	{
+		e = seq_apl_err(r);
+		goto done;
+	}
+	stack_pop(2);
+	e = push_float((double)swap / TPB);
+done:
 	free(pitch);
 	free(dur);
-	if (r != SEQ_OK) return seq_apl_err(r);
+	free(vel);
+	free(len);
+	free(chan);
+	return e;
+}
+
+/* tracks SEQGATE fractions (Phase 8): the fraction of each note's step
+   it sounds, for notes with no length of their own (row 4 absent or
+   ¯1). A list function like ⎕SEQVEL: one value for all the tracks or
+   one per track; greater than 0 and at most 1, default 1; the result
+   is the previous settings, floats, a scalar if the track list was.
+   Unlike the other list functions the values are fractions, so they
+   are read here rather than by get_list(). */
+static short
+f_gate(struct ValEnt *le, struct ValEnt *re)
+{
+	struct ValEnt *ve;
+	int *tracks;
+	double *vals = NULL, *prev = NULL;
+	int32_t n, nv, i;
+	int scalar, r;
+	short e;
+
+	if ((e = get_list(le, &tracks, &n)) != 0) return e;
+	scalar = (le->ve_rank == 0);
+	if (!is_numeric(re)) { e = SET_ERR(ERR_DOMAIN); goto done; }
+	if (re->ve_rank > 1) { e = SET_ERR(ERR_RANK); goto done; }
+	nv = re->ve_length;
+	if (nv != 1 && nv != n) { e = SET_ERR(ERR_LENGTH); goto done; }
+	vals = malloc(((size_t)n + 1) * sizeof(double));
+	prev = malloc(((size_t)n + 1) * sizeof(double));
+	if (!vals || !prev) { e = SET_ERR(ERR_NOMEM); goto done; }
+	for (i = 0; i < n; i++) vals[i] = elem(re, nv == 1 ? 0 : i);
+	if ((r = seq_set_gate(tracks, vals, (int)n, prev)) != SEQ_OK)
+	{
+		e = seq_apl_err(r);
+		goto done;
+	}
 	stack_pop(2);
-	return push_float((double)swap / TPB);
+	ve = make_temp(FCONST_CODE, scalar ? 0 : 1, (long)n);
+	if (!ve) { e = SET_ERR(ERR_WSFULL); goto done; }
+	if (!scalar) ve->ve_rho[0] = n;
+	memcpy(DATA_AD(ve), prev, (size_t)n * sizeof(double));
+done:
+	free(tracks);
+	free(vals);
+	free(prev);
+	return e;
 }
 
 /* SEQCLEAR tracks: those of the tracks given that held something. */
@@ -730,6 +825,7 @@ f_state(void)
 		row[7] = (double)info[i].pending;
 		row[8] = (double)info[i].position / TPB;
 		row[9] = (double)info[i].report;
+		row[10] = info[i].gate;			/* Phase 8 */
 	}
 	return 0;
 }
@@ -817,6 +913,77 @@ f_log(void)
 		memcpy(cp + (size_t)r * cols, line, (size_t)(end - line));
 	}
 	free(buf);
+	return 0;
+}
+
+/* SEQPORTS (Phase 8, step 1; Oct 15, 2026): the MIDI output ports, a
+   character matrix with one row per port: the port name (what
+   ⎕SEQOPEN takes), padded to the longest, two blanks, then the port's
+   label, which a device name given to ⎕SEQOPEN is matched against.
+   Rows in the library's list order, the order a name is matched in,
+   so the first row a name appears in is the port it opens. A 0×0
+   matrix if there are none (as ⎕SEQLOG). Works in every state and is
+   never an error except for space; doesn't need the sequencer open.
+   Labels come from the system (ALSA card, device and subdevice names;
+   WinMM device names), with any byte outside plain ASCII shown as ?
+   by the library, so a label always reads as it is matched.
+   Under apl_cli -S the rows are ports_test[], not the machine's. */
+
+static const struct seq_port_info ports_test[] = {
+	{ "hw:1,0,0", "Test Synth / Test Synth MIDI 1" },
+	{ "hw:2,0,0", "Test Cable / Test Cable MIDI 1" },
+	{ "hw:2,0,1", "Test Cable / Test Cable MIDI 2" },
+};
+
+static short
+f_ports(void)
+{
+	struct seq_port_info *list;
+	struct ValEnt *ve;
+	char *cp;
+	size_t pl, nl;
+	int32_t n, i, pw = 0, lw = 0, cols;
+
+	if (seqf_virtual)
+	{
+		list = (struct seq_port_info *)ports_test;
+		n = (int32_t)(sizeof ports_test / sizeof ports_test[0]);
+	}
+	else
+	{
+		list = malloc(SEQ_MAX_PORTS * sizeof *list);
+		if (!list) return SET_ERR(ERR_NOMEM);
+		n = seq_dev_list(list, SEQ_MAX_PORTS);
+		if (n > SEQ_MAX_PORTS) n = SEQ_MAX_PORTS;
+	}
+
+	for (i = 0; i < n; i++)
+	{
+		pl = strlen(list[i].port);
+		nl = strlen(list[i].name);
+		if ((int32_t)pl > pw) pw = (int32_t)pl;
+		if ((int32_t)nl > lw) lw = (int32_t)nl;
+	}
+	cols = n ? pw + 2 + lw : 0;
+
+	ve = make_temp(QUOT_CODE, 2, (long)n * cols);
+	if (!ve)
+	{
+		if (list != ports_test) free(list);
+		return SET_ERR(ERR_WSFULL);
+	}
+	ve->ve_rho[0] = cols;
+	ve->ve_rho[1] = n;
+	cp = DATA_AD(ve);
+	memset(cp, ' ', (size_t)n * cols);
+	for (i = 0; i < n; i++)
+	{
+		memcpy(cp + (size_t)i * cols, list[i].port,
+		       strlen(list[i].port));
+		memcpy(cp + (size_t)i * cols + pw + 2, list[i].name,
+		       strlen(list[i].name));
+	}
+	if (list != ports_test) free(list);
 	return 0;
 }
 
@@ -908,6 +1075,10 @@ struct ValEnt *le,*re;
 			return(list_set(seq_set_notes,le,re));
 		case 15:	/* SEQBEAT (7c) */
 			return(f_beat(re));
+		case 16:	/* SEQPORTS (Phase 8) */
+			return(f_ports());
+		case 17:	/* SEQGATE (Phase 8) */
+			return(f_gate(le,re));
 		case CLEANUP_FUNC:
 			return(0);
 	}

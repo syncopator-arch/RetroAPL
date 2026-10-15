@@ -33,6 +33,13 @@
 	(winpthreads, confirmed on Windows), see timed_wait(). Test mode:
 	S.vnow, simulated ns, moved only by the playback thread.
 
+	Notes (Phase 8, Oct 15, 2026). A version may carry, per note, a
+	velocity, a sounding length and a channel (the matrix's rows 3-5);
+	each note's note-on and the tick of its note-off are worked out
+	when it starts (note_vel(), note_chan(), note_end()). A track still
+	sounds one note at a time: a length never reaches past the next
+	note's start.
+
 	Floating point: positions and deadlines are computed in double.
 	Built with -ffp-contract=off so x86-64 and aarch64 round the same
 	way, which keeps the test logs identical on both.
@@ -58,6 +65,11 @@ struct version {
 	int64_t *start;		/* n + 1 entries: note starts in ticks,
 				   start[n] = loop length */
 	int      channel;	/* 1..16, fixed when submitted */
+	/* Phase 8: per note, each NULL if not given; 0 in an entry (and
+	   for every rest) means the track's setting */
+	unsigned char *vel;	/* 1..127, scaled by the track's velocity */
+	int64_t *len;		/* sounding length, ticks, >= 1 */
+	unsigned char *chan;	/* 1..16 */
 };
 
 struct track {
@@ -74,6 +86,9 @@ struct track {
 	int     loop;
 	int     velocity;
 	int     notes;		/* Phase 7c: reports note events */
+	double  gate;		/* Phase 8: sounding fraction of each
+				   note's step, (0, 1], for notes with
+				   no length of their own */
 
 	/* Phase 7c: the latest note started and not yet reported (only
 	   while notes is on): its pitch and column, and how many notes
@@ -411,14 +426,58 @@ static int send3(int status, int d1, int d2, int64_t tick)
 	return 0;
 }
 
-static int note_on(struct track *tr, int pitch, int chan, int64_t off,
-                   int64_t tick)
+static int note_on(struct track *tr, int pitch, int chan, int vel,
+                   int64_t off, int64_t tick)
 {
 	S.count[chan - 1][pitch]++;
 	tr->snd_pitch = pitch;
 	tr->snd_chan = chan;
 	tr->snd_off = off;
-	return send3(0x90 | (chan - 1), pitch, tr->velocity, tick);
+	return send3(0x90 | (chan - 1), pitch, vel, tick);
+}
+
+/* Phase 8: note i of version v, played by track tr. */
+
+/* Its note-on velocity: its own scaled by the track's ÷ 100, rounded
+   and kept to 1..127 (so with the track at the default 100 it plays as
+   written); else the track's. */
+static int note_vel(const struct track *tr, const struct version *v,
+                    int32_t i)
+{
+	int x;
+
+	if (!v->vel || !v->vel[i])
+		return tr->velocity;
+	x = (v->vel[i] * tr->velocity + 50) / 100;
+	return x < 1 ? 1 : x > 127 ? 127 : x;
+}
+
+static int note_chan(const struct version *v, int32_t i)
+{
+	return (v->chan && v->chan[i]) ? v->chan[i] : v->channel;
+}
+
+/* The tick of its note-off within the pass: its start plus its own
+   length, or else the track's gate times its step, at least one tick
+   and never past the next note's start (a longer length is shortened
+   to the step, agreed Oct 15, 2026). With neither, the next note's
+   start, as always. */
+static int64_t note_end(const struct track *tr, const struct version *v,
+                        int32_t i)
+{
+	int64_t step = v->start[i + 1] - v->start[i], len;
+
+	if (v->len && v->len[i])
+		len = v->len[i];
+	else if (tr->gate >= 1.0)
+		len = step;
+	else
+		len = (int64_t)(tr->gate * (double)step + 0.5);
+	if (len < 1)
+		len = 1;
+	if (len > step)
+		len = step;
+	return v->start[i] + len;
 }
 
 /* Releases the track's sounding note; the note-off goes out only when
@@ -481,6 +540,9 @@ static void free_version(struct version *v)
 	if (v) {
 		free(v->pitch);
 		free(v->start);
+		free(v->vel);
+		free(v->len);
+		free(v->chan);
 		free(v);
 	}
 }
@@ -574,12 +636,14 @@ static void play_tick(int64_t T)
 	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
 		struct track *tr = &S.tr[t];
 		struct version *v = tr->cur;
+		int32_t i;
 		int p;
 
 		if (!v || tr->next >= v->n
 		    || tr->pass_base + v->start[tr->next] != T)
 			continue;
-		p = v->pitch[tr->next];
+		i = tr->next;
+		p = v->pitch[i];
 		/* Phase 7c: recorded before the mute test, so a muted
 		   track still reports; a rest never does */
 		if (p != SEQ_REST && tr->notes) {
@@ -590,8 +654,8 @@ static void play_tick(int64_t T)
 		}
 		tr->next++;
 		if (p != SEQ_REST && !tr->mute)
-			if (note_on(tr, p, v->channel,
-			            tr->pass_base + v->start[tr->next], T) != 0)
+			if (note_on(tr, p, note_chan(v, i), note_vel(tr, v, i),
+			            tr->pass_base + note_end(tr, v, i), T) != 0)
 				return;
 	}
 	/* Phase 7c: notes, then the beat. While a wait for notes is
@@ -747,6 +811,7 @@ static void reset_tracks(void)
 		tr->channel = t;
 		tr->loop = SEQ_DEFAULT_LOOP;
 		tr->velocity = SEQ_DEFAULT_VELOCITY;
+		tr->gate = SEQ_DEFAULT_GATE;
 		tr->snd_pitch = -1;
 	}
 	memset(S.count, 0, sizeof S.count);
@@ -908,6 +973,7 @@ int seq_get_tracks(struct seq_track_info *info, int *n)
 			in->length = live ? length_of(tr->cur) : 0;
 			in->pending = (tr->pend != NULL) || (tr->cur && !live);
 			in->report = tr->notes;
+			in->gate = tr->gate;
 			in->position = 0;
 			if (live) {
 				int64_t q = pos - tr->pass_base;
@@ -976,9 +1042,13 @@ static int bad_track(int t)
 
 /* Converts a submission into a version: start ticks are the rounded
    running sums of the durations, each at least one tick after the
-   last. */
+   last. Phase 8: vel, len and chan (each may be NULL) are the per-note
+   values, SEQ_UNCHANGED (-1) for the track's setting; for a rest they
+   aren't looked at. */
 static int make_version(const int32_t *pitch, const double *dur,
-                        int32_t n, struct version **out)
+                        const int32_t *vel, const double *len,
+                        const int32_t *chan, int32_t n,
+                        struct version **out)
 {
 	struct version *v;
 	double sum = 0;
@@ -989,6 +1059,19 @@ static int make_version(const int32_t *pitch, const double *dur,
 	for (i = 0; i < n; i++) {
 		if (pitch[i] != SEQ_REST && (pitch[i] < 0 || pitch[i] > 127))
 			return SEQ_ERR_PITCH;
+		if (pitch[i] != SEQ_REST) {
+			if (vel && vel[i] != SEQ_UNCHANGED
+			    && (vel[i] < 1 || vel[i] > 127))
+				return SEQ_ERR_VALUE;
+			/* a length: -1, or at least one tick, with the
+			   same slack as a duration; rejects NaN */
+			if (len && len[i] != -1.0
+			    && !(len[i] * TPB >= 1.0 - 1e-9))
+				return SEQ_ERR_DURATION;
+			if (chan && chan[i] != SEQ_UNCHANGED
+			    && (chan[i] < 1 || chan[i] > 16))
+				return SEQ_ERR_CHANNEL;
+		}
 		/* a little slack, so 1/2520 computed in floating point
 		   still counts as one tick; also rejects NaN */
 		if (!(dur[i] * TPB >= 1.0 - 1e-9))
@@ -1005,6 +1088,29 @@ static int make_version(const int32_t *pitch, const double *dur,
 	if (!v->pitch || !v->start) {
 		free_version(v);
 		return SEQ_ERR_NOMEM;
+	}
+	if ((vel && !(v->vel = calloc((size_t)n, 1)))
+	    || (len && !(v->len = calloc((size_t)n, sizeof *v->len)))
+	    || (chan && !(v->chan = calloc((size_t)n, 1)))) {
+		free_version(v);
+		return SEQ_ERR_NOMEM;
+	}
+	for (i = 0; i < n; i++) {
+		if (pitch[i] == SEQ_REST)
+			continue;	/* 0: nothing of its own */
+		if (vel && vel[i] != SEQ_UNCHANGED)
+			v->vel[i] = (unsigned char)vel[i];
+		if (len && len[i] != -1.0) {
+			/* no longer than the longest track, so the ticks
+			   fit; note_end() shortens it to the step anyway */
+			double b = len[i] < SEQ_MAX_BEATS ? len[i]
+			                                  : SEQ_MAX_BEATS;
+			int64_t t = (int64_t)(b * TPB + 0.5);
+
+			v->len[i] = t < 1 ? 1 : t;
+		}
+		if (chan && chan[i] != SEQ_UNCHANGED)
+			v->chan[i] = (unsigned char)chan[i];
 	}
 	v->n = n;
 	memcpy(v->pitch, pitch, (size_t)n * sizeof *v->pitch);
@@ -1027,6 +1133,16 @@ int seq_submit_track(int track, int channel,
                      const int32_t *pitch, const double *dur, int32_t n,
                      int64_t *swap_tick)
 {
+	return seq_submit_track_ex(track, channel, pitch, dur, NULL, NULL,
+	                           NULL, n, swap_tick);
+}
+
+int seq_submit_track_ex(int track, int channel,
+                        const int32_t *pitch, const double *dur,
+                        const int32_t *vel, const double *len,
+                        const int32_t *chan, int32_t n,
+                        int64_t *swap_tick)
+{
 	struct version *v = NULL;
 	struct track *tr;
 	int64_t swap;
@@ -1036,7 +1152,7 @@ int seq_submit_track(int track, int channel,
 		return SEQ_ERR_TRACK;
 	if (channel != SEQ_UNCHANGED && (channel < 1 || channel > 16))
 		return SEQ_ERR_CHANNEL;
-	if ((r = make_version(pitch, dur, n, &v)) != SEQ_OK)
+	if ((r = make_version(pitch, dur, vel, len, chan, n, &v)) != SEQ_OK)
 		return r;
 
 	pthread_mutex_lock(&S.lock);
@@ -1192,6 +1308,30 @@ int seq_set_velocity(const int *tracks, const int *values, int n, int *prev)
 int seq_set_notes(const int *tracks, const int *values, int n, int *prev)
 {
 	return set_list(SET_NOTES, tracks, values, n, prev);
+}
+
+int seq_set_gate(const int *tracks, const double *values, int n,
+                 double *prev)
+{
+	int i, r;
+
+	if ((r = check_list(tracks, NULL, n, 0, 0)) != SEQ_OK)
+		return r;
+	for (i = 0; i < n; i++)
+		if (!(values[i] > 0.0 && values[i] <= 1.0))	/* and NaN */
+			return SEQ_ERR_VALUE;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		pthread_mutex_unlock(&S.lock);
+		return SEQ_ERR_NOT_OPEN;
+	}
+	if (prev)
+		for (i = 0; i < n; i++)
+			prev[i] = S.tr[tracks[i]].gate;
+	for (i = 0; i < n; i++)
+		S.tr[tracks[i]].gate = values[i];
+	pthread_mutex_unlock(&S.lock);
+	return SEQ_OK;
 }
 
 /* ── Transport and tempo ──────────────────────────────────────────── */
