@@ -1,0 +1,88 @@
+# Phase 7c: how late the last note event was handed over (ms, at the
+# current tempo; 120 bpm is 500 ms a beat). Closed: an error; open, 0
+# until the first note event.
+late
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+open virtual
+late
+  late: 0.000 ms
+track 1 60:1 62:1 64:1 65:1
+  takes over at beat 0.000 (t0)
+notes 1 = 1
+  prev: 0
+play continue
+  was playing: 0
+# A wait already armed gets its note as it starts: 0.
+evwait
+  armed (id 1)
+  event: NOTES 1 (id 1): t1 p60 i0 k1
+  holds at 0.000 (t1)
+late
+  late: 0.000 ms
+evwait
+  armed (id 2)
+  event: NOTES 1 (id 2): t1 p62 i1 k1
+  holds at 1.000 (t2521)
+late
+  late: 0.000 ms
+# Catch-up: busy until 5.5, the newest note (5) is half a beat old.
+runto 5.5
+evarm
+  event: NOTES 1 (id 3): t1 p62 i1 k4
+  armed (id 3)
+late
+  late: 250.000 ms
+# At 60 bpm the same gap would be twice as long: converted at the
+# current tempo (the value already taken is kept).
+tempo 60
+  prev: 120
+late
+  late: 250.000 ms
+runto 7.25
+evarm
+  event: NOTES 1 (id 4): t1 p65 i3 k2
+  armed (id 4)
+late
+  late: 250.000 ms
+# Two tracks with notes from different ticks: the newest counts
+# (track 1's 62 at 9, 0.75 beat at 60 bpm; track 2's 48 started at 8).
+track 2 48:3
+  takes over at beat 8.000 (t20160)
+notes 2 = 1
+  prev: 0
+runto 9.75
+evarm
+  event: NOTES 2 (id 5): t1 p62 i1 k2 t2 p48 i0 k1
+  armed (id 5)
+late
+  late: 750.000 ms
+# Beats don't change it.
+beats 1
+  prev: 0
+notes 1 2 = 0
+  prev: 1 1
+evwait
+  armed (id 6)
+  event: BEAT 10 (id 6)
+  holds at 10.000 (t25201)
+late
+  late: 750.000 ms
+# Stopped with notes outstanding: measured from the stopped position.
+notes 1 = 1
+  prev: 0
+runto 11.5
+play stop
+  was playing: 1
+evarm
+  event: NOTES 1 (id 7): t1 p65 i3 k1
+  armed (id 7)
+late
+  late: 500.000 ms
+# Reopened from closed: back to 0.
+close
+  closed: 1 2
+open virtual
+late
+  late: 0.000 ms
+close
+  closed: (none)

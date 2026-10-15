@@ -37,8 +37,13 @@
 	Without -t, prompts are shown only when stdin is a terminal, so
 	`apl_cli < script.apl` prints just the results.
 
-	Graphics are not supported yet: grfuncs.o is not linked, and the
-	placeholders at the end of this file stand in for it.
+	Graphics (Phase 7a): grfuncs.c is linked as in the GUI, against
+	cli_graphics.c, a fake window table that draws nothing (see its
+	header for what is and isn't modelled). ⎕WCLICK waits in the event
+	hub (evhub.c) in test mode: its events come from ⎕EVPOST, and a
+	wait that runs out of them is a Domain Error, never a hang. The
+	few platform graphics hooks the backend still calls are
+	placeholders at the end of this file.
 */
 
 #include <stdio.h>
@@ -58,6 +63,7 @@ extern int  exec_apl_line(UCHAR *linebuf);
 extern void dll_cleanup(void);
 extern int  crash_log_pending(char *path, size_t pathsz, char *summary, size_t sumsz);	/* crashlog.c */
 extern int  seqf_virtual;	/* seqfuncs.c: -S */
+extern void cli_graphics_init(void);	/* cli_graphics.c */
 /* quad_syntax, QSYN_*: declared in parse.h, defined in parse.c */
 
 #define PROMPT		"     "		/* matches the GUI's INDENT */
@@ -332,6 +338,7 @@ main(int argc, char **argv)
 
 	platform_register(&cli_funcs);
 	platform_defaults();
+	cli_graphics_init();	/* window events from ⎕EVPOST */
 	report_pending_crash();
 
 	rc = dll_startup(0, 1 /* run boot fn if present */, wsname, argc, argv);
@@ -361,12 +368,11 @@ main(int argc, char **argv)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Graphics placeholders. grfuncs.o is left out of apl_cli (its      */
-/*  gw_*() calls resolve only against the Qt front end, which also    */
-/*  supplies sys_ctrl() and the rest of this set), so this file       */
-/*  defines them instead. (The platform files once carried the same   */
-/*  placeholders for the retired stub_test build.) Graphics calls do  */
-/*  nothing; replace these when graphics testing is taken up.         */
+/*  Platform graphics placeholders: hooks the backend calls that the  */
+/*  Qt front end defines (sys_ctrl() and the rest of this set). They  */
+/*  do nothing here. The graphics quad functions themselves are the   */
+/*  real grfuncs.c, against cli_graphics.c (Phase 7a); this file used */
+/*  to stand in for grfuncs.c's tables too.                           */
 /* ------------------------------------------------------------------ */
 
 int flush_graphics()                    { return 0; }
@@ -384,6 +390,3 @@ int g_sendpoints(long csz,long len,char *datap) { return 0; }
 void g_windowsize(long *lp)             { lp[0]=lp[1]=lp[2]=0; }
 short w_getnums()                       { return 0; }
 void set_window_title(long w,char *cp)  { }
-UCHAR graph_fnames[] = { 0 };
-UCHAR graph_ftypes[] = { 0 };
-short graph_funcs() { return(0); }

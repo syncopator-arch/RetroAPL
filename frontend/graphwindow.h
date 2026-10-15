@@ -11,6 +11,7 @@
 class QPaintEvent;
 class QCloseEvent;
 class QMouseEvent;
+class QKeyEvent;
 
 // One instance per open APL graphics window (WOPEN). Owns a retained
 // backing QImage; paintEvent() blits it -- drawing ops (Phase 2) will
@@ -213,15 +214,24 @@ signals:
     // button-filter open question). Fires on press, not release, per the
     // same doc's trigger decision. x,y are widget-local pixel coordinates,
     // same space WPOINTS/POLY/etc. already draw in. GraphManager connects
-    // to this at window-creation time (open()) for every window, but only
-    // acts on it while that handle is in the currently-armed set a
-    // WCLICK call populated -- see GraphManager::click().
+    // to this at window-creation time (open()) for every window and
+    // reports every click to the event hub (evhub.c), which uses it only
+    // while a WCLICK is waiting on that window (Phase 7a).
     void clicked(int handle, int x, int y);
+
+    // Escape pressed while this window has the keyboard (Phase 7b).
+    // GraphManager passes it to the event hub (evhub_escape()), which
+    // ends a WCLICK/EVWAIT wait in progress, as Escape in the terminal
+    // does; with nothing waiting it does nothing. Other keys, Ctrl-C
+    // included, aren't handled here (Ctrl-C stays a terminal key;
+    // agreed V89).
+    void escapePressed();
 
 protected:
     void paintEvent(QPaintEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     int    m_handle;

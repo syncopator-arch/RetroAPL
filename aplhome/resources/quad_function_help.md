@@ -1002,6 +1002,58 @@ S[1;2]                ⍝ state
 S[S[;1]⍳3;]           ⍝ track 3's row
 ```
 
+`⎕EVWAIT list`
+
+Waits for the next event from a source in `list` and returns what
+happened. For now the only source is `¯1`, the sequencer, and its only
+events are beats; window numbers (clicks) come later. The result is
+numbers only: the source first, then the kind of event, then whatever
+that kind reports, so different kinds may give different lengths.
+
+| Result | Meaning |
+| --- | --- |
+| `¯1 1 B` | a beat: `B` is the beat number |
+| `¯1 2 S` | the music stopped during the wait: `S` is the new state, as in `⎕SEQSTATE` (`1` stopped, `0` closed, `¯1` port lost) |
+| empty | nothing to wait for: the sequencer wasn't playing when the wait began |
+
+Each call waits for the next beat from now; beats aren't saved up
+while APL is busy. The beat number counts whole beats from `0` at
+`⎕SEQOPEN` and at a restart (`⎕SEQPLAY←2`), and isn't reset when a
+track loops, so a jump shows beats that went by while the program was
+busy (`1237` after `1234` means two were missed), and `8|B` gives the
+place in an 8-beat pattern started at beat 0. The beat arrives the
+moment its notes go out.
+
+Once the music stops, every call returns at once, so a loop must test
+the result. `2↑E` turns an empty result into `0 0`, so one test covers
+both "stopped" and "nothing to wait for". In a function:
+
+```
+L:E←⎕EVWAIT ¯1
+→(∨/¯1 1≠2↑E)/0        ⍝ not a beat: leave
+DRAW 4|E[⎕IO+2]        ⍝ one of four frames, in step with the beat
+→L
+```
+
+A track sent just after a beat that's not yet playing starts on the
+next beat, so "wait for a beat, then send" starts it in step. A new
+version of a playing track still waits for that track's loop to end;
+if the beat returned *is* the loop boundary, that boundary has already
+passed and the version takes over one loop later, so send variations
+during the loop rather than on its last beat.
+
+Right after `⎕SEQPLAY←1` the first beat returned is usually `1`: beat
+`0` is already under way. Ctrl+C interrupts a wait (and the line it's
+on) within about a twentieth of a second; Escape does the same for now.
+Closing the window during a wait ends it (`¯1 2 0`). `Length Error` if
+`list` is empty, `Rank Error` if it's a matrix, `Domain Error` for
+anything but `¯1` in it.
+
+```
+⎕EVWAIT ¯1              ⍝ next beat
+¯1 1 17
+```
+
 ---
 
 ## Sequencer Test Functions
@@ -1027,3 +1079,29 @@ beat, exact tick, simulated time since open, message
 (`8.000 t20160 4000.000ms ON  ch1 60 v100`). Nothing new gives a 0×0
 matrix. It still works after `⎕SEQCLOSE`, so the closing note-offs
 can be read.
+
+On the test backend, `⎕EVWAIT ¯1` plays everything up to and including
+the next beat at once and returns it, holding just past that beat, so
+a wait never takes real time and gives the same beat on every run.
+Right after `⎕SEQPLAY←1` it returns beat `0`, since the simulated
+clock hasn't moved.
+
+`⎕EVPOST kind,values` feeds window events to `⎕WCLICK` in `apl_cli`,
+the command-line front end the regression tests use, which has no real
+windows to click (its windows are a table that remembers their state
+but draws nothing). Each event goes to the waits that come after it,
+in order: a wait takes posted events until one ends it, and leaves the
+rest for the next wait. The first number says which event:
+
+| `kind,values` | Event |
+| --- | --- |
+| `1,w,x,y` | a left click in window `w` at `x,y` |
+| `2,w` | window `w` closed by the user |
+| `3` | Escape |
+| `4` | Ctrl+C |
+
+Returns how many events are now waiting. A `⎕WCLICK` with nothing
+posted to end it gives `Domain Error` instead of waiting forever. In
+the GUI `⎕EVPOST` always gives `Domain Error`; so does an unknown kind,
+a fraction, or a full queue (64 events). `Length Error` for the wrong
+number of values, `Rank Error` for a matrix.

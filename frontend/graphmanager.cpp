@@ -14,25 +14,13 @@
 #include <QDir>
 #include <QWindow>
 
-#include "depend.h"     /* UCHAR, PTF, ws_off_t, GLOBARGC, etc. --
-                           prerequisite for parse.h/mplmem.h/globals.h
-                           below, same order main.cpp already uses for
-                           the same reason (globals.h alone isn't
-                           self-contained -- it needs types from these
-                           three first). */
-#include "parse.h"      /* struct FuncEnt, MemEnt, parse types  */
-#include "mplmem.h"     /* workspace memory types               */
-#include "globals.h"    /* ABORTSIG -- polled, never cleared, by click()'s
-                           wait loop; see graphmanager.h's comment on
-                           g_graphicsWaitCancelled for why that flag needs
-                           its own separate lifecycle instead. */
+#include "evhub.h"      /* the event hub (backend): every click and
+                           window close is reported there; WCLICK's wait
+                           lives there since Phase 7a, not here. Until
+                           then this file also included depend.h/parse.h/
+                           mplmem.h/globals.h, for ABORTSIG alone. */
 
 GraphManager *g_graphManager = nullptr;
-
-// See graphmanager.h for what these coordinate and why they're plain,
-// unmarshaled globals (both sides live on the GUI thread).
-bool g_graphicsWaitActive = false;
-int g_graphicsWaitCancelled = 0;
 
 GraphManager::GraphManager(QObject *parent)
     : QObject(parent)
@@ -56,6 +44,7 @@ long GraphManager::registerWindow(GraphWindow *win, long x, long y)
 
     connect(win, &GraphWindow::closing, this, &GraphManager::onWindowClosing);
     connect(win, &GraphWindow::clicked, this, &GraphManager::onWindowClicked);
+    connect(win, &GraphWindow::escapePressed, this, &GraphManager::onWindowEscape);
 
     // x,y == -1,-1: system-default placement -- skip move(), let the
     // window manager place it. Confirmed real usage (GTEST), not
@@ -199,7 +188,7 @@ void GraphManager::close(long handle)
     GraphWindow *win = it.value();
     m_windows.erase(it);
     removeFromCreationOrder((int)handle);
-    cancelWaitIfArmed((int)handle);
+    evhub_closed(handle);   // ends a WCLICK wait on it, if any
 
     // Deliberately not going through win->close(): that would re-enter
     // closeEvent(), which would emit closing() for a handle we've already
@@ -744,7 +733,7 @@ void GraphManager::onWindowClosing(int handle)
 {
     m_windows.remove(handle);
     removeFromCreationOrder(handle);
-    cancelWaitIfArmed(handle);
+    evhub_closed(handle);   // ends a WCLICK wait on it, if any
 }
 
 void GraphManager::removeFromCreationOrder(int handle)
@@ -752,85 +741,20 @@ void GraphManager::removeFromCreationOrder(int handle)
     m_creationOrder.removeOne(handle);
 }
 
-void GraphManager::cancelWaitIfArmed(int handle)
-{
-    if (!m_clickLoop || !m_armedHandles.contains(handle)) return;
-    // Leave m_clickResult empty (it's already empty going into any wait,
-    // and nothing sets it except a real click) so click() reads this the
-    // same way it reads an escape-cancel or an abort -- the caller only
-    // ever sees "no click," never which specific reason.
-    m_clickLoop->quit();
-}
-
+// Every left click is reported to the event hub, waited for or not; the
+// hub drops it unless a WCLICK is waiting on this window (Phase 7a; until
+// then GraphManager::click() ran the wait here, in a nested QEventLoop).
 void GraphManager::onWindowClicked(int handle, int x, int y)
 {
-    if (!m_clickLoop || !m_armedHandles.contains(handle)) return;
-    m_clickResult = { (long)handle, (long)x, (long)y };
-    m_clickLoop->quit();
+    evhub_click(handle, x, y);
 }
 
-QVector<long> GraphManager::click(const QVector<long> &handles)
+// Escape with a graphics window active (Phase 7b): ends a WCLICK/EVWAIT
+// wait in progress; with nothing waiting, nothing happens, as in the
+// terminal.
+void GraphManager::onWindowEscape()
 {
-    // Guards against re-entrancy (see the header comment on why this
-    // can't happen from APL today but is worth not silently corrupting
-    // if it ever did) and against an empty handle list, which would
-    // otherwise arm nothing and then block forever with no way to ever
-    // satisfy the wait.
-    if (handles.isEmpty() || m_clickLoop) return QVector<long>();
-
-    // Arm only windows that could actually deliver a click: open and not
-    // hidden (minimized still counts -- the user can restore it and
-    // click). Handles that aren't open and open-but-hidden windows are
-    // both skipped (see header).
-    m_armedHandles.clear();
-    for (long h : handles) {
-        GraphWindow *win = m_windows.value((int)h, nullptr);
-        if (!win || win->isHidden()) continue;
-        m_armedHandles.insert((int)h);
-    }
-    // Nothing clickable in the list: nothing could ever satisfy this
-    // wait, so return the same empty "no click" result a cancel or a
-    // close-during-wait gives, immediately, rather than blocking until
-    // Escape/Ctrl+C.
-    if (m_armedHandles.isEmpty()) return QVector<long>();
-    m_clickResult.clear();
-
-    QEventLoop loop;
-    m_clickLoop = &loop;
-    g_graphicsWaitActive = true;
-    // A stale cancel from some earlier, already-finished wait shouldn't
-    // leak into this one -- e.g. Escape pressed a moment after a prior
-    // WCLICK already returned but before this one started arming.
-    g_graphicsWaitCancelled = 0;
-
-    // ~30-50ms poll, matching the estimate in
-    // apl_graphics_mouse_input_notes_v1.md. Checks both cancel channels
-    // on the same tick: ABORTSIG (Ctrl+C, or Escape when no wait was
-    // active to begin with) and g_graphicsWaitCancelled (Escape while
-    // this wait specifically is active). Either one just quits the loop
-    // with m_clickResult left empty -- see click()'s own doc comment for
-    // why cancel/closed/abort are deliberately not distinguished here.
-    QTimer pollTimer;
-    connect(&pollTimer, &QTimer::timeout, &loop, [&loop]() {
-        if (ABORTSIG || g_graphicsWaitCancelled) {
-            g_graphicsWaitCancelled = 0;   // consumed; ABORTSIG is NOT
-                                            // touched here -- clearing
-                                            // that one is exec_apl_line()'s
-                                            // job alone, same rule WNUMS'
-                                            // notes already establish.
-            loop.quit();
-        }
-    });
-    pollTimer.start(40);
-
-    loop.exec();
-
-    pollTimer.stop();
-    g_graphicsWaitActive = false;
-    m_clickLoop = nullptr;
-    m_armedHandles.clear();
-
-    return m_clickResult;
+    evhub_escape();
 }
 
 QVector<long> GraphManager::visState(const QVector<long> &handles) const

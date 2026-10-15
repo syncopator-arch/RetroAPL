@@ -73,6 +73,16 @@ struct track {
 	int     mute;
 	int     loop;
 	int     velocity;
+	int     notes;		/* Phase 7c: reports note events */
+
+	/* Phase 7c: the latest note started and not yet reported (only
+	   while notes is on): its pitch and column, and how many notes
+	   were started since the last one reported (0: nothing
+	   outstanding) */
+	int     ev_pitch;
+	int32_t ev_index;
+	int64_t ev_count;
+	int64_t ev_tick;	/* the tick it started on (lateness) */
 
 	/* the note this track has sounding (one at a time) */
 	int     snd_pitch;	/* -1 if none */
@@ -120,7 +130,23 @@ static struct {
 	int             wait_armed;
 	uint32_t        wait_id;
 	uint32_t        next_id;
-	int64_t         wait_tick;
+	int64_t         wait_tick;	/* the beat asked for; INT64_MAX if
+					   the wait doesn't take beats */
+	int             wait_notes;	/* Phase 7c: the wait takes notes */
+	int             beats_on;	/* Phase 7c: seq_set_beats() */
+	int             run_event;	/* Phase 7c, test mode: hold just
+					   past the tick that ends the wait */
+	/* Phase 7c: the last notes handed to the callback, kept until
+	   the next wait is armed, so that seq_cancel_wait() for that id
+	   can hand them back (the caller didn't take them) */
+	uint32_t        given_id;	/* 0: none kept */
+	int64_t         given_count[SEQ_MAX_TRACKS + 1];
+	int             given_pitch[SEQ_MAX_TRACKS + 1];
+	int32_t         given_index[SEQ_MAX_TRACKS + 1];
+	int64_t         given_tick[SEQ_MAX_TRACKS + 1];
+	/* Phase 7c: how late the last note event was handed over, ms
+	   (seq_get_note_late()); 0 until the first */
+	double          late_ms;
 } S = { .lock = PTHREAD_MUTEX_INITIALIZER };
 
 static pthread_once_t init_once = PTHREAD_ONCE_INIT;
@@ -270,6 +296,63 @@ static void notify(int kind, uint32_t id, int64_t beat, int reason)
 	ev.beat = beat;
 	ev.reason = reason;
 	S.notify(S.ctx, &ev);
+}
+
+/* Phase 7c: 1 if some track has a note not yet reported. */
+static int notes_outstanding(void)
+{
+	int t;
+
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+		if (S.tr[t].ev_count > 0)
+			return 1;
+	return 0;
+}
+
+/* Phase 7c: hands every outstanding note to the callback as one
+   SEQ_EV_NOTES for request id, and clears them. The wait is over.
+   pos is the position now, in ticks: how late the newest note in the
+   event is handed over is pos less its tick, at the current tempo. */
+static void deliver_notes(uint32_t id, double pos)
+{
+	struct seq_event ev;
+	int t;
+	int64_t newest = -1;
+
+	S.wait_armed = 0;
+	memset(S.given_count, 0, sizeof S.given_count);
+	memset(&ev, 0, sizeof ev);
+	ev.kind = SEQ_EV_NOTES;
+	ev.request_id = id;
+	ev.reason = SEQ_OK;
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+		struct seq_note_event *ne;
+
+		if (tr->ev_count <= 0)
+			continue;
+		ne = &ev.notes[ev.nnotes++];
+		ne->track = t;
+		ne->pitch = tr->ev_pitch;
+		ne->index = tr->ev_index;
+		ne->count = (tr->ev_count > INT32_MAX) ? INT32_MAX
+		                                       : (int32_t)tr->ev_count;
+		S.given_count[t] = tr->ev_count;
+		S.given_pitch[t] = tr->ev_pitch;
+		S.given_index[t] = tr->ev_index;
+		S.given_tick[t] = tr->ev_tick;
+		if (tr->ev_tick > newest)
+			newest = tr->ev_tick;
+		tr->ev_count = 0;
+	}
+	S.given_id = id;
+	/* ticks to ms at the current tempo, written so that whole
+	   numbers of ticks give exact results (half a beat at 120 is
+	   250, not 249.99999...) */
+	S.late_ms = (pos > (double)newest)
+	            ? (pos - (double)newest) * 60000.0 / (S.tempo * TPB) : 0.0;
+	if (S.notify)
+		S.notify(S.ctx, &ev);
 }
 
 static void end_wait(int reason)
@@ -497,12 +580,30 @@ static void play_tick(int64_t T)
 		    || tr->pass_base + v->start[tr->next] != T)
 			continue;
 		p = v->pitch[tr->next];
+		/* Phase 7c: recorded before the mute test, so a muted
+		   track still reports; a rest never does */
+		if (p != SEQ_REST && tr->notes) {
+			tr->ev_pitch = p;
+			tr->ev_index = tr->next;
+			tr->ev_tick = T;
+			tr->ev_count++;
+		}
 		tr->next++;
 		if (p != SEQ_REST && !tr->mute)
 			if (note_on(tr, p, v->channel,
 			            tr->pass_base + v->start[tr->next], T) != 0)
 				return;
 	}
+	/* Phase 7c: notes, then the beat. While a wait for notes is
+	   armed, anything outstanding started on this tick (arming hands
+	   over anything older), so "any outstanding" is the test; it also
+	   covers this tick being finished after a lost port. A beat on a
+	   tick with notes is never reported: the wait is already over. */
+	if (S.wait_armed && S.wait_notes && notes_outstanding())
+		/* now: on the real clock, the time actually reached (any
+		   lateness of the playback thread itself shows); on the
+		   virtual clock, T, since the clock is at T */
+		deliver_notes(S.wait_id, is_virtual() ? (double)T : cur_pos());
 	if (S.wait_armed && S.wait_tick == T) {
 		S.wait_armed = 0;
 		notify(SEQ_EV_BEAT, S.wait_id, T / TPB, SEQ_OK);
@@ -621,6 +722,13 @@ static void *playback_thread(void *arg)
 		   what it has already done). */
 		if (S.state == SEQ_PLAYING && S.done <= T)
 			S.done = T + 1;
+		/* Phase 7c, seq_virtual_run_to_event(): the wait has had
+		   its event, so hold just past this tick */
+		if (S.run_event && !S.wait_armed) {
+			S.run_event = 0;
+			if (S.horizon > S.done)
+				S.horizon = S.done;
+		}
 	}
 	pthread_mutex_unlock(&S.lock);
 	return NULL;
@@ -691,6 +799,11 @@ int seq_open(const struct seq_config *cfg)
 			S.horizon = 0;
 			S.holding = 0;
 			S.wait_armed = 0;
+			S.wait_notes = 0;
+			S.beats_on = 0;		/* Phase 7c: off by default */
+			S.run_event = 0;
+			S.given_id = 0;
+			S.late_ms = 0;
 			S.next_id = 0;
 			S.quit = 0;
 			if (pthread_create(&S.thread, NULL,
@@ -794,6 +907,7 @@ int seq_get_tracks(struct seq_track_info *info, int *n)
 			in->notes = live ? tr->cur->n : 0;
 			in->length = live ? length_of(tr->cur) : 0;
 			in->pending = (tr->pend != NULL) || (tr->cur && !live);
+			in->report = tr->notes;
 			in->position = 0;
 			if (live) {
 				int64_t q = pos - tr->pass_base;
@@ -1005,14 +1119,14 @@ int seq_clear(const int *tracks, int n, int *prev)
 	return SEQ_OK;
 }
 
-enum { SET_MUTE, SET_LOOP, SET_VEL };
+enum { SET_MUTE, SET_LOOP, SET_VEL, SET_NOTES };
 
 static int set_list(int which, const int *tracks, const int *values,
                     int n, int *prev)
 {
 	int i, r;
 	int lo = (which == SET_VEL) ? 1 : 0;
-	int hi = (which == SET_VEL) ? 127 : 1;
+	int hi = (which == SET_VEL) ? 127 : 1;	/* 0/1 for the rest */
 
 	if ((r = check_list(tracks, values, n, lo, hi)) != SEQ_OK)
 		return r;
@@ -1026,7 +1140,8 @@ static int set_list(int which, const int *tracks, const int *values,
 			struct track *tr = &S.tr[tracks[i]];
 
 			prev[i] = which == SET_MUTE ? tr->mute
-			        : which == SET_LOOP ? tr->loop : tr->velocity;
+			        : which == SET_LOOP ? tr->loop
+			        : which == SET_NOTES ? tr->notes : tr->velocity;
 		}
 	for (i = 0; i < n; i++) {
 		struct track *tr = &S.tr[tracks[i]];
@@ -1039,6 +1154,15 @@ static int set_list(int which, const int *tracks, const int *values,
 			break;
 		case SET_LOOP:
 			tr->loop = values[i];
+			break;
+		case SET_NOTES:
+			/* on: start with nothing outstanding; off: discard
+			   it; the same value: no change */
+			if (tr->notes != values[i]) {
+				tr->ev_count = 0;
+				S.given_count[tracks[i]] = 0;
+			}
+			tr->notes = values[i];
 			break;
 		default:
 			tr->velocity = values[i];
@@ -1063,6 +1187,11 @@ int seq_set_loop(const int *tracks, const int *values, int n, int *prev)
 int seq_set_velocity(const int *tracks, const int *values, int n, int *prev)
 {
 	return set_list(SET_VEL, tracks, values, n, prev);
+}
+
+int seq_set_notes(const int *tracks, const int *values, int n, int *prev)
+{
+	return set_list(SET_NOTES, tracks, values, n, prev);
 }
 
 /* ── Transport and tempo ──────────────────────────────────────────── */
@@ -1141,6 +1270,8 @@ int seq_play(int mode, int *prev)
 				}
 				tr->start_point = tr->pass_base = 0;
 				tr->next = 0;
+				tr->ev_count = 0;	/* Phase 7c */
+				S.given_count[t] = 0;
 			}
 			S.done = 0;
 			S.horizon = 0;
@@ -1206,6 +1337,99 @@ int seq_request_beat(uint32_t *request_id)
 			S.next_id = 1;
 		S.wait_id = S.next_id;
 		S.wait_tick = next_beat(avail_tick());
+		S.wait_notes = 0;
+		S.given_id = 0;
+		S.wait_armed = 1;
+		*request_id = S.wait_id;
+		wake_thread();
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+/* ── Event wait (Phase 7c) ────────────────────────────────────────── */
+
+int seq_set_beats(int on, int *prev)
+{
+	int r = SEQ_OK;
+
+	if (on != 0 && on != 1)
+		return SEQ_ERR_VALUE;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		r = SEQ_ERR_NOT_OPEN;
+	} else {
+		if (prev)
+			*prev = S.beats_on;
+		S.beats_on = on;
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_get_beats(int *on)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open())
+		r = SEQ_ERR_NOT_OPEN;
+	else
+		*on = S.beats_on;
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_get_note_late(double *ms)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open())
+		r = SEQ_ERR_NOT_OPEN;
+	else
+		*ms = S.late_ms;
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+/* 1 if some reporting track has a version, playing or waiting. */
+static int notes_possible(void)
+{
+	int t;
+
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+		if (S.tr[t].notes && (S.tr[t].cur || S.tr[t].pend))
+			return 1;
+	return 0;
+}
+
+int seq_request_event(uint32_t *request_id)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		r = SEQ_ERR_NOT_OPEN;
+	} else if (notes_outstanding()) {
+		/* hand them over now: any earlier wait is replaced */
+		S.given_id = 0;
+		if (++S.next_id == 0)
+			S.next_id = 1;
+		S.wait_id = S.next_id;
+		*request_id = S.wait_id;
+		deliver_notes(S.wait_id, cur_pos());	/* disarms */
+	} else if (S.state != SEQ_PLAYING) {
+		r = SEQ_ERR_NOT_PLAYING;
+	} else if (!S.beats_on && !notes_possible()) {
+		r = SEQ_ERR_NO_EVENT;
+	} else {
+		if (++S.next_id == 0)
+			S.next_id = 1;
+		S.wait_id = S.next_id;
+		S.wait_tick = S.beats_on ? next_beat(avail_tick()) : INT64_MAX;
+		S.wait_notes = 1;
+		S.given_id = 0;
 		S.wait_armed = 1;
 		*request_id = S.wait_id;
 		wake_thread();
@@ -1219,10 +1443,31 @@ int seq_cancel_wait(uint32_t request_id)
 	int r = SEQ_OK;
 
 	pthread_mutex_lock(&S.lock);
-	if (!is_open())
+	if (!is_open()) {
 		r = SEQ_ERR_NOT_OPEN;
-	else if (S.wait_armed && S.wait_id == request_id)
+	} else if (S.wait_armed && S.wait_id == request_id) {
 		S.wait_armed = 0;
+	} else if (request_id != 0 && S.given_id == request_id) {
+		/* Phase 7c: its notes were handed over but not taken: put
+		   them back, under anything newer (a newer note keeps its
+		   pitch and index; the count covers both) */
+		int t;
+
+		for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+			struct track *tr = &S.tr[t];
+
+			if (S.given_count[t] <= 0 || !tr->notes)
+				continue;
+			if (tr->ev_count <= 0) {
+				tr->ev_pitch = S.given_pitch[t];
+				tr->ev_index = S.given_index[t];
+				tr->ev_tick = S.given_tick[t];
+			}
+			tr->ev_count += S.given_count[t];
+		}
+		S.given_id = 0;
+		memset(S.given_count, 0, sizeof S.given_count);
+	}
 	pthread_mutex_unlock(&S.lock);
 	return r;
 }
@@ -1253,6 +1498,46 @@ int seq_virtual_run_to(int64_t tick)
 			r = SEQ_ERR_IO;
 		else if (S.state != SEQ_PLAYING || S.closing)
 			r = SEQ_ERR_NOT_PLAYING;
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_virtual_run_to_event(int64_t max_ticks)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open())
+		r = SEQ_ERR_NOT_OPEN;
+	else if (S.backend != SEQ_BACKEND_VIRTUAL)
+		r = SEQ_ERR_BACKEND;
+	else if (S.state == SEQ_PORT_LOST)
+		r = SEQ_ERR_IO;
+	else if (S.state != SEQ_PLAYING)
+		r = SEQ_ERR_NOT_PLAYING;
+	else if (S.wait_armed) {
+		int64_t limit = S.done + (max_ticks > 0 ? max_ticks : 1);
+
+		S.horizon = limit;
+		S.run_event = 1;
+		S.holding = 0;
+		wake_thread();
+		/* until the thread holds: just past the event (the thread
+		   moved the horizon there), or at the limit; or playback
+		   stopped (a lost port ends the wait with STOPPED) */
+		while (S.state == SEQ_PLAYING && !S.closing
+		       && !(S.holding && S.done == S.horizon))
+			pthread_cond_wait(&S.held, &S.lock);
+		S.run_event = 0;
+		if (!S.wait_armed)
+			r = SEQ_OK;
+		else if (S.state == SEQ_PORT_LOST)
+			r = SEQ_ERR_IO;
+		else if (S.state != SEQ_PLAYING || S.closing)
+			r = SEQ_ERR_NOT_PLAYING;
+		else
+			r = SEQ_ERR_NO_EVENT;
 	}
 	pthread_mutex_unlock(&S.lock);
 	return r;
@@ -1318,6 +1603,7 @@ const char *seq_strerror(int err)
 	case SEQ_ERR_PORT_BUSY:    return "MIDI port in use";
 	case SEQ_ERR_PORT_ACCESS:  return "no permission for MIDI port";
 	case SEQ_ERR_PORT_NAME:    return "MIDI port name not understood";
+	case SEQ_ERR_NO_EVENT:     return "no event to wait for";
 	default:                   return "unknown error";
 	}
 }

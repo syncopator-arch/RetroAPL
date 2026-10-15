@@ -1,0 +1,259 @@
+# Phase 7c: note events from chosen tracks, and the event wait.
+# evwait arms seq_request_event() and runs the virtual clock to its
+# event, holding one tick past it; evarm only arms.
+#
+# Nothing reports by default, and beats are off: playing with nothing
+# that can produce an event is SEQ_ERR_NO_EVENT (the glue skips the
+# sequencer), not a hang.
+open virtual
+beats
+  beats: 0
+state
+  seq: STOPPED beat 0.000 (t0) tempo 120 tracks 0
+track 1 60:1 62:1 64:1 65:1
+  takes over at beat 0.000 (t0)
+track 2 36:2 r:1 38:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+evarm
+  error: SEQ_ERR_NO_EVENT (no event to wait for)
+# Beats on: the event wait gives beats, as seq_request_beat() does.
+beats 1
+  prev: 0
+evwait
+  armed (id 1)
+  event: BEAT 0 (id 1)
+  holds at 0.000 (t1)
+evwait
+  armed (id 2)
+  event: BEAT 1 (id 2)
+  holds at 1.000 (t2521)
+beats 0
+  prev: 1
+# Track 2 reports. Its rest is a column (index 1) that never reports,
+# so after 38 at column 2 (beat 3) comes 36 at column 0 (beat 4).
+notes 2 = 1
+  prev: 0
+state
+  seq: PLAYING beat 1.000 (t2521) tempo 120 tracks 2
+  track 1: notes 4 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 1.000 (t2521)
+  track 2: notes 3 ch 2 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 1.000 (t2521) notes 1
+evwait
+  armed (id 3)
+  event: NOTES 1 (id 3): t2 p38 i2 k1
+  holds at 3.000 (t7561)
+evwait
+  armed (id 4)
+  event: NOTES 1 (id 4): t2 p36 i0 k1
+  holds at 4.000 (t10081)
+evwait
+  armed (id 5)
+  event: NOTES 1 (id 5): t2 p38 i2 k1
+  holds at 7.000 (t17641)
+# Two reporting tracks: notes on one tick come in one event, tracks
+# ascending. Track 1 is muted: it still reports (a sync track), and
+# the log shows no note-on for it.
+notes 1 = 1
+  prev: 0
+mute 1 = 1
+  prev: 0
+logdrop
+  (23 lines dropped)
+evwait
+  armed (id 6)
+  event: NOTES 2 (id 6): t1 p60 i0 k1 t2 p36 i0 k1
+  holds at 8.000 (t20161)
+evwait
+  armed (id 7)
+  event: NOTES 1 (id 7): t1 p62 i1 k1
+  holds at 9.000 (t22681)
+log
+  8.000 t20160 4000.000ms OFF ch2 38
+  8.000 t20160 4000.000ms ON  ch2 36 v100
+# Catch-up: busy until beat 15.5. Each track's latest note, with how
+# many it started since the last one reported, comes at once, in one
+# event, during the arm.
+runto 15.5
+evarm
+  event: NOTES 2 (id 8): t1 p65 i3 k6 t2 p38 i2 k3
+  armed (id 8)
+evwait
+  armed (id 9)
+  event: NOTES 2 (id 9): t1 p60 i0 k1 t2 p36 i0 k1
+  holds at 16.000 (t40321)
+# A wait that ended some other way while its notes were on their way
+# (the interpreter's hub refuses them then): cancelling it puts them
+# back for the next wait, under any newer note (62 at 17 handed over
+# and not taken, then 64 at 18: the next wait gets 64 with a count
+# of 2).
+evarm
+  armed (id 10)
+runto 17.5
+  event: NOTES 1 (id 10): t1 p62 i1 k1
+runto 18.5
+cancel
+evarm
+  event: NOTES 1 (id 11): t1 p64 i2 k2
+  armed (id 11)
+# Turning a track off discards what it had; on again starts fresh;
+# setting the value it already has keeps it (track 2's 38 at 19).
+runto 19.5
+notes 1 = 0
+  prev: 1
+notes 2 = 1
+  prev: 1
+evarm
+  event: NOTES 1 (id 12): t2 p38 i2 k1
+  armed (id 12)
+notes 1 = 1
+  prev: 0
+evwait
+  armed (id 13)
+  event: NOTES 2 (id 13): t1 p60 i0 k1 t2 p36 i0 k1
+  holds at 20.000 (t50401)
+# Notes and beats on one tick: the notes win, that beat is gone. Track
+# 2 alone (notes at 0 and 3 of every 4): beats 21 and 22 come as
+# beats, then the note at 23.
+notes 1 = 0
+  prev: 1
+beats 1
+  prev: 0
+evwait
+  armed (id 14)
+  event: BEAT 21 (id 14)
+  holds at 21.000 (t52921)
+evwait
+  armed (id 15)
+  event: BEAT 22 (id 15)
+  holds at 22.000 (t55441)
+evwait
+  armed (id 16)
+  event: NOTES 1 (id 16): t2 p38 i2 k1
+  holds at 23.000 (t57961)
+evwait
+  armed (id 17)
+  event: NOTES 1 (id 17): t2 p36 i0 k1
+  holds at 24.000 (t60481)
+beats 0
+  prev: 1
+# A new version restarts the index; it takes over at track 1's
+# boundary (beat 28).
+notes 1 = 1
+  prev: 0
+notes 2 = 0
+  prev: 1
+track 1 70:1/2 71:1/2 72:1 73:2
+  takes over at beat 28.000 (t70560)
+evwait
+  armed (id 18)
+  event: NOTES 1 (id 18): t1 p62 i1 k1
+  holds at 25.000 (t63001)
+evwait
+  armed (id 19)
+  event: NOTES 1 (id 19): t1 p64 i2 k1
+  holds at 26.000 (t65521)
+evwait
+  armed (id 20)
+  event: NOTES 1 (id 20): t1 p65 i3 k1
+  holds at 27.000 (t68041)
+evwait
+  armed (id 21)
+  event: NOTES 1 (id 21): t1 p70 i0 k1
+  holds at 28.000 (t70561)
+# Stopped with notes outstanding: handed over all the same. Stopped
+# with none: not playing.
+runto 30.5
+play stop
+  was playing: 1
+evarm
+  event: NOTES 1 (id 22): t1 p73 i3 k3
+  armed (id 22)
+evarm
+  error: SEQ_ERR_NOT_PLAYING (not playing)
+# A restart discards what is outstanding (70 at beat 32): the wait
+# arms instead of handing it over, and the next event is beat 0's.
+play continue
+  was playing: 0
+runto 32.5
+play restart
+  was playing: 1
+evarm
+  armed (id 23)
+evwait
+  armed (id 24)
+  event: NOTES 1 (id 24): t1 p70 i0 k1
+  holds at 0.000 (t1)
+# A reporting track that can't report any more: cleared while stopped
+# (at once), it no longer counts, so with nothing else the wait is
+# skipped.
+notes 1 = 0
+  prev: 1
+notes 2 = 1
+  prev: 0
+play stop
+  was playing: 1
+clear 2
+  held: 1
+play continue
+  was playing: 0
+evarm
+  error: SEQ_ERR_NO_EVENT (no event to wait for)
+# One whose notes are all rests still counts; the virtual clock gives
+# up at the limit (here 4 beats), holding there with the wait armed.
+track 2 r:1
+  takes over at beat 1.000 (t2520)
+evwait 4
+  armed (id 25)
+  error: SEQ_ERR_NO_EVENT (no event to wait for)
+  holds at 4.000 (t10081)
+cancel
+# A lost port during a wait ends it with STOPPED. The failed write
+# here is beat 10's note-off, before the tick's note-on, so nothing
+# new is outstanding; continuing after the reopen finishes beat 10
+# and reports its note then.
+notes 2 = 0
+  prev: 1
+notes 1 = 1
+  prev: 0
+mute 1 = 0
+  prev: 1
+runto 9.5
+evarm
+  event: NOTES 1 (id 26): t1 p72 i2 k6
+  armed (id 26)
+failwrites on
+evwait
+  armed (id 27)
+  event: STOPPED PORT LOST (id 27)
+  holds at 10.000 (t25200)
+failwrites off
+# Reopened after the lost port: settings kept (beats too).
+beats 1
+  prev: 0
+open virtual
+state
+  seq: STOPPED beat 10.000 (t25200) tempo 120 tracks 2 beats 1
+  track 1: notes 4 ch 1 mute 0 loop 1 vel 100 length 4.000 (t10080) pending 0 position 2.000 (t5040) notes 1
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0)
+evarm
+  error: SEQ_ERR_NOT_PLAYING (not playing)
+play continue
+  was playing: 0
+evwait
+  armed (id 28)
+  event: NOTES 1 (id 28): t1 p73 i3 k1
+  holds at 10.000 (t25201)
+close
+  closed: 1 2
+# Reopened from closed: everything back to the defaults.
+open virtual
+beats
+  beats: 0
+track 1 60:1
+  takes over at beat 0.000 (t0)
+state
+  seq: STOPPED beat 0.000 (t0) tempo 120 tracks 1
+  track 1: notes 0 ch 1 mute 0 loop 1 vel 100 length 0.000 (t0) pending 1 position 0.000 (t0)
+close
+  closed: 1

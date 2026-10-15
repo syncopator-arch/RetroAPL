@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QCloseEvent>
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QWindow>
 
 GraphWindow::GraphWindow(int handle, const QString &title, int w, int h,
@@ -114,4 +115,19 @@ void GraphWindow::mousePressEvent(QMouseEvent *event)
         emit clicked(m_handle, pt.x(), pt.y());
     }
     QWidget::mousePressEvent(event);
+}
+
+// Escape only (Phase 7b). The window is NoFocus (GraphManager::
+// registerWindow()), but with nothing inside it focused Qt delivers keys
+// to the window widget itself once the window manager has made it the
+// active window (checked headless, Qt 6.4). Before 7b Escape had no
+// effect with a graphics window active (V89 checklist row 4).
+void GraphWindow::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Escape) {
+        emit escapePressed();
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
 }

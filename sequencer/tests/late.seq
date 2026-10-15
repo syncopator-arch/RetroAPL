@@ -1,0 +1,48 @@
+# Phase 7c: how late the last note event was handed over (ms, at the
+# current tempo; 120 bpm is 500 ms a beat). Closed: an error; open, 0
+# until the first note event.
+late
+open virtual
+late
+track 1 60:1 62:1 64:1 65:1
+notes 1 = 1
+play continue
+# A wait already armed gets its note as it starts: 0.
+evwait
+late
+evwait
+late
+# Catch-up: busy until 5.5, the newest note (5) is half a beat old.
+runto 5.5
+evarm
+late
+# At 60 bpm the same gap would be twice as long: converted at the
+# current tempo (the value already taken is kept).
+tempo 60
+late
+runto 7.25
+evarm
+late
+# Two tracks with notes from different ticks: the newest counts
+# (track 1's 62 at 9, 0.75 beat at 60 bpm; track 2's 48 started at 8).
+track 2 48:3
+notes 2 = 1
+runto 9.75
+evarm
+late
+# Beats don't change it.
+beats 1
+notes 1 2 = 0
+evwait
+late
+# Stopped with notes outstanding: measured from the stopped position.
+notes 1 = 1
+runto 11.5
+play stop
+evarm
+late
+# Reopened from closed: back to 0.
+close
+open virtual
+late
+close

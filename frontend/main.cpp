@@ -52,8 +52,10 @@
  */
 
 #include <algorithm>
+#include <atomic>
 
 #include <QApplication>
+#include <QScreen>
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMenu>
@@ -114,6 +116,8 @@
 
 #include "APLTerminalWidget.h"
 #include "graphmanager.h"
+#include "graph_bridge.h"   /* gw_vis(), registered with the event hub */
+#include "evhub.h"          /* the event hub (backend): WCLICK's wait */
 
 /* ── Backend C interface ────────────────────────────────────────────── */
 /*
@@ -136,6 +140,13 @@ QString g_appTitle;   // e.g. "APL 4.1.2.1" -- see BACKEND_VERSION/FRONTEND_VERS
 
 /* ── Module-level globals shared between C callbacks and Qt slots ──── */
 static APLTerminalWidget *g_terminal = nullptr;
+/* Set by stopEngine() (GUI thread) as the window closes; read by the
+ * engine thread's output callbacks below without a lock. Once set, the
+ * engine's output is dropped instead of waiting for the GUI thread,
+ * which is itself waiting in stopEngine() for the engine to finish:
+ * a ⎕← or an interrupt message from a function still running at the
+ * close would otherwise hold the close for the full 3 s (V88, V89). */
+static std::atomic<bool>  g_shuttingDown{false};
 static bool g_suppressNextPrompt = false;
 
 /* ── CTRL bridge (⎕CTRL) ─────────────────────────────────────────────
@@ -220,7 +231,7 @@ extern "C" void sys_ctrl(long mode)
  * either. */
 extern "C" long sys_font_families(char *buf, long bufsize)
 {
-    if (!buf || bufsize <= 0 || !g_terminal) return -1;
+    if (!buf || bufsize <= 0 || !g_terminal || g_shuttingDown) return -1;
 
     QStringList families;
     QMetaObject::invokeMethod(g_terminal, [&families]() {
@@ -344,7 +355,7 @@ static const QString kDarkStyleSheet = QStringLiteral(
 
 static void qt_puts(const char *s)
 {
-    if (!g_terminal || !s) return;
+    if (!g_terminal || !s || g_shuttingDown) return;
     QString text = QString::fromLatin1(s);
     text.replace(QChar(0x23), QChar(0xcc));   // CHAR_QD → quad glyph
     QMetaObject::invokeMethod(g_terminal, [text]() {
@@ -354,7 +365,7 @@ static void qt_puts(const char *s)
 
 static int qt_pchar(char c)
 {
-    if (!g_terminal) return (unsigned char)c;
+    if (!g_terminal || g_shuttingDown) return (unsigned char)c;
     QChar qc(static_cast<unsigned char>(c));
     QMetaObject::invokeMethod(g_terminal, [qc]() {
         g_terminal->printOutput(QString(qc));
@@ -364,7 +375,7 @@ static int qt_pchar(char c)
 
 static void qt_nl(void)
 {
-    if (!g_terminal) return;
+    if (!g_terminal || g_shuttingDown) return;
     /* BlockingQueuedConnection: engine thread waits until the main thread
      * has processed this newline before continuing.  This prevents the Qt
      * event queue from flooding during large output (e.g. iota 10000),
@@ -377,7 +388,7 @@ static void qt_nl(void)
 
 static void qt_clear_screen(void)
 {
-    if (!g_terminal) return;
+    if (!g_terminal || g_shuttingDown) return;
     QMetaObject::invokeMethod(g_terminal, []() {
         g_terminal->clearScreen();
     }, Qt::BlockingQueuedConnection);
@@ -385,7 +396,7 @@ static void qt_clear_screen(void)
 
 static void qt_home(void)
 {
-    if (!g_terminal) return;
+    if (!g_terminal || g_shuttingDown) return;
     QMetaObject::invokeMethod(g_terminal, []() {
         g_terminal->home();
     }, Qt::BlockingQueuedConnection);
@@ -1315,6 +1326,10 @@ public:
     {
         g_terminal = terminal;
         g_graphManager = m_graphManager;
+        /* WCLICK's wait (the event hub, Phase 7a) asks which windows
+           are open and not hidden through gw_vis(), on the engine
+           thread. Before the engine starts, so no wait can come first. */
+        evhub_set_vis(gw_vis);
 
         PlatformFuncs fns;
         fns.puts_fn         = qt_puts;
@@ -1781,6 +1796,21 @@ private slots:
             resize(w, h);
         }
 
+        /* Window position (V89): restored only if saved, and only if the
+         * top-left of the window (a point just inside it, where the title
+         * bar is) is still on a connected screen -- a window last left on
+         * a monitor that's gone now would otherwise open off-screen.
+         * Otherwise the window manager places it, as it always did before
+         * the position was saved. pos()/move() both mean the outer frame's
+         * corner for a top-level window, so the pair round-trips; moved
+         * before the first show(), which X11 window managers honour
+         * (GNOME may still nudge it, e.g. below its top bar). */
+        if (cfg.contains("windowx") && cfg.contains("windowy")) {
+            QPoint p(cfg.value("windowx").toInt(), cfg.value("windowy").toInt());
+            if (QGuiApplication::screenAt(p + QPoint(40, 20)))
+                move(p);
+        }
+
         /* Apply loaded settings to terminal */
         terminal->setKeyboardLayout(m_settings.keyboard);
         terminal->setFontSize(m_settings.fontSize);
@@ -1810,15 +1840,20 @@ private slots:
         cfg.setValue("print_pdfdir",      m_lastPdfDir);
         cfg.setValue("windowwidth",  width());
         cfg.setValue("windowheight", height());
+        cfg.setValue("windowx",      x());
+        cfg.setValue("windowy",      y());
     }
 
-    /* Save only window geometry on close, so final size is always captured
-     * even if the user never opened the Settings dialog this session. */
+    /* Save only window geometry on close, so final size and position are
+     * always captured even if the user never opened the Settings dialog
+     * this session. (Position since V89; loadSettings() restores it.) */
     void saveWindowSize()
     {
         QSettings cfg(settingsPath(), QSettings::IniFormat);
         cfg.setValue("windowwidth",  width());
         cfg.setValue("windowheight", height());
+        cfg.setValue("windowx",      x());
+        cfg.setValue("windowy",      y());
     }
 
     /* Apply or clear the dark-mode QApplication stylesheet, then re-assert
@@ -2053,6 +2088,7 @@ private:
     void stopEngine()
     {
         if (!m_engineThread) return;
+        g_shuttingDown = true;   /* engine output no longer waits on us */
         {
             QMutexLocker lock(&g_inputMutex);
             g_engineRunning = false;
@@ -2066,6 +2102,21 @@ private:
            closes rather than up to 3 s later. A ⎕SEQ call the busy
            engine thread makes after this gets Sequencer Not Open. */
         seqf_close();
+        /* Likewise end a WCLICK waiting in the event hub, and make any
+           later wait return empty at once, so a loop that waits can't
+           hold up the close (Phase 7a). Before 7a a window close during
+           ⎕WCLICK was already quick (checked by hand, V89); this keeps
+           it so without depending on the order windows close in. */
+        evhub_shutdown();
+        /* And stop whatever APL is running, as Ctrl+C would: the line
+           finishes, the interrupt suspends the function, and the engine
+           thread gets back to its loop, sees g_engineRunning is false,
+           runs dll_cleanup() and posts the quit -- so the graphics
+           windows close with the process, as they did before 7a. Without
+           this, a function that loops back to ⎕WCLICK on an empty result
+           spun forever once every wait returned empty (V89), and any
+           long-running function outlasted the wait below (backlog). */
+        ABORTSIG = 1;
         m_engineThread->wait(3000);
     }
 

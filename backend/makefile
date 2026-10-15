@@ -78,32 +78,29 @@ SRCS = commands.c dyop.c exec.c filfuncs.c fn.c globals.c index.c \
        interfac.c lineproc.c links.c $(PLATFORM_SRC) \
        main.c monop.c mplmem.c msgs.c parse.c rndsrc.c sort.c \
        sys.c sysfuncs.c terminal.c vprint.c platform_translate.c inprod.c \
-       crashlog.c kapl_unicode.c seqfuncs.c
+       crashlog.c kapl_unicode.c seqfuncs.c evhub.c evwait.c grfuncs.c
 
-# grfuncs.c calls gw_open()/gw_close()/gw_nums()/gw_size()/gw_title(),
-# which are only ever defined in the Qt frontend (graph_bridge.cpp) --
-# nothing in this backend build can resolve them. libapl.a is fine
-# because it's always linked into the Qt app, which supplies those
-# symbols. apl_cli has no graphics, so grfuncs.c is left out of its
-# object list rather than making it link-fail on symbols it has no way
-# to provide.
-LIB_ONLY_SRCS = grfuncs.c
+# grfuncs.c (the graphics quad functions) calls the gw_*() bridge
+# functions. The Qt front end defines them (graph_bridge.cpp) for
+# libapl.a; apl_cli links cli_graphics.c instead, a fake window table
+# that draws nothing (Phase 7a). Until then grfuncs.c was left out of
+# apl_cli. evhub.c is the event hub; evwait.c the one wait ⎕WCLICK and
+# ⎕EVWAIT both call (Phase 7b), which waits there.
 
 # Object files for libapl.a (in lib_objs/)
 LIB_OBJDIR  = lib_objs
-LIB_OBJS    = $(addprefix $(LIB_OBJDIR)/,$(SRCS:.c=.o)) \
-              $(addprefix $(LIB_OBJDIR)/,$(LIB_ONLY_SRCS:.c=.o))
+LIB_OBJS    = $(addprefix $(LIB_OBJDIR)/,$(SRCS:.c=.o))
 
 # Static library
 STATIC_LIB = libapl.a
 
 # apl_cli: command-line front end. Links the same objects as libapl.a
 # (from lib_objs/), so tests exercise exactly the backend code the Qt
-# app runs -- minus grfuncs.o, for the reason given above LIB_ONLY_SRCS.
-# apl_cli.c supplies graphics placeholders in its place.
+# app runs. cli_graphics.c stands in for the Qt graphics bridge, and
+# apl_cli.c for the few platform graphics hooks.
 CLI_OBJDIR = cli_objs
 # kapl_unicode.c used to be here too; it's in SRCS now (see there).
-CLI_SRCS   = apl_cli.c
+CLI_SRCS   = apl_cli.c cli_graphics.c
 CLI_OBJS   = $(addprefix $(CLI_OBJDIR)/,$(CLI_SRCS:.c=.o))
 CLI_LIB_OBJS = $(addprefix $(LIB_OBJDIR)/,$(SRCS:.c=.o))
 APL_CLI    = apl_cli

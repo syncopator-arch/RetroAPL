@@ -9,8 +9,20 @@
 	which apl_cli's -S sets for the regression tests.
 
 	Design: MIDI_SEQUENCER_NOTES.md ("APL interface", "Implementation
-	rules"); user reference: SEQ_FUNCTION_HELP.md until each function
-	is tested, then quad_function_help.md.
+	rules", "Events and waiting"); user reference: SEQ_FUNCTION_HELP.md
+	until each function is tested, then quad_function_help.md.
+
+	⎕EVWAIT's name lives here (slot 12), as ⎕WCLICK's lives in
+	grfuncs.c; since Phase 7b both call the one wait in evwait.c,
+	which waits in the event hub (evhub.c). This file supplies the
+	sequencer's side of it (see "Events for the event hub" below).
+	⎕EVPOST (Phase 7a), the test function that feeds window events to
+	the hub in apl_cli, lives here too.
+
+	Phase 7c (Oct 12, 2026): ⎕SEQNOTES (slot 14) chooses which tracks
+	report note events, ⎕SEQBEAT (slot 15) turns beat events on (off by
+	default from then on), and the wait arms the library's event wait
+	(seq_request_event()) instead of its beat wait.
 
 	House rules followed here:
 	  - Every function produces a new value: arguments are copied out
@@ -18,7 +30,7 @@
 	    copies them again, so nothing points into the workspace once a
 	    call returns), then popped (stack_pop), then a fresh result is
 	    pushed. No swapdrop().
-	  - SEQTEMPO and SEQPLAY are MONAD_OPT: stack_pop(1) only inside
+	  - SEQTEMPO, SEQPLAY and SEQBEAT are MONAD_OPT: stack_pop(1) only inside
 	    "if (re)" (INVARIANTS.md, MONAD_OPT Part 4).
 	  - Fractional results (SEQTEMPO, SEQTRACK's beat, SEQSTATE,
 	    SEQRUNTO) are FCONST_CODE temps, as ⎕ATN builds them; whole
@@ -49,6 +61,9 @@
 #include "parse.h"
 #include "funcs.h"
 #include "seq.h"
+#include "evhub.h"	/* ⎕EVPOST; the sequencer's events and hooks */
+
+short ev_wait_apl();	/* evwait.c: ⎕EVWAIT and ⎕WCLICK (Phase 7b) */
 
 UCHAR seq_fnames[] = {
 	'S','E','Q','O','P','E','N',0,		/* 0 */
@@ -63,6 +78,10 @@ UCHAR seq_fnames[] = {
 	'S','E','Q','S','T','A','T','E',0,	/* 9 */
 	'S','E','Q','R','U','N','T','O',0,	/* 10 test: virtual clock only */
 	'S','E','Q','L','O','G',0,		/* 11 test: log backends only */
+	'E','V','W','A','I','T',0,		/* 12 event wait (Phase 5; evwait.c since 7b) */
+	'E','V','P','O','S','T',0,		/* 13 test: apl_cli only (Phase 7a) */
+	'S','E','Q','N','O','T','E','S',0,	/* 14 note events (Phase 7c) */
+	'S','E','Q','B','E','A','T',0,		/* 15 beat events (Phase 7c) */
 	0,0,0
 };
 
@@ -79,6 +98,10 @@ UCHAR seq_ftypes[] = {
 	NILAD,		/* 9 SEQSTATE */
 	MONAD,		/* 10 SEQRUNTO beat */
 	NILAD,		/* 11 SEQLOG */
+	MONAD,		/* 12 EVWAIT sources */
+	MONAD,		/* 13 EVPOST kind,values */
+	DYAD,		/* 14 tracks SEQNOTES flags */
+	MONAD_OPT,	/* 15 SEQBEAT, SEQBEAT←0/1 */
 	0
 };
 
@@ -92,7 +115,9 @@ UCHAR seq_ftypes[] = {
 int seqf_virtual = 0;
 
 #define TPB	((double)SEQ_TICKS_PER_BEAT)
-#define NCOLS	9			/* ⎕SEQSTATE columns */
+#define NCOLS	10			/* ⎕SEQSTATE columns (10th: 7c) */
+#define EV_LIMIT 10000			/* beats the virtual clock runs
+					   looking for a wait's event (7c) */
 #define PORT_MAX 255			/* longest port name accepted */
 #define PUSH_MAX 32767			/* push_val()'s count is a short */
 
@@ -227,7 +252,143 @@ push_ints(const int *v, int32_t n, int scalar)
 	return r;
 }
 
-/* ── The list functions: SEQMUTE, SEQLOOP, SEQVEL ──────────────────── */
+/* The library's state as APL sees it (agreed Oct 5, 2026): >0 open (1
+   stopped, 2 playing), 0 closed, <0 trouble (¯1 port lost; any later
+   failure state also negative). The library's own numbering (enum
+   seq_state) has port lost as 3. Used by ⎕SEQSTATE and by ⎕EVWAIT's
+   "stopped" event. */
+static int32_t
+apl_state(int state)
+{
+	return (state == SEQ_PORT_LOST) ? -1 : (int32_t)state;
+}
+
+/* ── Events for the event hub (Phase 7b) ───────────────────────────── */
+
+/*
+	⎕EVWAIT and ⎕WCLICK are one wait since Phase 7b: evwait.c holds it,
+	and it waits in the event hub (evhub.c). This file's part is the
+	sequencer's side, reached through the hooks below, so evwait.c and
+	evhub.c never include seq.h:
+	  - ev_notify(), the library's callback, reports each event to the
+	    hub (evhub_seq_event()). It runs while the library holds its own
+	    lock, on the playback thread or whichever thread stopped or
+	    closed the sequencer; the hub's lock is taken inside it, which
+	    is the order evhub.h requires. It calls nothing in the library.
+	  - seqf_wait_ops(): the arm, cancel and (virtual clock only) pump
+	    hooks the hub calls for a wait whose list has ¯1, each without
+	    the hub's lock.
+	  - seqf_stop_code(): a stop's new state in ⎕SEQSTATE's codes, for
+	    the result ¯1 2 S.
+
+	Phase 7c: the wait arms seq_request_event(), which takes notes
+	from the tracks set to report them and, with ⎕SEQBEAT←1, beats;
+	notes outstanding are handed over during the arm itself (the hub is
+	armed first, so they count). The virtual clock's pump runs the
+	clock to the wait's event, whatever it is, capped at EV_LIMIT
+	beats: a wait with nothing to come is then a Domain Error, as a
+	wait with nothing to wait for always was in apl_cli.
+
+	Until 7b this section held the wait itself, on its own one-event
+	slot and condition variable (ev_lock, ev_cond: Phase 5, V88); the
+	hub's condition variable replaces them. What carries over (worked
+	out in V88):
+	  - The id is a check, not the mechanism. The library keeps one
+	    wait armed and calls back under its own lock, so once
+	    seq_cancel_wait() returns nothing for the old wait can arrive;
+	    the hub only accepts sequencer events between arming and
+	    disarming a wait, and cancels before it disarms.
+	  - The hub is armed before the library is, so a beat or stop that
+	    comes the moment seq_request_beat() returns isn't lost (V88's
+	    first sketch could lose it and hang).
+	  - On the virtual clock (apl_cli -S) the pump runs the clock one
+	    tick past the next whole beat, as seqtest's "beatwait" does, so
+	    the event arrives during that call; the clock then holds just
+	    past the beat: a track sent next starts on the following beat,
+	    and a loop boundary on this beat has already passed, as on the
+	    real clock, where the beat event comes after the swaps on its
+	    tick.
+*/
+
+static void
+ev_notify(void *ctx, const struct seq_event *ev)
+{
+	int32_t d[4 * EVHUB_MAXNOTES];
+	int i, n;
+
+	(void)ctx;
+	if (ev->kind == SEQ_EV_NOTES)	/* 7c */
+	{
+		n = ev->nnotes < EVHUB_MAXNOTES ? ev->nnotes : EVHUB_MAXNOTES;
+		for (i = 0; i < n; i++)
+		{
+			d[4 * i] = ev->notes[i].track;
+			d[4 * i + 1] = ev->notes[i].pitch;
+			d[4 * i + 2] = ev->notes[i].index;
+			d[4 * i + 3] = ev->notes[i].count;
+		}
+		evhub_seq_notes(ev->request_id, n, d);
+	}
+	else if (ev->kind == SEQ_EV_BEAT)
+		evhub_seq_event(EVHUB_SEQ_BEAT, ev->request_id, ev->beat);
+	else	/* SEQ_EV_STOPPED: stopped, closed, or port lost (SEQ_ERR_IO) */
+		evhub_seq_event(EVHUB_SEQ_STOPPED, ev->request_id,
+				ev->reason == SEQ_ERR_IO ? 1 : 0);
+}
+
+/* Arm the library's event wait (7c; the beat wait until then). Fails
+   (nonzero) when nothing can produce an event -- not playing with no
+   notes outstanding, or playing with beats off and no reporting track
+   that has notes -- so the hub skips the sequencer for this wait. */
+static int
+ev_arm(uint32_t *id)
+{
+	return (seq_request_event(id) == SEQ_OK) ? 0 : 1;
+}
+
+static void
+ev_cancel(uint32_t id)
+{
+	seq_cancel_wait(id);
+}
+
+/* Virtual clock: play until the armed wait's event (notes, a beat, or
+   STOPPED if the port is lost on the way), holding one tick past it;
+   the event arrives during the call. 7c: nonzero if none comes within
+   EV_LIMIT beats (until then the pump ran to the next beat, which
+   always came). */
+static int
+ev_pump(void)
+{
+	return (seq_virtual_run_to_event((int64_t)EV_LIMIT
+					 * SEQ_TICKS_PER_BEAT) == SEQ_OK) ? 0 : 1;
+}
+
+static const struct evhub_seq_ops ev_ops_real = { ev_arm, ev_cancel, NULL };
+static const struct evhub_seq_ops ev_ops_virtual = { ev_arm, ev_cancel, ev_pump };
+
+/* For evwait.c: the hooks for a wait on ¯1. */
+const struct evhub_seq_ops *
+seqf_wait_ops(void)
+{
+	return seqf_virtual ? &ev_ops_virtual : &ev_ops_real;
+}
+
+/* For evwait.c: the S of ¯1 2 S, in ⎕SEQSTATE's codes (1 stopped, 0
+   closed, ¯1 port lost). `lost` is the hub's value for the stop: the
+   library's reason settles port lost; otherwise the state now. Called
+   on the engine thread after the wait, with no lock held. */
+int32_t
+seqf_stop_code(int lost)
+{
+	int state;
+
+	if (lost) return apl_state(SEQ_PORT_LOST);
+	seq_get_state(&state, NULL);
+	return apl_state(state);
+}
+
+/* ── The list functions: SEQMUTE, SEQLOOP, SEQVEL, SEQNOTES ────────── */
 
 typedef int (*SETFN)(const int *, const int *, int, int *);
 
@@ -321,7 +482,7 @@ f_open(struct ValEnt *re)
 	memset(&cfg, 0, sizeof cfg);
 	cfg.backend = seqf_virtual ? SEQ_BACKEND_VIRTUAL : SEQ_BACKEND_DEVICE;
 	cfg.port = port;
-	cfg.notify = NULL;	/* no events until the beat wait (Phase 5) */
+	cfg.notify = ev_notify;			/* events for the hub (7b) */
 	cfg.ctx = NULL;
 
 	r = seq_open(&cfg);
@@ -488,12 +649,42 @@ f_play(struct ValEnt *re)
 	return push_val(1, 0, &acc);
 }
 
+/* SEQBEAT (MONAD_OPT, Phase 7c): reports 1 if a wait on ¯1 reports
+   beats, 0 if not (the default from ⎕SEQOPEN on); with an argument (0
+   or 1) sets it and returns the previous setting. Same shape as
+   SEQPLAY: Sequencer Not Open when closed. */
+static short
+f_beat(struct ValEnt *re)
+{
+	int on, prev, r;
+	int32_t v, acc;
+	short e;
+
+	if ((r = seq_get_beats(&on)) != SEQ_OK) return seq_apl_err(r);
+	acc = on;
+	if (re)
+	{
+		if (!is_numeric(re)) return SET_ERR(ERR_DOMAIN);
+		if (re->ve_length != 1) return SET_ERR(ERR_LENGTH);
+		if ((e = whole(re, 0, &v)) != 0) return e;
+		if ((r = seq_set_beats((int)v, &prev)) != SEQ_OK)
+			return seq_apl_err(r);
+		acc = prev;
+		stack_pop(1);
+	}
+	return push_val(1, 0, &acc);
+}
+
 /* SEQSTATE: a float matrix, the sequencer row and then one row per
    track in use (MIDI_SEQUENCER_NOTES.md, "⎕SEQSTATE layout"). Never an
-   error, except WS Full. The state, the tracks and the tempo are three
-   library calls, so with music playing on the real clock the beat and
-   the track positions can be a moment apart; the track rows agree
-   with each other (one lock). */
+   error, except WS Full. The state, the tracks, the tempo and the beat
+   setting are separate library calls, so with music playing on the
+   real clock the beat and the track positions can be a moment apart;
+   the track rows agree with each other (one lock). Phase 7c: column 6
+   of the sequencer row is ⎕SEQBEAT, column 7 how late the last note
+   event was handed over (ms; for watching a loop while tuning it),
+   column 10 of a track row ⎕SEQNOTES (the sequencer row's column 10
+   is 0). */
 static short
 f_state(void)
 {
@@ -502,11 +693,14 @@ f_state(void)
 	double *dp;
 	double tempo = 0.0;
 	int64_t tick;
-	int state, n = 0, i;
+	int state, n = 0, i, beats = 0;
+	double late = 0.0;
 
 	seq_get_state(&state, &tick);
 	seq_get_tracks(info, &n);
 	if (seq_get_tempo(&tempo) != SEQ_OK) tempo = 0.0;	/* closed */
+	if (seq_get_beats(&beats) != SEQ_OK) beats = 0;		/* closed */
+	if (seq_get_note_late(&late) != SEQ_OK) late = 0.0;	/* closed */
 
 	ve = make_temp(FCONST_CODE, 2, (long)(n + 1) * NCOLS);
 	if (!ve) return SET_ERR(ERR_WSFULL);
@@ -516,14 +710,12 @@ f_state(void)
 	memset(dp, 0, (size_t)(n + 1) * NCOLS * sizeof(double));
 
 	dp[0] = 0.0;
-	/* State as APL sees it (agreed Oct 5, 2026): >0 open (1 stopped,
-	   2 playing), 0 closed, <0 trouble (¯1 port lost; any later
-	   failure state also negative). The library's own numbering
-	   (enum seq_state) has port lost as 3. */
-	dp[1] = (state == SEQ_PORT_LOST) ? -1.0 : (double)state;
+	dp[1] = (double)apl_state(state);	/* see apl_state() */
 	dp[2] = (double)tick / TPB;
 	dp[3] = tempo;
 	dp[4] = (double)n;
+	dp[5] = (double)beats;
+	dp[6] = late;
 	for (i = 0; i < n; i++)
 	{
 		double *row = dp + (size_t)(i + 1) * NCOLS;
@@ -537,6 +729,7 @@ f_state(void)
 		row[6] = (double)info[i].length / TPB;
 		row[7] = (double)info[i].pending;
 		row[8] = (double)info[i].position / TPB;
+		row[9] = (double)info[i].report;
 	}
 	return 0;
 }
@@ -627,6 +820,53 @@ f_log(void)
 	return 0;
 }
 
+/* EVPOST kind,values (test only, Phase 7a): queues an event for the
+   event hub to deliver to the waits to come, in apl_cli, which has no
+   real windows to click. Each wait takes queued events in order until
+   it ends and leaves the rest (evhub.c). The first number is the kind:
+	1 W X Y   a left click in window W at X,Y
+	2 W       window W closed by the user (apl_cli's fake window table
+	          drops it when the close is delivered)
+	3         Escape
+	4         Ctrl-C (sets ABORTSIG when delivered)
+   Result: how many events are now queued (a scalar). Domain Error
+   outside apl_cli, for an unknown kind, or when the queue (64) is
+   full; Length Error for the wrong number of values; the usual list
+   errors (Rank, Domain for a fraction), as for a sources list. */
+static short
+f_evpost(struct ValEnt *re)
+{
+	int *v;
+	int32_t n, a[3], acc;
+	short e;
+	int i, kind;
+	static const int len[5] = { 0, 4, 2, 1, 1 };
+
+	if ((e = get_list(re, &v, &n)) != 0) return e;
+	if (n == 0)
+	{
+		free(v);
+		return SET_ERR(ERR_LENGTH);
+	}
+	kind = v[0];
+	if (kind < 1 || kind > 4)
+	{
+		free(v);
+		return SET_ERR(ERR_DOMAIN);
+	}
+	if (n != len[kind])
+	{
+		free(v);
+		return SET_ERR(ERR_LENGTH);
+	}
+	for (i = 0; i < 3; i++) a[i] = (i + 1 < n) ? v[i + 1] : 0;
+	free(v);
+	acc = evhub_post(kind, a);
+	if (acc < 0) return SET_ERR(ERR_DOMAIN);	/* not apl_cli, full */
+	stack_pop(1);
+	return push_val(1, 0, &acc);
+}
+
 /* ── Dispatch ──────────────────────────────────────────────────────── */
 
 short
@@ -660,6 +900,14 @@ struct ValEnt *le,*re;
 			return(f_runto(re));
 		case 11:	/* SEQLOG (test) */
 			return(f_log());
+		case 12:	/* EVWAIT: the same wait as WCLICK (evwait.c, 7b) */
+			return(ev_wait_apl(re));
+		case 13:	/* EVPOST (test) */
+			return(f_evpost(re));
+		case 14:	/* SEQNOTES (7c) */
+			return(list_set(seq_set_notes,le,re));
+		case 15:	/* SEQBEAT (7c) */
+			return(f_beat(re));
 		case CLEANUP_FUNC:
 			return(0);
 	}
@@ -671,7 +919,9 @@ struct ValEnt *le,*re;
 /* Stops playback, sends note-offs, closes the port. Safe from any
    thread and more than once: dll_cleanup() (engine thread, normal
    exits) and stopEngine() (GUI thread, window closed, possibly while
-   APL is busy and dll_cleanup() will never run) both call it. */
+   APL is busy and dll_cleanup() will never run) both call it. A
+   wait on ¯1 blocked on the engine thread then returns ¯1 2 0 (the
+   library's SEQ_EV_STOPPED reaches the hub through ev_notify()). */
 void
 seqf_close(void)
 {

@@ -32,6 +32,16 @@
 	                            beat (virtual), show the event
 	  arm                       arm a beat wait only
 	  cancel                    cancel the last armed wait
+	  notes T ... = V ...       note events on/off (Phase 7c)
+	  beats [0|1]               beat events for evwait (Phase 7c); bare:
+	                            report
+	  evarm                     arm an event wait only (Phase 7c)
+	  late                      how late the last note event was handed
+	                            over, ms (Phase 7c)
+	  evwait [B]                arm an event wait, run the virtual clock
+	                            to its event (limit B beats, default
+	                            10000), show the event and where the
+	                            clock holds
 	  state                     the state and one line per track
 	  log                       the log since the last `log`
 	  logticks                  the same without the time column
@@ -80,14 +90,26 @@ static int ev_count;
 
 static void on_event(void *ctx, const struct seq_event *ev)
 {
-	char line[128];
+	char line[512];
 	int n;
 
 	(void)ctx;
 	if (ev->kind == SEQ_EV_BEAT)
 		n = snprintf(line, sizeof line, "  event: BEAT %lld (id %u)\n",
 		             (long long)ev->beat, (unsigned)ev->request_id);
-	else
+	else if (ev->kind == SEQ_EV_NOTES) {
+		/* track, pitch, column (from 0), count, for each */
+		int i;
+
+		n = snprintf(line, sizeof line, "  event: NOTES %d (id %u):",
+		             ev->nnotes, (unsigned)ev->request_id);
+		for (i = 0; i < ev->nnotes && n < (int)sizeof line - 48; i++)
+			n += snprintf(line + n, sizeof line - (size_t)n,
+			              " t%d p%d i%d k%d", ev->notes[i].track,
+			              ev->notes[i].pitch, (int)ev->notes[i].index,
+			              (int)ev->notes[i].count);
+		n += snprintf(line + n, sizeof line - (size_t)n, "\n");
+	} else
 		n = snprintf(line, sizeof line,
 		             "  event: STOPPED %s (id %u)\n",
 		             ev->reason == SEQ_OK ? "OK" : "PORT LOST",
@@ -126,7 +148,8 @@ static const char *err_name(int e)
 		"SEQ_ERR_CHANNEL", "SEQ_ERR_PITCH", "SEQ_ERR_DURATION",
 		"SEQ_ERR_LENGTH", "SEQ_ERR_VALUE", "SEQ_ERR_TEMPO",
 		"SEQ_ERR_NOT_PLAYING", "SEQ_ERR_NOMEM", "SEQ_ERR_BACKEND",
-		"SEQ_ERR_PORT_BUSY", "SEQ_ERR_PORT_ACCESS", "SEQ_ERR_PORT_NAME"
+		"SEQ_ERR_PORT_BUSY", "SEQ_ERR_PORT_ACCESS", "SEQ_ERR_PORT_NAME",
+		"SEQ_ERR_NO_EVENT"
 	};
 
 	return (e >= 0 && e < (int)(sizeof names / sizeof names[0]))
@@ -316,23 +339,28 @@ static void show_state(void)
 	int st, n, i;
 	int64_t tick;
 	double tempo = 0;
+	int bon = 0;
 	char b[64], c[64], d[64];
 
 	seq_get_state(&st, &tick);
 	seq_get_tracks(info, &n);
-	if (st != SEQ_CLOSED)
+	if (st != SEQ_CLOSED) {
 		seq_get_tempo(&tempo);
+		seq_get_beats(&bon);
+	}
 	beats(b, sizeof b, tick);
-	fprintf(out, "  seq: %s beat %s tempo %g tracks %d\n",
-	        state_name(st), b, tempo, n);
+	/* Phase 7c settings shown only when on, so the transcripts of
+	   the tests from before 7c stay as they were */
+	fprintf(out, "  seq: %s beat %s tempo %g tracks %d%s\n",
+	        state_name(st), b, tempo, n, bon ? " beats 1" : "");
 	for (i = 0; i < n; i++) {
 		beats(c, sizeof c, info[i].length);
 		beats(d, sizeof d, info[i].position);
 		fprintf(out, "  track %d: notes %d ch %d mute %d loop %d vel %d"
-		        " length %s pending %d position %s\n",
+		        " length %s pending %d position %s%s\n",
 		        info[i].track, (int)info[i].notes, info[i].channel,
 		        info[i].mute, info[i].loop, info[i].velocity, c,
-		        info[i].pending, d);
+		        info[i].pending, d, info[i].report ? " notes 1" : "");
 	}
 }
 
@@ -380,6 +408,13 @@ static void *stress_thread(void *arg)
 			if (seq_request_beat(&id) == SEQ_OK
 			    && next_rand(&seed) % 2)
 				seq_cancel_wait(id);
+			/* Phase 7c */
+			v = (int)(next_rand(&seed) % 2);
+			seq_set_notes(&t, &v, 1, NULL);
+			seq_set_beats((int)(next_rand(&seed) % 2), NULL);
+			if (seq_request_event(&id) == SEQ_OK
+			    && next_rand(&seed) % 2)
+				seq_cancel_wait(id);
 			if (next_rand(&seed) % 50 == 0)
 				seq_clear(&t, 1, NULL);
 			break;
@@ -405,6 +440,13 @@ static void stress(int ms)
 	/* a wait left armed would fire later: replace it, then cancel */
 	if (seq_request_beat(&id) == SEQ_OK)
 		seq_cancel_wait(id);
+	{	/* Phase 7c: and nothing left reporting */
+		int t, z = 0;
+
+		for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+			seq_set_notes(&t, &z, 1, NULL);
+		seq_set_beats(0, NULL);
+	}
 	discard_events();		/* how many depends on timing */
 	fprintf(out, "  done\n");
 }
@@ -496,11 +538,12 @@ static void do_line(char *line)
 		if (!report(seq_clear(tracks, n, prev)))
 			print_ints("held", prev, n);
 	} else if (strcmp(cmd, "mute") == 0 || strcmp(cmd, "loop") == 0
-	           || strcmp(cmd, "vel") == 0) {
+	           || strcmp(cmd, "vel") == 0 || strcmp(cmd, "notes") == 0) {
 		if (!parse_list(w + 1, nw - 1, tracks, values, &n))
 			goto bad;
 		r = cmd[0] == 'm' ? seq_set_mute(tracks, values, n, prev)
 		  : cmd[0] == 'l' ? seq_set_loop(tracks, values, n, prev)
+		  : cmd[0] == 'n' ? seq_set_notes(tracks, values, n, prev)
 		  : seq_set_velocity(tracks, values, n, prev);
 		if (!report(r))
 			print_ints("prev", prev, n);
@@ -557,6 +600,41 @@ static void do_line(char *line)
 			tick = ((tick + TPB - 1) / TPB) * TPB;
 			report(seq_virtual_run_to(tick + 1));
 		}
+	} else if (strcmp(cmd, "beats") == 0) {
+		if (nw == 1) {
+			if (!report(seq_get_beats(&v)))
+				fprintf(out, "  beats: %d\n", v);
+		} else {
+			int p;
+
+			if (!parse_int(w[1], &v))
+				goto bad;
+			if (!report(seq_set_beats(v, &p)))
+				fprintf(out, "  prev: %d\n", p);
+		}
+	} else if (strcmp(cmd, "evarm") == 0 || strcmp(cmd, "evwait") == 0) {
+		int st;
+		int64_t tick;
+		char b[64];
+
+		x = 10000;
+		if (nw >= 2 && !parse_num(w[1], &x))
+			goto bad;
+		if (report(seq_request_event(&last_id)))
+			return;
+		/* an event handed over during the arm prints before this */
+		flush_events();
+		fprintf(out, "  armed (id %u)\n", (unsigned)last_id);
+		if (cmd[2] == 'w') {
+			report(seq_virtual_run_to_event((int64_t)(x * TPB + 0.5)));
+			flush_events();
+			seq_get_state(&st, &tick);
+			beats(b, sizeof b, tick);
+			fprintf(out, "  holds at %s\n", b);
+		}
+	} else if (strcmp(cmd, "late") == 0) {
+		if (!report(seq_get_note_late(&x)))
+			fprintf(out, "  late: %.3f ms\n", x);
 	} else if (strcmp(cmd, "cancel") == 0) {
 		report(seq_cancel_wait(last_id));
 	} else if (strcmp(cmd, "state") == 0) {

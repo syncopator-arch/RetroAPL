@@ -15,7 +15,10 @@
 #include "kapl_unicode_mapping.hpp"
 #include <QTextDocument>
 #include "depend.h"   // BACKEND_VERSION, FRONTEND_VERSION
-#include "graphmanager.h"   // g_graphicsWaitActive, g_graphicsWaitCancelled
+#include "graphmanager.h"   // was for g_graphicsWaitActive/Cancelled (gone in
+                            // Phase 7a); kept for the Qt headers it brings in,
+                            // until a build without it is tried
+#include "evhub.h"          // evhub_escape(): Escape ends a WCLICK/EVWAIT wait
 
 static const int INDENT = 5;
 
@@ -1218,34 +1221,30 @@ void APLTerminalWidget::keyPressEvent(QKeyEvent *event)
         return;
     }
 */
-	if (keyCode == Qt::Key_Escape || 
-        (event->modifiers() & Qt::ControlModifier && keyCode == Qt::Key_C)) {
+    // Escape only ends a wait (Phase 7b, agreed V89): a ⎕WCLICK/⎕EVWAIT
+    // waiting in the event hub gets back an empty result and the program
+    // carries on (evhub_escape()). With nothing waiting it is ignored --
+    // it no longer interrupts a computation or ⎕/⍞ input. Graphics
+    // windows do the same (GraphManager::onWindowEscape()). In the
+    // function editor Escape is the Discard & Return shortcut, a QAction
+    // taken before this handler, so it is unaffected.
+    if (keyCode == Qt::Key_Escape) {
         m_overstrikePending = false;
         m_pendingOverstrike = 0;
-        // Ctrl+C in terminal (immediate) mode: clear the current input line
-        // and reset the cursor to the prompt column before signalling abort.
-        // Escape is left as a pure interrupt (no line wipe) since it may be
-        // used to interrupt a running computation with no input line present.
-        if (!m_editMode &&
-            (event->modifiers() & Qt::ControlModifier) &&
-            keyCode == Qt::Key_C) {
+        evhub_escape();
+        return;
+    }
+
+    // Ctrl+C is the only interrupt key. In terminal (immediate) mode it
+    // also clears the current input line and resets the cursor to the
+    // prompt column before signalling abort. During a wait the wait ends
+    // empty, the line runs on, and the interrupt comes after it.
+    if ((event->modifiers() & Qt::ControlModifier) && keyCode == Qt::Key_C) {
+        m_overstrikePending = false;
+        m_pendingOverstrike = 0;
+        if (!m_editMode) {
             clearCurrentInputLine();
         }
-
-        // Escape has a second, narrower meaning while a graphics WCLICK
-        // wait is in progress: soft-cancel that one wait (the waiting
-        // APL code gets back a recognizable "no click happened" result)
-        // rather than aborting the whole running program. Ctrl+C is
-        // deliberately NOT given this alternate meaning -- it always
-        // aborts, wait or no wait, exactly as before. See
-        // apl_graphics_mouse_input_notes_v1.md's "Keyboard-Driven Cancel"
-        // section and graphmanager.h's g_graphicsWaitActive/
-        // g_graphicsWaitCancelled comments for the full reasoning.
-        if (keyCode == Qt::Key_Escape && g_graphicsWaitActive) {
-            g_graphicsWaitCancelled = 1;
-            return;
-        }
-
         emit interruptRequested();
         return;
     }

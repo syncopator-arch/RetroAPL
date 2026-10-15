@@ -1,0 +1,142 @@
+Clear WS
+     ⍝ ⎕WCLICK in apl_cli (Phase 7a): the fake window table (cli_graphics.c),
+     ⍝ events posted with ⎕EVPOST and delivered to the waits to come. Since
+     ⍝ 7b ⎕WCLICK is the same wait as ⎕EVWAIT (evwait.c); waits mixing
+     ⍝ windows and the sequencer are tested in evwait (-S).
+     ⍝ The cases of wclick_before_results.txt (V89) that don't need a mouse.
+     A←'A' ⎕WOPEN 0 0 200 150
+     B←'B' ⎕WOPEN 0 0 200 150
+     A,B
+1 2
+     ⍝ arguments
+     ⎕WCLICK ⍳0
+     ^
+Length Error
+     ⎕EVPOST 1,A,5 6
+1
+     ⎕WCLICK A
+1 5 6
+     ⍝ since 7b, ⎕EVWAIT's rules: a matrix is a Rank Error (was used whole),
+     ⍝ a fraction, text or a negative number other than ¯1 a Domain Error
+     ⎕WCLICK 2 2⍴A,B,A,B
+     ^
+Rank Error
+     ⎕WCLICK 0 2⍴0
+     ^
+Rank Error
+     ⎕WCLICK 2 0⍴0
+     ^
+Rank Error
+     ⎕WCLICK A+0.5
+     ^
+Domain Error
+     ⎕WCLICK 'A'
+     ^
+Domain Error
+     ⎕WCLICK ¯2
+     ^
+Domain Error
+     Q←⎕EVPOST 1,B,7 8
+     ⎕WCLICK A,A,B,B
+2 7 8
+     ⍝ only open windows that aren't hidden are waited on; none: empty at once
+     ⍴⎕WCLICK 99
+0
+     ⍝ (¯1 is the sequencer since 7b; closed here, so skipped too)
+     ⍴⎕WCLICK 0 ¯1
+0
+     Q←⎕EVPOST 1,A,1 2
+     ⎕WCLICK 99,A
+1 1 2
+     Z←B ⎕WCTRL 5
+     ⍴⎕WCLICK B
+0
+     Q←⎕EVPOST 1,B,1 1
+     Q←⎕EVPOST 1,A,3 4
+     ⎕WCLICK A,B
+1 3 4
+     Z←B ⎕WCTRL 6
+     Z←B ⎕WCTRL 0
+     ⎕WVIS B
+2
+     Q←⎕EVPOST 1,B,9 9
+     ⎕WCLICK B
+2 9 9
+     Z←B ⎕WCTRL 1
+     ⍝ a click in a window not waited on is ignored
+     Q←⎕EVPOST 1,B,1 1
+     Q←⎕EVPOST 1,A,2 2
+     ⎕WCLICK A
+1 2 2
+     ⍝ Escape: empty, no interrupt
+     Q←⎕EVPOST 3
+     ⍴⎕WCLICK A
+0
+     ⍝ Ctrl-C: empty, the line finishes (X is assigned), then the interrupt
+     X←99
+     Q←⎕EVPOST 4
+     X←⎕WCLICK A
+     ^
+Interrupt
+     ⍴X
+0
+     ⍝ Ctrl-C already pending: the second wait on the line returns empty at
+     ⍝ once and leaves the posted click for the next wait. (A result left on
+     ⍝ an interrupted line isn't displayed, so it's assigned and shown next.)
+     Q←⎕EVPOST 4
+     Q←⎕EVPOST 1,A,60 60
+     Y←(⍴⎕WCLICK A),⍴⎕WCLICK A
+     ^
+Interrupt
+     Y
+0 0
+     ⎕WCLICK A
+1 60 60
+     ⍝ a window waited on closing ends the wait, even with another still open
+     Q←⎕EVPOST 2,B
+     ⍴⎕WCLICK A,B
+0
+     ⎕WNUMS
+1
+     ⍝ a window not waited on closing doesn't
+     B←'B' ⎕WOPEN 0 0 200 150
+     Q←⎕EVPOST 2,B
+     Q←⎕EVPOST 1,A,70 70
+     ⎕WCLICK A
+1 70 70
+     ⎕WNUMS
+1
+     Q←⎕EVPOST 2,A
+     ⍴⎕WCLICK A
+0
+     ⎕WNUMS
+
+     ⍝ nothing posted: Domain Error, not a hang
+     A←'A' ⎕WOPEN 0 0 200 150
+     ⎕WCLICK A
+     ^
+Domain Error
+     ⍝ ⎕EVPOST's own errors, and its result (how many are queued)
+     ⎕EVPOST ⍳0
+     ^
+Length Error
+     ⎕EVPOST 5
+     ^
+Domain Error
+     ⎕EVPOST 1,A,5
+     ^
+Length Error
+     ⎕EVPOST 3 1
+     ^
+Length Error
+     ⎕EVPOST 2 2⍴2,A,2,A
+     ^
+Rank Error
+     ⎕EVPOST 1.5
+     ^
+Domain Error
+     ⎕EVPOST 3
+1
+     ⎕EVPOST 3
+2
+     

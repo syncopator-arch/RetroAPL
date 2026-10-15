@@ -1,6 +1,8 @@
 /*
 	seq.h -- MIDI sequencer library, public interface.
-	Agreed Oct 4, 2026 (Phase 1); Phase 2 additions marked "Phase 2".
+	Agreed Oct 4, 2026 (Phase 1); Phase 2 additions marked "Phase 2";
+	Phase 7c (note events, the beat switch, the event wait; Oct 12,
+	2026) marked "Phase 7c", all added without changing what was there.
 
 	Lives in sequencer/ at the project root, beside backend/ and
 	frontend/. The only contact surface between the APL interpreter's
@@ -129,9 +131,15 @@ enum seq_err {
 				   subdevice taken) */
 	SEQ_ERR_PORT_ACCESS,	/* no permission (Linux: not in the audio
 				   group; never on Windows) */
-	SEQ_ERR_PORT_NAME	/* port name not understood (Linux:
+	SEQ_ERR_PORT_NAME,	/* port name not understood (Linux:
 				   "hw:C", "hw:C,D" or "hw:C,D,S";
 				   Windows: a device number) */
+	/* Phase 7c, added at the end like the Phase 3 codes. */
+	SEQ_ERR_NO_EVENT	/* seq_request_event(): playing, but
+				   nothing can produce an event (beats
+				   off, no reporting track has notes);
+				   seq_virtual_run_to_event(): none
+				   within the limit */
 };
 
 /* Short English text for an error code, for messages and the test
@@ -153,16 +161,35 @@ const char *seq_strerror(int err);
    taken first; the caller's lock, inside the callback, second. */
 enum seq_event_kind {
 	SEQ_EV_BEAT = 1,	/* the beat a seq_request_beat() asked for */
-	SEQ_EV_STOPPED		/* playback stopped while a wait was armed;
+	SEQ_EV_STOPPED,		/* playback stopped while a wait was armed;
 				   the wait is over */
+	SEQ_EV_NOTES		/* Phase 7c: notes from the tracks set to
+				   report them (seq_set_notes()) */
+};
+
+/* Phase 7c: one reporting track's latest note not yet reported. */
+struct seq_note_event {
+	int      track;		/* 1..SEQ_MAX_TRACKS */
+	int      pitch;		/* 0..127 (a rest never reports) */
+	int32_t  index;		/* the note's column in its version, from
+				   0, rests counted as columns */
+	int32_t  count;		/* notes (not rests) the track started
+				   since the last one reported, this one
+				   included: normally 1 (capped at
+				   INT32_MAX) */
 };
 
 struct seq_event {
 	int      kind;		/* enum seq_event_kind */
-	uint32_t request_id;	/* from seq_request_beat() */
+	uint32_t request_id;	/* from seq_request_beat() or
+				   seq_request_event() */
 	int64_t  beat;		/* SEQ_EV_BEAT: main-clock beat number */
 	int      reason;	/* SEQ_EV_STOPPED: SEQ_OK (stopped or
 				   closed) or SEQ_ERR_IO (port lost) */
+	/* Phase 7c, SEQ_EV_NOTES: every reporting track with a note not
+	   yet reported, in ascending track order. */
+	int      nnotes;
+	struct seq_note_event notes[SEQ_MAX_TRACKS];
 };
 
 typedef void (*seq_notify_fn)(void *ctx, const struct seq_event *ev);
@@ -251,6 +278,8 @@ struct seq_track_info {
 	int64_t position;	/* position within the playing version's
 				   current pass, ticks, 0..length-1 (0 if
 				   no playing version) */
+	int     report;		/* Phase 7c: 1 if it reports note events
+				   (seq_set_notes()) */
 };
 
 /* Fills info (room for SEQ_MAX_TRACKS) in ascending track order, all
@@ -331,6 +360,17 @@ int seq_set_loop(const int *tracks, const int *values, int n, int *prev);
 /* Note-on velocity, 1..127. Applies to notes started from now on. */
 int seq_set_velocity(const int *tracks, const int *values, int n, int *prev);
 
+/* Phase 7c: note events on (1) or off (0, the default). A reporting
+   track remembers its latest note not yet reported and how many notes
+   it started since the last one reported; seq_request_event() hands
+   them over. Independent of mute: a muted track still reports (a sync
+   track), and a rest never does. Turning a track on starts it with
+   nothing outstanding; turning it off discards what it had; setting
+   the value it already has changes nothing. Kept through new versions
+   and seq_clear(), like the other settings; a restart (SEQ_RESTART)
+   discards what every track has outstanding. */
+int seq_set_notes(const int *tracks, const int *values, int n, int *prev);
+
 /* ── Transport and tempo ─────────────────────────────────────────── */
 
 enum seq_play_mode {
@@ -367,8 +407,69 @@ int seq_request_beat(uint32_t *request_id);
 
 /* Disarms the wait if request_id is still the armed one (interrupt or
    Escape). A reply already on its way is the caller's to discard by
-   id. */
+   id. Works for either kind of wait.
+   Phase 7c: if the wait's event was SEQ_EV_NOTES and has already been
+   handed to the callback, cancelling it says the caller didn't take
+   it (its wait ended some other way first), and the notes are put
+   back as outstanding, so the next event wait still gets them: added
+   to the count of a track that has started newer notes since (which
+   keep their pitch and index), restored as they were otherwise. A
+   track whose note events were switched since, a restart, or a newer
+   wait armed forgets them. So a caller must cancel only a wait whose
+   event it did not take, and must refuse any event that arrives for
+   it once it has decided to cancel. A beat is never put back. */
 int seq_cancel_wait(uint32_t request_id);
+
+/* ── Event wait (Phase 7c) ───────────────────────────────────────────
+   The wait the interpreter uses since 7c. seq_request_beat() stays as
+   it was (a beat, whatever seq_set_beats() says) for the test driver.
+
+   Beat events on (1) or off (0, the default after seq_open() from
+   CLOSED; kept through a reopen after PORT_LOST, like the tempo). Only
+   seq_request_event() looks at it. Works in STOPPED, PLAYING and
+   PORT_LOST; SEQ_ERR_VALUE for anything but 0 or 1. */
+int seq_set_beats(int on, int *prev);
+int seq_get_beats(int *on);
+
+/* Arms a one-shot wait for the next event: notes from the reporting
+   tracks, or, with beats on, the next main-clock beat. Returns at once.
+   - Some reporting track has a note not yet reported (in any open
+     state, stopped or port lost included): the callback gets
+     SEQ_EV_NOTES with all of them during this call (the library's lock
+     is held, as for every callback), and nothing stays armed.
+   - Otherwise, PLAYING, and beats are on or some reporting track has a
+     version (playing or waiting): armed. At the first tick where a
+     reporting track starts a note, the callback gets SEQ_EV_NOTES with
+     every reporting track that started one on that tick; at the beat
+     asked for, SEQ_EV_BEAT. Notes come before the beat at a tick (the
+     same-tick order), so a beat on a tick with notes is never
+     reported. A stop, close or lost port gives SEQ_EV_STOPPED.
+   - Otherwise SEQ_ERR_NOT_PLAYING (not playing) or SEQ_ERR_NO_EVENT
+     (playing, but nothing can produce an event): the caller skips the
+     sequencer instead of hanging. A reporting track whose notes are all
+     rests can still leave a wait armed with nothing to come; on the
+     real clock the caller's own interrupt ends it.
+   *request_id is set whenever the result is SEQ_OK, including when the
+   event was delivered during the call. Arming replaces any earlier
+   wait (beat or event); only one is ever armed. */
+int seq_request_event(uint32_t *request_id);
+
+/* Phase 7c (agreed Oct 12, 2026, for watching a loop while tuning
+   it): how late the last SEQ_EV_NOTES was handed to the callback, in
+   milliseconds: from the start of the newest note in the event to the
+   hand-over. Measured in ticks and converted at the current tempo, so
+   it is defined while stopped (outstanding notes are handed over
+   then too) and exact on the virtual clock; on the real clock while
+   playing it is real elapsed time (across a tempo change, the part
+   before the change is counted at the new tempo). A wait that was
+   already armed gets its notes as they start, so about 0 (on the real
+   clock, the playback thread's own lateness); notes handed over
+   during seq_request_event() (catch-up) show how stale they were.
+   Kept until the next note event, so it can be read any time after
+   the wait; an event the caller didn't take (seq_cancel_wait()) still
+   counts. 0 after seq_open() from CLOSED, until the first. Beat
+   events aren't measured (always handed over as they happen). */
+int seq_get_note_late(double *ms);
 
 /* ── Test mode (SEQ_BACKEND_VIRTUAL only) ────────────────────────────
    Always compiled; the APL functions that reach these (⎕SEQRUNTO,
@@ -386,6 +487,19 @@ int seq_cancel_wait(uint32_t request_id);
    forgot to start playback fails here, not later). If the port is
    lost on the way, returns SEQ_ERR_IO. SEQ_BACKEND_VIRTUAL only. */
 int seq_virtual_run_to(int64_t tick);
+
+/* Phase 7c: runs the virtual clock until the armed wait (either kind)
+   gets its event, then holds one tick past that event's tick, as a
+   seq_virtual_run_to() just past a beat would; the event arrives
+   during the call. SEQ_OK once the wait has had its event (a STOPPED
+   included), and at once if no wait is armed. If nothing comes within
+   max_ticks of the current position, the clock holds there with the
+   wait still armed and the result is SEQ_ERR_NO_EVENT (a reporting
+   track that will never report again ends in an error, not a hang).
+   SEQ_ERR_NOT_PLAYING unless PLAYING, SEQ_ERR_IO if the port is lost
+   with the wait still armed (can't happen: a lost port ends a wait).
+   SEQ_BACKEND_VIRTUAL only. */
+int seq_virtual_run_to_event(int64_t max_ticks);
 
 /* Copies the log written since open (or since the last clear) into
    buf as text, one line per MIDI message, decoded:

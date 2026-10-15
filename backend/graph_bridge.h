@@ -252,29 +252,11 @@ void gw_clear(long handle, long packedColor);
  * returns. */
 void gw_fpoly(long handle, const int32_t *ops, long count);
 
-/* WCLICK, wnums WCLICK. handles points to `count` window numbers to wait
- * on (count >= 1 -- grfuncs.c's job to ensure). Blocks the ENGINE thread
- * via Qt::BlockingQueuedConnection, same as Phase 1's gw_open() etc. --
- * but for an indefinite, user-paced amount of time rather than an
- * instant GUI round trip. The GUI thread's own event loop keeps running
- * the whole time (windows keep repainting/resizing normally); only APL
- * execution is paused, exactly as any running statement already pauses
- * it. See apl_graphics_mouse_input_notes_v1.md for the full design
- * (including why this is safe/expected for a single-threaded
- * interpreter, and how cancellation -- Ctrl+C, Escape, or an armed
- * window closing -- is handled on the GUI side).
- *
- * On a real left-click in one of the given windows: writes
- * buf[0]=handle, buf[1]=x, buf[2]=y and returns 1.
- * On cancel (Ctrl+C, Escape, ABORTSIG already set) or an armed window
- * closing before any click arrives: leaves buf untouched and returns 0.
- * These are deliberately not distinguished from each other -- callers
- * only ever need "did a click happen." Only open, non-hidden windows in
- * the list are armed; handles that aren't open and hidden windows are
- * skipped. If nothing in the list can be clicked, returns 0 immediately
- * instead of waiting -- see GraphManager::click() for why that's a 0
- * return and not an error. */
-long gw_click(const int32_t *handles, long count, int32_t *buf);
+/* WCLICK: no bridge call since Phase 7a. The wait lives in the event
+ * hub (evhub.c), on the engine thread; GraphManager reports every
+ * click and window close to the hub, and the hub asks for window
+ * states through gw_vis() (registered by main.cpp). gw_click() and
+ * GraphManager::click()'s nested event loop are gone. */
 
 /* WVIS, ⎕WVIS wnums. handles points to `count` window numbers (count may
  * be 0). Writes one state code per handle into buf, in order: 0 = hidden,
@@ -293,7 +275,7 @@ long gw_vis(const int32_t *handles, long count, int32_t *buf);
  * stream, count int32_t values long (a multiple of 2 -- grfuncs.c's job
  * to ensure), N x2 shape matching WPOINTS' own convention. Fully
  * synchronous -- no waiting on user input, same calling convention as
- * gw_size() (Qt::BlockingQueuedConnection), NOT gw_click(). Writes one
+ * gw_size() (Qt::BlockingQueuedConnection). Writes one
  * packed 24-bit color (0xRRGGBB, same packing WCLEAR/WPOINTS' override
  * column already use) per input point into buf, in order -- buf must
  * have room for count/2 int32_t values. A point outside the window's
@@ -510,10 +492,11 @@ long gw_save_image(long handle, const char *filename, long overwrite);
  * inside a BlockingQueuedConnection-invoked slot behaves correctly: the
  * GUI thread's own event loop keeps running for the whole wait (other
  * windows stay responsive/repainting), only the engine thread is
- * paused -- same property gw_click() already relies on, just arrived
- * at via QFileDialog's own internal nested event loop rather than the
- * purpose-built QEventLoop gw_click() needs (a plain modal dialog has
- * no armed-handle-list concept to poll). The spike used
+ * paused -- the same property the pre-7a gw_click() relied on, here
+ * arrived at via QFileDialog's own internal nested event loop rather
+ * than a purpose-built QEventLoop (a plain modal dialog has no
+ * armed-handle-list concept to poll; WCLICK's wait has been in the
+ * event hub, evhub.c, since Phase 7a). The spike used
  * QFileDialog::DontUseNativeDialog to make Cancel/Accept scriptable
  * under an offscreen test display -- the native dialog (what this
  * function actually uses) is assumed to share the same underlying
@@ -524,7 +507,7 @@ long gw_save_image(long handle, const char *filename, long overwrite);
  * Writes the selected file's full path into buf, null-terminated and
  * truncated to bufsize -- same convention gw_tagof() already uses. On
  * Cancel/Escape, buf is set to an empty string -- not a failure code,
- * same "nothing to report" convention as gw_click()'s empty-vector
+ * same "nothing to report" convention as WCLICK's empty-vector
  * result and gw_tagof()'s empty-string case; the two aren't
  * distinguished. No separate return value here (unlike gw_size()'s 1/0
  * success flag) -- an empty buf IS the complete signal, since a real

@@ -13,6 +13,8 @@
 #include <stdlib.h>	/* realloc() -- see gscratch_ensure() below */
 #include <ctype.h>	/* isalpha() -- see is_absolute_path() below */
 
+short ev_wait_apl();	/* evwait.c: WCLICK and EVWAIT's one wait (Phase 7b) */
+
 /* LSCRATCH's real element capacity as an int32_t buffer -- mirrors the
    exact formula that sizes g_lscratch itself (see parse.h). Computed
    independently here rather than via sizeof(LSCRATCH), since it's not
@@ -803,55 +805,25 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 			gw_fpoly(acc,g_gscratch,count);
 			swapdrop();
 			return(0);
-		case 11:	/* WCLICK, wnums WCLICK. re is one or more
-			   window handles to wait on -- a flat vector, same
-			   DATA_LEN-not-SBOUNDS reasoning as POLY/WPOINTS/
-			   FPOLY above applies here too. Blocks the whole
-			   engine thread (gw_click(), via
-			   Qt::BlockingQueuedConnection) until a left-click
-			   lands in one of those windows, one of them closes,
-			   or the wait is cancelled (Escape while the wait is
-			   active, or ABORTSIG going nonzero from Ctrl+C or a
-			   no-wait-active Escape) -- see
-			   apl_graphics_mouse_input_notes_v1.md for the full
-			   design. Returns handle,x,y (3 elements) on a real
-			   click. Cancelled/closed/aborted all collapse to
-			   the same empty-vector result at this layer,
-			   deliberately -- matches the "recoverable
-			   condition, not an error" resolution direction in
-			   that same doc, and mirrors WNUMS' own
-			   push_val(0,1,LSCRATCH) shape for "nothing to
-			   report" when acc is 0.
-
-			   Only open, non-hidden windows are armed (resolved
-			   in GraphManager::click()). If none of the handles
-			   given qualifies -- all hidden, all not open, or a
-			   mix -- the result is the same empty vector,
-			   immediately, not an error and not an indefinite
-			   wait: a window the user closed just before this
-			   call is indistinguishable from one closed during
-			   the wait, which already returns empty. Only an
-			   empty handle LIST is ERR_LENGTH (below) -- that's
-			   a malformed call, not a window-state condition.
-
-			   WCLICK's result is a wholly new value, not
-			   derived from re the way a DYAD's swapdrop() reuses/
-			   replaces its operands -- so re needs to come off
-			   the stack before push_val(), same fix/reasoning
-			   WSIZE's monadic-with-re case already applies (see
-			   its comment above): without this, re's original
-			   value would sit on the stack underneath the newly
-			   pushed click result. */
-			if (!SBOUNDS(re)) return(SET_ERR(ERR_LENGTH));
-			count = DATA_LEN(re);
-			if (!gscratch_ensure(count))
-				return(SET_ERR(ERR_WSFULL));
-			for (j = 0; j < count; j++)
-				g_gscratch[j] = (int32_t)get_data(re,j);
-			i = gw_click(g_gscratch,count,LSCRATCH);
-			stack_pop(1);
-			if (!i) return(push_val(0,1,LSCRATCH));
-			return(push_val(3,1,LSCRATCH));
+		case 11:	/* WCLICK sources. The same wait as EVWAIT since
+			   Phase 7b: evwait.c's ev_wait_apl(), which waits in
+			   the event hub (evhub.c) for a left click in one of
+			   the windows listed, or a sequencer event if ¯1 is
+			   listed. Returns handle,x,y on a click (unchanged),
+			   ¯1 type details from the sequencer, or empty: none
+			   of the list could produce an event (windows not
+			   open or hidden, the sequencer not playing), a
+			   window waited on closed, Escape, or Ctrl-C (the
+			   line runs on and is interrupted after it, as
+			   before). Argument rules are EVWAIT's since 7b: a
+			   scalar or vector of whole numbers (a matrix is a
+			   Rank Error, a fraction or a negative number other
+			   than ¯1 a Domain Error, an empty list a Length
+			   Error). See evwait.c, evhub.c and
+			   MIDI_SEQUENCER_NOTES.md ("Events and waiting");
+			   apl_graphics_mouse_input_notes_v1.md for the
+			   original click-wait design. */
+			return(ev_wait_apl(re));
 		case 12:	/* WPIXEL, wnum WPIXEL <x,y point list>. re is
 			   a flat x,y stream, N x2 shape (matching WPOINTS'
 			   own convention -- confirmed via user decision, not

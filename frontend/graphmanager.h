@@ -10,7 +10,6 @@
 #include <QFont>
 #include <QWidget>
 #include <QPointer>
-#include <QEventLoop>
 
 class GraphWindow;
 
@@ -129,7 +128,7 @@ public slots:
     // open at all -- same "empty means failure" convention size() uses
     // -- which is how a wholly bad handle is distinguished from a
     // legitimate (if all-out-of-bounds) result. Fully synchronous, same
-    // category as size(), not click() -- no waiting on user input.
+    // category as size() -- no waiting on user input.
     QVector<long> pixel(long handle, const QVector<long> &points) const;
 
     // No-op if handle isn't currently open.
@@ -413,48 +412,6 @@ public slots:
     // risking a half-finished frame.
     QImage imageForSave(long handle) const;
 
-    // WCLICK. handles is one or more window numbers to wait on. Blocks
-    // (via a nested QEventLoop entered from within this
-    // BlockingQueuedConnection-invoked slot -- see graph_bridge.cpp)
-    // until a left-click lands in one of them, one of them closes, or the
-    // wait is cancelled: ABORTSIG going nonzero (Ctrl+C, or Escape when
-    // no wait is active), or Escape specifically while this wait is
-    // active (see g_graphicsWaitActive/g_graphicsWaitCancelled below).
-    // The GUI thread's own event loop keeps running throughout -- only
-    // the engine thread is paused, exactly as for any other statement.
-    // Returns {handle,x,y} (3 elements) on a real click. Every other
-    // outcome -- cancelled, closed, aborted -- returns an empty vector;
-    // deliberately not distinguished at this layer, matching the
-    // "recoverable condition, not an error" resolution direction in
-    // apl_graphics_mouse_input_notes_v1.md. Re-entrant calls (a second
-    // click() while one is already waiting) can't happen from APL today
-    // -- the engine is single-threaded -- but return empty rather than
-    // clobbering the outer wait's armed set if it ever somehow did.
-    //
-    // Only windows that could actually deliver a click are armed: open
-    // and not hidden (minimized still counts -- the user can restore it
-    // and click). Handles that aren't open, and open-but-hidden windows,
-    // are skipped; arming them would only make the wait unsatisfiable
-    // (escapable only by Escape/Ctrl+C). If nothing in the list
-    // qualifies, returns empty immediately -- the same result as a
-    // cancel or a close-during-wait.
-    //
-    // Empty rather than an error, decided in conversation: a window the
-    // user closed via its title bar just BEFORE the WCLICK call is in the
-    // same position as one closed DURING the wait (already empty by
-    // design), and the two differ only by timing the program can't
-    // control -- same reasoning WIRELOAD used for returning a value
-    // instead of an error. At this layer a never-opened handle can't be
-    // told apart from a user-closed one, so both get the same answer.
-    // (Before hidden windows were added, a list of only not-open handles
-    // blocked until Escape/Ctrl+C -- changed deliberately here.)
-    //
-    // A window can't close via WCLOSE or become hidden mid-wait (the
-    // engine thread, the only source of those, is blocked for the whole
-    // wait), so checking once at arming time is enough; a user title-bar
-    // close mid-wait is still handled by cancelWaitIfArmed().
-    QVector<long> click(const QVector<long> &handles);
-
     // WVIS. One state code per handle, in the order given: 0 = hidden,
     // 1 = shown, 2 = minimized, -1 = not currently open (house "not
     // open" sentinel; never fails the whole call, same per-entry
@@ -472,11 +429,10 @@ public slots:
     // modal QFileDialog::exec() invoked this way (cross-thread
     // BlockingQueuedConnection into a slot that runs exec() itself)
     // behaves correctly: the GUI thread's own event loop keeps running
-    // for the whole wait, only the engine thread is paused -- same
-    // property click() above relies on, just achieved via QFileDialog's
-    // own internal nested event loop rather than a purpose-built
-    // QEventLoop the way click() needs one (a dialog has no
-    // armed-handle-list concept to poll).
+    // for the whole wait, only the engine thread is paused -- the same
+    // property the pre-Phase-7a click() relied on, here achieved via
+    // QFileDialog's own internal nested event loop. (WCLICK's wait has
+    // been in the event hub, evhub.c, on the engine thread since 7a.)
     //
     // Parented to m_focusTarget (the terminal widget) when set -- same
     // pointer open()/openImage() already use for their own post-open
@@ -487,25 +443,28 @@ public slots:
     // Returns the selected file's full path, or an empty string on
     // Cancel/Escape -- deliberately not distinguished from each other,
     // same "nothing to report" convention as tagOf()'s own empty-string
-    // case and click()'s empty-vector case. No separate success flag: a
+    // case and WCLICK's empty-vector case. No separate success flag: a
     // real accepted path can never be empty, so the empty string alone
     // is the complete signal.
     QString fileDialog(const QString &title, const QString &filter);
 
 private slots:
     // Connected to every GraphWindow's clicked() signal at open() time.
-    // No-ops unless a click() wait is in progress AND handle is in that
-    // wait's armed set -- ordinary unarmed clicks (no WCLICK currently
-    // waiting on that window) are simply ignored, same as a mouse click
-    // on a window with no listener at all would be from APL's point of
-    // view.
+    // Reports every left click to the event hub (evhub_click()), waited
+    // for or not: the hub drops it unless a WCLICK is waiting on that
+    // window (Phase 7a). Clicks never queue.
     void onWindowClicked(int handle, int x, int y);
     // Connected to each GraphWindow's closing() signal at open() time --
     // this is the OS-level close (title-bar button) path. WA_DeleteOnClose
     // on GraphWindow means the widget itself is already being torn down
     // by Qt by the time this runs; all we do here is drop the registry
-    // entry.
+    // entry, and report the close to the event hub, which ends a WCLICK
+    // waiting on that window.
     void onWindowClosing(int handle);
+    // Connected to each GraphWindow's escapePressed() at open() time
+    // (Phase 7b): Escape with a graphics window active ends a wait in
+    // progress (evhub_escape()), as Escape in the terminal does.
+    void onWindowEscape();
 
 private:
     // Shared by open()/openImage(): the lowest currently-unused handle,
@@ -534,14 +493,6 @@ private:
     // window placed: once shown, the window manager has given it a real
     // position even if the caller never did.
     void reveal(GraphWindow *win);
-
-    // Shared by close()/onWindowClosing(): if handle is currently armed
-    // for an in-progress click() wait, that window disappearing out from
-    // under the wait is the same "give up on this wait" case as a
-    // cancel -- quit the loop with m_clickResult left empty rather than
-    // ever touching the (about-to-be-destroyed) GraphWindow again. No-op
-    // if no wait is in progress or handle isn't armed.
-    void cancelWaitIfArmed(int handle);
 
     // Shared unpack for WCLEAR's/WPOINTS' packed-color convention --
     // plain 0xRRGGBB right-shift/mask. Does not go through QColor(QRgb),
@@ -586,39 +537,11 @@ private:
     // single-thread-owns-it reasoning as m_focusTarget just above, not a
     // new pattern.
     bool m_useNativeFileDialog = false;
-
-    // WCLICK wait state -- see click(). m_clickLoop is non-null only for
-    // the duration of an in-progress wait (points at a QEventLoop that's
-    // a local on click()'s own stack); its non-nullness is also how
-    // onWindowClicked()/cancelWaitIfArmed() know whether a wait is
-    // currently active at all, not just which handles are armed.
-    QSet<int> m_armedHandles;
-    QVector<long> m_clickResult;
-    QEventLoop *m_clickLoop = nullptr;
 };
 
 // Set by main.cpp at startup (alongside g_terminal), before the engine
 // thread starts. Null until then -- every gw_* bridge function checks for
 // null the same way qt_puts()/qt_pchar() etc. check g_terminal.
 extern GraphManager *g_graphManager;
-
-// WCLICK / Escape-cancel coordination between GraphManager (GUI thread)
-// and APLTerminalWidget::keyPressEvent() (also GUI thread -- both
-// globals below are plain, unmarshaled, exactly like ABORTSIG itself,
-// for the same reason: reader and writer share a thread).
-//
-// g_graphicsWaitActive: true for the duration of a GraphManager::click()
-// wait, false otherwise. Tells the terminal's keyPressEvent() whether
-// Escape should mean "soft-cancel this one wait" or its ordinary
-// "abort the running program" meaning.
-//
-// g_graphicsWaitCancelled: set to 1 by keyPressEvent() when Escape is
-// pressed while g_graphicsWaitActive is true. Polled and consumed
-// (reset to 0) by click()'s wait loop -- unlike ABORTSIG, which WCLICK
-// must only ever read (clearing it is exec_apl_line()'s job alone),
-// GraphManager owns this flag's full lifecycle end to end, since
-// nothing else ever needs to observe it.
-extern bool g_graphicsWaitActive;
-extern int g_graphicsWaitCancelled;
 
 #endif // GRAPHMANAGER_H

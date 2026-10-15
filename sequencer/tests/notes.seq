@@ -1,0 +1,131 @@
+# Phase 7c: note events from chosen tracks, and the event wait.
+# evwait arms seq_request_event() and runs the virtual clock to its
+# event, holding one tick past it; evarm only arms.
+#
+# Nothing reports by default, and beats are off: playing with nothing
+# that can produce an event is SEQ_ERR_NO_EVENT (the glue skips the
+# sequencer), not a hang.
+open virtual
+beats
+state
+track 1 60:1 62:1 64:1 65:1
+track 2 36:2 r:1 38:1
+play continue
+evarm
+# Beats on: the event wait gives beats, as seq_request_beat() does.
+beats 1
+evwait
+evwait
+beats 0
+# Track 2 reports. Its rest is a column (index 1) that never reports,
+# so after 38 at column 2 (beat 3) comes 36 at column 0 (beat 4).
+notes 2 = 1
+state
+evwait
+evwait
+evwait
+# Two reporting tracks: notes on one tick come in one event, tracks
+# ascending. Track 1 is muted: it still reports (a sync track), and
+# the log shows no note-on for it.
+notes 1 = 1
+mute 1 = 1
+logdrop
+evwait
+evwait
+log
+# Catch-up: busy until beat 15.5. Each track's latest note, with how
+# many it started since the last one reported, comes at once, in one
+# event, during the arm.
+runto 15.5
+evarm
+evwait
+# A wait that ended some other way while its notes were on their way
+# (the interpreter's hub refuses them then): cancelling it puts them
+# back for the next wait, under any newer note (62 at 17 handed over
+# and not taken, then 64 at 18: the next wait gets 64 with a count
+# of 2).
+evarm
+runto 17.5
+runto 18.5
+cancel
+evarm
+# Turning a track off discards what it had; on again starts fresh;
+# setting the value it already has keeps it (track 2's 38 at 19).
+runto 19.5
+notes 1 = 0
+notes 2 = 1
+evarm
+notes 1 = 1
+evwait
+# Notes and beats on one tick: the notes win, that beat is gone. Track
+# 2 alone (notes at 0 and 3 of every 4): beats 21 and 22 come as
+# beats, then the note at 23.
+notes 1 = 0
+beats 1
+evwait
+evwait
+evwait
+evwait
+beats 0
+# A new version restarts the index; it takes over at track 1's
+# boundary (beat 28).
+notes 1 = 1
+notes 2 = 0
+track 1 70:1/2 71:1/2 72:1 73:2
+evwait
+evwait
+evwait
+evwait
+# Stopped with notes outstanding: handed over all the same. Stopped
+# with none: not playing.
+runto 30.5
+play stop
+evarm
+evarm
+# A restart discards what is outstanding (70 at beat 32): the wait
+# arms instead of handing it over, and the next event is beat 0's.
+play continue
+runto 32.5
+play restart
+evarm
+evwait
+# A reporting track that can't report any more: cleared while stopped
+# (at once), it no longer counts, so with nothing else the wait is
+# skipped.
+notes 1 = 0
+notes 2 = 1
+play stop
+clear 2
+play continue
+evarm
+# One whose notes are all rests still counts; the virtual clock gives
+# up at the limit (here 4 beats), holding there with the wait armed.
+track 2 r:1
+evwait 4
+cancel
+# A lost port during a wait ends it with STOPPED. The failed write
+# here is beat 10's note-off, before the tick's note-on, so nothing
+# new is outstanding; continuing after the reopen finishes beat 10
+# and reports its note then.
+notes 2 = 0
+notes 1 = 1
+mute 1 = 0
+runto 9.5
+evarm
+failwrites on
+evwait
+failwrites off
+# Reopened after the lost port: settings kept (beats too).
+beats 1
+open virtual
+state
+evarm
+play continue
+evwait
+close
+# Reopened from closed: everything back to the defaults.
+open virtual
+beats
+track 1 60:1
+state
+close

@@ -307,33 +307,10 @@ void gw_fpoly(long handle, const int32_t *ops, long count)
     });
 }
 
-long gw_click(const int32_t *handles, long count, int32_t *buf)
-{
-    if (!g_graphManager || !handles || count <= 0 || !buf) return 0;
-
-    QVector<long> handleList;
-    handleList.reserve(count);
-    for (long i = 0; i < count; ++i) handleList.append((long)handles[i]);
-
-    // BlockingQueuedConnection here, same as gw_open()/gw_nums()/etc.,
-    // but GraphManager::click() itself runs a nested QEventLoop that can
-    // block for an arbitrarily long, user-paced time -- not the instant
-    // GUI round-trip the rest of Phase 1's calls make. That's fine: this
-    // call just blocks until click()'s slot returns, however long that
-    // takes; the stack frame stays alive throughout, so capturing
-    // handleList/result by reference is safe for the same reason noted
-    // at the top of this file for the Phase 1 calls.
-    QVector<long> result;
-    QMetaObject::invokeMethod(g_graphManager, [&]() {
-        result = g_graphManager->click(handleList);
-    }, Qt::BlockingQueuedConnection);
-
-    if (result.size() < 3) return 0;   // cancelled/closed/aborted
-    buf[0] = (int32_t)result[0];
-    buf[1] = (int32_t)result[1];
-    buf[2] = (int32_t)result[2];
-    return 1;
-}
+// gw_click() was here until Phase 7a: WCLICK's wait is in the event hub
+// (evhub.c) now, on the engine thread. GraphManager reports clicks and
+// closes there, and the hub asks for window states through gw_vis()
+// below (registered by main.cpp's startEngine()).
 
 long gw_vis(const int32_t *handles, long count, int32_t *buf)
 {
@@ -374,7 +351,7 @@ long gw_pixel(long handle, const int32_t *points, long count, int32_t *buf)
     for (long i = 0; i < count; ++i) pointsCopy.append((long)points[i]);
 
     // BlockingQueuedConnection like gw_size()/gw_open() -- a plain,
-    // instant GUI-thread round trip, not gw_click()'s indefinite wait.
+    // instant GUI-thread round trip.
     QVector<long> result;
     QMetaObject::invokeMethod(g_graphManager, [&]() {
         result = g_graphManager->pixel(handle, pointsCopy);
