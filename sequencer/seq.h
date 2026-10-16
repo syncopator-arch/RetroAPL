@@ -4,7 +4,9 @@
 	Phase 7c (note events, the beat switch, the event wait; Oct 12,
 	2026) marked "Phase 7c"; Phase 8 (opening a port by device name,
 	the port list; per-note velocity, length and channel, the gate;
-	Oct 15, 2026) marked "Phase 8". All added without
+	Oct 15, 2026) marked "Phase 8"; Phase 9 (reading a track's notes
+	back out, for writing MIDI files; Oct 16, 2026) marked "Phase 9".
+	All added without
 	changing what was there, except that a name not in the "hw:" form
 	(Linux) or not a number (Windows), once SEQ_ERR_PORT_NAME, is now
 	looked up as a device name (Phase 8).
@@ -450,6 +452,31 @@ int seq_set_notes(const int *tracks, const int *values, int n, int *prev);
    other settings. prev (may be NULL) receives the previous values. */
 int seq_set_gate(const int *tracks, const double *values, int n,
                  double *prev);
+
+/* Phase 9 (Oct 16, 2026): a track's notes as they would sound, for
+   writing a MIDI file. One pass of the track's version: the playing one,
+   or, if nothing is playing on it yet, the one waiting to start (a
+   version waiting behind a playing one isn't it). Each note as play
+   would send it: its note-on velocity (its own scaled by the track's
+   velocity, or the track's), its channel (its own, or the version's),
+   and the tick of its note-off within the pass (its own length, or the
+   gate times its step, at least one tick, never past the next note's
+   start). Rests are left out. Mute is ignored: a muted track's notes
+   are returned like any other's.
+
+   *notes receives a malloc'd array (free it; NULL when there are none),
+   *n how many, *length the pass's length in ticks (0 if the track has
+   no version). Works in STOPPED, PLAYING and PORT_LOST.
+   SEQ_ERR_TRACK, SEQ_ERR_NOT_OPEN, SEQ_ERR_NOMEM. */
+struct seq_note_out {
+	int64_t start;		/* ticks from the start of the pass */
+	int64_t off;		/* its note-off, the same way */
+	int     pitch;		/* 0..127 */
+	int     vel;		/* 1..127 */
+	int     chan;		/* 1..16 */
+};
+int seq_get_track_notes(int track, struct seq_note_out **notes, int32_t *n,
+                        int64_t *length);
 
 /* ── Transport and tempo ─────────────────────────────────────────── */
 

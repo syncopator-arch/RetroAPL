@@ -1334,6 +1334,59 @@ int seq_set_gate(const int *tracks, const double *values, int n,
 	return SEQ_OK;
 }
 
+/* Phase 9: see seq.h. The version is cur: the playing one, or the one
+   about to start (pend exists only behind a live cur). Worked out with
+   the same note_vel(), note_chan() and note_end() play_tick() uses, so
+   a file gets what the synth hears. */
+int seq_get_track_notes(int track, struct seq_note_out **notes, int32_t *n,
+                        int64_t *length)
+{
+	struct seq_note_out *a = NULL;
+	struct version *v;
+	struct track *tr;
+	int32_t i, k = 0, cnt = 0;
+
+	*notes = NULL;
+	*n = 0;
+	*length = 0;
+	if (bad_track(track))
+		return SEQ_ERR_TRACK;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		pthread_mutex_unlock(&S.lock);
+		return SEQ_ERR_NOT_OPEN;
+	}
+	tr = &S.tr[track];
+	v = tr->cur;
+	if (v) {
+		for (i = 0; i < v->n; i++)
+			if (v->pitch[i] != SEQ_REST)
+				cnt++;
+		if (cnt) {
+			a = malloc((size_t)cnt * sizeof *a);
+			if (!a) {
+				pthread_mutex_unlock(&S.lock);
+				return SEQ_ERR_NOMEM;
+			}
+		}
+		for (i = 0; i < v->n; i++) {
+			if (v->pitch[i] == SEQ_REST)
+				continue;
+			a[k].start = v->start[i];
+			a[k].off = note_end(tr, v, i);
+			a[k].pitch = v->pitch[i];
+			a[k].vel = note_vel(tr, v, i);
+			a[k].chan = note_chan(v, i);
+			k++;
+		}
+		*length = length_of(v);
+	}
+	pthread_mutex_unlock(&S.lock);
+	*notes = a;
+	*n = k;
+	return SEQ_OK;
+}
+
 /* ── Transport and tempo ──────────────────────────────────────────── */
 
 static void stop_playing(void)

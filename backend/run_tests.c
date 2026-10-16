@@ -39,6 +39,8 @@
 	TEST_DIR/fns/ are copied into the scratch APLHOME/fns/ first, where
 	)ENTER finds them, and the whole TEST_DIR/images/ tree (subfolders
 	and dot files included) into APLHOME/images/, where )IMAG looks.
+	TEST_DIR/midi/ is copied the same way into APLHOME/midi/, where
+	⎕MIDIREAD and ⎕MIDIINFO look (Phase 9).
 
 	The runner hands apl_cli the .apl file as its standard input and a
 	file as its standard output and error, directly -- no pipes, so no
@@ -715,6 +717,13 @@ main(int argc, char **argv)
 		mkpath(src, "%s/images", test_dir);
 		if (is_dir(src)) {
 			mkpath(dst, "%s/images", scratch);
+			copy_tree(src, dst);
+		}
+		/* and the MIDI file fixtures, where ⎕MIDIREAD and
+		   ⎕MIDIINFO look (Phase 9) */
+		mkpath(src, "%s/midi", test_dir);
+		if (is_dir(src)) {
+			mkpath(dst, "%s/midi", scratch);
 			copy_tree(src, dst);
 		}
 		set_env("APLHOME", scratch);

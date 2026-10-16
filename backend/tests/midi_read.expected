@@ -1,0 +1,164 @@
+Clear WS
+     ⍝ ⎕MIDIREAD and ⎕MIDIINFO (Phase 9): files from tests/midi/, which run_tests copies to $APLHOME/midi/
+     ⍝ t5000.mid: the old utility's file, two tracks, no tempo
+     ⎕MIDIINFO 't5000.mid'
+    0    1    2  120   ¯1   ¯1   ¯1    0
+    1    1   48   18    1   24   44   ¯1
+    2    1   48   18    2   24   44   ¯1
+     M←'t5000.mid' ⎕MIDIREAD 1
+     ⍴M
+5 48
+     M[;⍳6]
+  39.000  38.000  39.000  32.000  44.000  38.000
+   0.375   0.375   0.375   0.375   0.375   0.375
+ 100.000 100.000 100.000 100.000 100.000 100.000
+   0.375   0.375   0.375   0.375   0.375   0.375
+   1.000   1.000   1.000   1.000   1.000   1.000
+     +/M[2;]
+18
+     M←'t5000.mid' ⎕MIDIREAD 2 1
+     M[5;⍳6]
+2 2 2 2 2 2
+     ⍝ t5000m3.mid: MuseScore 3; its end (1 tick after the last note-off) rounds up to 35 beats
+     ⎕MIDIINFO 't5000m3.mid'
+    0    1    2  480  120    4    4    0
+    1    1  140   35    2   41   71    0
+    2    1  140   35    3   29   47    0
+     M←'t5000m3.mid' ⎕MIDIREAD 2
+     ⍴M
+5 140
+     M[;⍳4]
+  29.0000000000  29.0000000000  47.0000000000  47.0000000000
+   0.2500000000   0.2500000000   0.2500000000   0.2500000000
+ 100.0000000000 100.0000000000 100.0000000000 100.0000000000
+   0.2354166667   0.2354166667   0.2354166667   0.2354166667
+   3.0000000000   3.0000000000   3.0000000000   3.0000000000
+     +/M[2;]
+35
+     ⍝ chords.mid: a chord with its bottom note held under a melody: three voices
+     ⎕MIDIINFO 'chords.mid'
+   0   0   1  96  ¯1  ¯1  ¯1   0
+   1   1   1   4   1  48  48  ¯1
+   1   2   4   4   1  64  72  ¯1
+   1   3   1   4   1  67  67  ¯1
+     'chords.mid' ⎕MIDIREAD 1 1
+   48
+    4
+  100
+    4
+    1
+     'chords.mid' ⎕MIDIREAD 1 2
+   64   69   71   72
+    1    1    1    1
+  100  100  100  100
+    1    1    1    1
+    1    1    1    1
+     'chords.mid' ⎕MIDIREAD 1,3
+   67
+    4
+  100
+    1
+    1
+     'chords.mid' ⎕MIDIREAD 2÷2
+   48
+    4
+  100
+    4
+    1
+     ⍝ conductor.mid: a first track with no notes (voice 0 in ⎕MIDIINFO), a leading program change
+     ⎕MIDIINFO 'conductor.mid'
+    0    1    3  480   90    6    8    0
+    1    0    0    0   ¯1   ¯1   ¯1   ¯1
+    2    1    2    2    2   55   57   12
+    3    0    0    0   ¯1   ¯1   ¯1   ¯1
+     'conductor.mid' ⎕MIDIREAD 2
+   55   57
+    1    1
+  100  100
+    1    1
+    2    2
+     ⍝ no such file: no rows, not an error
+     ⍴⎕MIDIINFO 'nosuch.mid'
+0 8
+     0=1↑⍴⎕MIDIINFO 'nosuch.mid'
+1
+     ⍝ a name typed in capitals: tried as given, then with A-Z in lower case
+     ⎕MIDIINFO 'CHORDS.MID'
+   0   0   1  96  ¯1  ¯1  ¯1   0
+   1   1   1   4   1  48  48  ¯1
+   1   2   4   4   1  64  72  ¯1
+   1   3   1   4   1  67  67  ¯1
+     ⍴'T5000M3.MID' ⎕MIDIREAD 2 1
+5 140
+     ⍴⎕MIDIINFO 'NOSUCH.MID'
+0 8
+     ⍝ results don't depend on ⎕IO
+     ⎕IO←0
+     'chords.mid' ⎕MIDIREAD 1 2
+   64   69   71   72
+    1    1    1    1
+  100  100  100  100
+    1    1    1    1
+    1    1    1    1
+     (⎕MIDIINFO 'chords.mid')[;1]
+0 1 2 3
+     ⎕IO←1
+     ⍝ errors
+     'conductor.mid' ⎕MIDIREAD 1
+     ^
+Domain Error
+     'conductor.mid' ⎕MIDIREAD 3
+     ^
+Domain Error
+     'chords.mid' ⎕MIDIREAD 1 4
+     ^
+Domain Error
+     'chords.mid' ⎕MIDIREAD 1 0
+     ^
+Domain Error
+     'chords.mid' ⎕MIDIREAD 2
+     ^
+Domain Error
+     'chords.mid' ⎕MIDIREAD 0
+     ^
+Domain Error
+     'chords.mid' ⎕MIDIREAD 1.5
+     ^
+Domain Error
+     'chords.mid' ⎕MIDIREAD 1 1 1
+     ^
+Length Error
+     'chords.mid' ⎕MIDIREAD ⍳0
+     ^
+Length Error
+     'chords.mid' ⎕MIDIREAD 1 1⍴1
+     ^
+Rank Error
+     'chords.mid' ⎕MIDIREAD '1'
+     ^
+Domain Error
+     1 ⎕MIDIREAD 1
+     ^
+Domain Error
+     '' ⎕MIDIREAD 1
+     ^
+Domain Error
+     'nosuch.mid' ⎕MIDIREAD 1
+     ^
+File Not Found
+     'NOSUCH.MID' ⎕MIDIREAD 1
+     ^
+File Not Found
+     'notmidi.mid' ⎕MIDIREAD 1
+     ^
+Bad MIDI File
+     ⎕MIDIINFO 'notmidi.mid'
+     ^
+Bad MIDI File
+     ⎕MIDIINFO 1
+     ^
+Domain Error
+     ⎕MIDIINFO ''
+     ^
+Domain Error
+     

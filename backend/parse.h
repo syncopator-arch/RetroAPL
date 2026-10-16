@@ -150,6 +150,12 @@ typedef short (*PTF)();
 #define ERR_SEQOPEN 37		/* "Sequencer Already Open" */
 #define ERR_SEQLOST 38		/* "MIDI Port Lost": the device stopped
 				   taking data; ⎕SEQOPEN to reopen */
+/* MIDI files (seqfuncs.c, ⎕MIDIREAD and ⎕MIDIINFO), Phase 9 */
+#define ERR_MIDIFILE 39		/* "Bad MIDI File": the file is there but
+				   isn't a Standard MIDI File, is damaged,
+				   or uses SMPTE timing. A missing file is
+				   ERR_FNOTF for ⎕MIDIREAD and no rows for
+				   ⎕MIDIINFO. */
 
 /* mem entry flags */
 #define ME_VAL 1	/* value */

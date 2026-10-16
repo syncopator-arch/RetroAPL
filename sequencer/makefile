@@ -6,7 +6,9 @@
 #   seqtest     -- standalone test driver (tests/NAME.seq)
 #   seqdemo     -- plays through a real port: seqdemo PORT; seqdemo -l
 #                  lists the ports (Phase 3; Windows, WinMM: Phase 6)
-#   check       -- build seqtest and run every test
+#   smftest     -- the MIDI file reader's tests (smf.c; Phase 9):
+#                  tests/smf/NAME.mid against NAME.expected
+#   check       -- build seqtest and smftest and run every test
 #   check_san   -- the tests under AddressSanitizer + UBSan (Linux)
 #   check_tsan  -- the tests under ThreadSanitizer (Linux)
 #   check_fallback -- the real-clock tests with timed waits forced onto
@@ -19,15 +21,18 @@
 # Recording a test is done with seqtest itself, by name:
 #   ./seqtest NAME        (reports NEW; read tests/NAME.out)
 #   ./seqtest -r NAME     (copies it to tests/NAME.expected)
+# and the same way with smftest (tests/smf/NAME.out, NAME.expected);
+# ./smftest -p FILE prints what the reader makes of any MIDI file.
 
 CC = gcc
 AR = ar
 
+# -lm: smf.c (Phase 9) rounds the tempo with floor()
 ifeq ($(OS),Windows_NT)
-	LDLIBS = -lpthread -lwinmm
+	LDLIBS = -lpthread -lwinmm -lm
 	EXE = .exe
 else
-	LDLIBS = -lpthread
+	LDLIBS = -lpthread -lm
 	EXE =
 endif
 
@@ -38,11 +43,13 @@ endif
 # the Qt kit's MinGW).
 CFLAGS = -std=gnu99 -Wall -O2 -g -ffp-contract=off -pthread
 
-SRCS = seq.c seq_out_log.c seq_out_device.c
+# smf.c, the MIDI file reader (Phase 9), touches nothing of the
+# sequencer's; it is in the library so the interpreter links one thing.
+SRCS = seq.c seq_out_log.c seq_out_device.c smf.c
 OBJS = $(SRCS:.c=.o)
-HDRS = seq.h seq_internal.h
+HDRS = seq.h seq_internal.h smf.h
 
-all: libseq.a seqtest seqdemo
+all: libseq.a seqtest seqdemo smftest
 
 %.o: %.c $(HDRS)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -56,9 +63,13 @@ seqtest: seqtest.c libseq.a $(HDRS)
 seqdemo: seqdemo.c libseq.a $(HDRS)
 	$(CC) $(CFLAGS) seqdemo.c libseq.a -o $@ $(LDLIBS)
 
+smftest: smftest.c libseq.a $(HDRS)
+	$(CC) $(CFLAGS) smftest.c libseq.a -o $@ $(LDLIBS)
+
 # seqdemo too, so a check always leaves a current demo beside it
-check: seqtest seqdemo
+check: seqtest seqdemo smftest
 	./seqtest
+	./smftest
 
 # ── Sanitizer builds (Linux; MinGW has neither) ─────────────────────────
 # Built straight from the sources, so they never mix with the normal
@@ -74,8 +85,12 @@ seqtest_san: seqtest.c $(SRCS) $(HDRS)
 seqtest_tsan: seqtest.c $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) -O1 $(TSAN_FLAGS) seqtest.c $(SRCS) -o $@ $(LDLIBS)
 
-check_san: seqtest_san
+smftest_san: smftest.c smf.c smf.h
+	$(CC) $(CFLAGS) -O1 $(SAN_FLAGS) smftest.c smf.c -o $@ $(LDLIBS)
+
+check_san: seqtest_san smftest_san
 	./seqtest_san
+	./smftest_san
 
 # halt_on_error: a race report fails the run instead of scrolling past
 check_tsan: seqtest_tsan
@@ -103,6 +118,7 @@ check_device: seqtest_device
 clean:
 	rm -f $(OBJS) libseq.a seqtest$(EXE) seqdemo$(EXE) seqtest_san \
 	      seqtest_tsan seqtest_fallback seqtest_device \
-	      tests/*.out tests/device/*.out
+	      smftest$(EXE) smftest_san \
+	      tests/*.out tests/device/*.out tests/smf/*.out
 
 .PHONY: all check check_san check_tsan check_fallback check_device clean

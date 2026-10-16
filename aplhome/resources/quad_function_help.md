@@ -1282,6 +1282,113 @@ fraction, or a negative number other than `¯1`.
 
 ---
 
+## MIDI Files
+
+`⎕MIDIREAD` and `⎕MIDIINFO` read Standard MIDI Files (`.mid`), such as
+MuseScore and Cakewalk export, into arrays a program can send straight
+to the sequencer. They don't need the sequencer open. A file name is
+used as given if it's an absolute path (starting with `/`, or a drive
+letter and `:`); anything else is looked for in the `midi` folder
+under `$APLHOME`, as `⎕WILOAD` looks in `images`. No extension is
+added.
+
+The APL keyboard types capitals, and file names are usually in lower
+case, so a name is tried exactly as given and then, if there's no such
+file, again with its letters in lower case: `'SONG.MID'` finds
+`song.mid`. For an absolute path only the file's own name is lowered,
+not the folders. A file whose name mixes capitals and lower case (`My
+Song.mid`) has to be named exactly, in quotes as it is on disk.
+
+Tracks are numbered in the order the file has them, from 1, whatever
+`⎕IO` is. A track can hold chords, and the sequencer's tracks play one
+note at a time, so each track is split into **voices** that each play
+one note at a time, numbered from 1: first by channel, then within a
+channel each note goes to the lowest-numbered voice whose last note
+has ended. A chord's notes go to voices 1, 2, 3 …, lowest note first,
+and a note held while other notes move above it keeps its voice. A
+track with one line of notes is voice 1. (A line played legato on a
+keyboard, each note held a little past the next one's start, comes
+out as two voices taking turns.)
+
+A file written by `⎕MIDIWRITE` records each track's loop length, so
+it comes back exactly as long as it went in. Any other file has no
+loop length, so a track's length is taken from where the file says it
+ends (or its last note, if that's later), moved up to the next point
+on the track's own grid: the largest step, at most a beat, that all
+its notes start on. MuseScore ends a track a moment after its last
+note sounds; this puts the end back where the music ends. A loop from
+elsewhere that ends in a rest not on its notes' grid (quarter notes on
+beats 0, 1 and 2, then a rest to 3.5) comes back a little longer (4
+beats); change its last step if that matters. The same goes for a
+`⎕MIDIWRITE` file whose notes were changed in another program so they
+run past the recorded length.
+
+`'file' ⎕MIDIREAD track`
+
+`'file' ⎕MIDIREAD track,voice`
+
+One voice of one track of the file (voice 1 if none is given), as a
+5-row matrix in `⎕SEQTRACK`'s form: pitches, steps (beats), velocities,
+lengths (beats) and channels. Send it as it is:
+
+```
+      1 ⎕SEQTRACK 'song.mid' ⎕MIDIREAD 2
+```
+
+A gap after a note is a length shorter than its step, not a rest. A
+voice that starts after the beginning of the track starts with a rest
+(pitch `¯1`, with `¯1` in rows 3–5). The steps add up to the track's
+length, so all the voices of a track loop together. Steps and lengths
+are the file's, not rounded to the sequencer's ticks (`⎕SEQTRACK` does
+that). Each note's channel is the one in the file (row 5), so it plays
+there whatever the track's own channel is.
+
+`Domain Error` for a track or voice the file doesn't have (`⎕MIDIINFO`
+says which it has; a track with no notes has no voices), `File Not
+Found` if there's no such file, `Bad MIDI File` if it isn't a MIDI file
+this can read (damaged, or SMPTE timing, which is rare).
+
+`⎕MIDIINFO 'file'`
+
+What the file holds, for deciding what to read: a matrix of 8 columns
+whose first column says what each row is, as `⎕SEQSTATE`'s does.
+
+- The first row is the file: `0`, the format (0, 1 or 2), the number
+  of tracks, ticks per beat, the tempo in beats per minute (`¯1` if
+  the file has none; players assume 120), the time signature's top
+  and bottom numbers (`¯1 ¯1` if none), and `0`.
+- Then a row for each voice of each track: the track, the voice, the
+  number of notes, the track's length in beats, the channel, the
+  lowest and highest pitch, and the program (instrument) on that
+  channel when the voice starts (`¯1` if the file sets none).
+- A track with no notes (one holding only the tempo, say) has one
+  row, with voice `0`: track, `0`, `0`, its length, then `¯1 ¯1 ¯1
+  ¯1`.
+
+```
+      ⎕MIDIINFO 't5000m3.mid'
+    0    1    2  480  120    4    4    0
+    1    1  140   35    2   41   71    0
+    2    1  140   35    3   29   47    0
+```
+
+If there's no such file the result has no rows (shape `0 8`) rather
+than an error, so `0=1↑⍴⎕MIDIINFO 'song.mid'` asks whether a file is
+there. `Bad MIDI File` if it's there but can't be read as one.
+
+To pick out the voices worth reading:
+
+```
+I←1 0↓⎕MIDIINFO 'song.mid'      ⍝ the track and voice rows
+I←(I[;2]>0)⌿I                   ⍝ without the tracks that have no notes
+```
+
+Row `K` of `I` is then sent with `K ⎕SEQTRACK 'song.mid' ⎕MIDIREAD
+I[K;1 2]`, as long as there are no more than 16 rows (the sequencer's
+tracks).
+
+---
+
 ## Sequencer Test Functions
 
 `⎕SEQRUNTO beat` and `⎕SEQLOG` exist in every build but work only with

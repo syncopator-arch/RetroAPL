@@ -52,6 +52,10 @@
 	                            10000), show the event and where the
 	                            clock holds
 	  state                     the state and one line per track
+	  trackout T                a track's notes as a MIDI file gets them
+	                            (seq_get_track_notes(), Phase 9): the
+	                            pass's length, then each note's start,
+	                            note-off, pitch, velocity and channel
 	  log                       the log since the last `log`
 	  logticks                  the same without the time column
 	                            (repeatable on the real clock)
@@ -735,6 +739,26 @@ static void do_line(char *line)
 		report(seq_cancel_wait(last_id));
 	} else if (strcmp(cmd, "state") == 0) {
 		show_state();
+	} else if (strcmp(cmd, "trackout") == 0) {	/* Phase 9 */
+		struct seq_note_out *no;
+		int32_t nn, k;
+		int64_t len;
+		char b[64], c[64];
+
+		if (nw < 2 || !parse_int(w[1], &v))
+			goto bad;
+		if (report(seq_get_track_notes(v, &no, &nn, &len)))
+			return;
+		beats(b, sizeof b, len);
+		fprintf(out, "  length %s, %d note%s\n", b, (int)nn,
+		        nn == 1 ? "" : "s");
+		for (k = 0; k < nn; k++) {
+			beats(b, sizeof b, no[k].start);
+			beats(c, sizeof c, no[k].off);
+			fprintf(out, "  %s to %s: %d v%d ch%d\n", b, c,
+			        no[k].pitch, no[k].vel, no[k].chan);
+		}
+		free(no);
 	} else if (strcmp(cmd, "log") == 0) {
 		show_log(0);
 	} else if (strcmp(cmd, "logticks") == 0) {

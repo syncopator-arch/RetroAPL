@@ -2,7 +2,8 @@
 	seqfuncs.c -- the ⎕SEQ quad functions: the interpreter's glue to the
 	MIDI sequencer library (../sequencer, seq.h). Module k=3 in links.c.
 
-	The only interpreter file that includes seq.h. Everything else
+	The only interpreter file that includes the sequencer library's
+	headers (seq.h, and smf.h since Phase 9). Everything else
 	reaches the sequencer through the hooks at the end of this file:
 	seqf_close() (dll_cleanup() in main.c, stopEngine() in main.cpp)
 	and seqf_panic() (fatal_error() in main.c), plus seqf_virtual,
@@ -33,6 +34,19 @@
 	rows: per-note velocity, length and channel after the pitches and
 	steps; ⎕SEQGATE (slot 17) sets each track's gate; ⎕SEQSTATE's
 	track rows gain column 11, the gate.
+
+	Phase 9, step 1 (Oct 16, 2026): reading MIDI files. ⎕MIDIREAD
+	(slot 18) returns one voice of one track of a file as a 5-row
+	matrix ⎕SEQTRACK takes as it is; ⎕MIDIINFO (slot 19) describes a
+	file, a row per track and voice, with no rows if there is no such
+	file. The file is found as ⎕WILOAD finds an image: an absolute
+	path as given, anything else in $APLHOME/midi/. The reading itself
+	(smf.c in the library) touches nothing of the sequencer's, so
+	neither function needs it open.
+
+	Phase 9, step 2 (Oct 16, 2026): ⎕MIDIWRITE (slot 20) writes
+	sequencer tracks to a MIDI file, as they would sound, with the
+	tempo; it needs the sequencer open.
 
 	House rules followed here:
 	  - Every function produces a new value: arguments are copied out
@@ -71,9 +85,13 @@
 #include "parse.h"
 #include "funcs.h"
 #include "seq.h"
+#include "smf.h"	/* MIDI files (Phase 9) */
 #include "evhub.h"	/* ⎕EVPOST; the sequencer's events and hooks */
 
 short ev_wait_apl();	/* evwait.c: ⎕EVWAIT and ⎕WCLICK (Phase 7b) */
+
+/* the platform file: $APLHOME/subdir/, ending in a separator */
+extern void get_aplhome_dir(char *out, size_t outsz, const char *subdir);
 
 UCHAR seq_fnames[] = {
 	'S','E','Q','O','P','E','N',0,		/* 0 */
@@ -94,6 +112,9 @@ UCHAR seq_fnames[] = {
 	'S','E','Q','B','E','A','T',0,		/* 15 beat events (Phase 7c) */
 	'S','E','Q','P','O','R','T','S',0,	/* 16 the output ports (Phase 8) */
 	'S','E','Q','G','A','T','E',0,		/* 17 the gate (Phase 8) */
+	'M','I','D','I','R','E','A','D',0,	/* 18 read a MIDI file (Phase 9) */
+	'M','I','D','I','I','N','F','O',0,	/* 19 describe a MIDI file (Phase 9) */
+	'M','I','D','I','W','R','I','T','E',0,	/* 20 write a MIDI file (Phase 9) */
 	0,0,0
 };
 
@@ -116,6 +137,9 @@ UCHAR seq_ftypes[] = {
 	MONAD_OPT,	/* 15 SEQBEAT, SEQBEAT←0/1 */
 	NILAD,		/* 16 SEQPORTS */
 	DYAD,		/* 17 tracks SEQGATE fractions */
+	DYAD,		/* 18 'file' MIDIREAD t, 'file' MIDIREAD t,v */
+	MONAD,		/* 19 MIDIINFO 'file' */
+	DYAD,		/* 20 'file' MIDIWRITE tracks, 'file' MIDIWRITE ¯1 */
 	0
 };
 
@@ -1034,6 +1058,424 @@ f_evpost(struct ValEnt *re)
 	return push_val(1, 0, &acc);
 }
 
+/* ── MIDI files (Phase 9, step 1; Oct 16, 2026) ────────────────────── */
+
+/*
+	Reading Standard MIDI Files into APL arrays (MIDI_SEQUENCER_NOTES.md,
+	Phase 9). The library's smf.c does the reading; this part finds the
+	file, reads its bytes and builds the APL results. Nothing here
+	needs the sequencer open.
+
+	Where a file is: an absolute path (a leading '/', or a drive letter
+	and ':') as given; anything else under $APLHOME/midi/, as ⎕WILOAD
+	looks under $APLHOME/images/ (agreed Oct 16, 2026; )MIDI, to list
+	the folder, is to come). No extension is added.
+
+	Letter case (the person, Oct 16, 2026): the APL keyboard types
+	upper case, and file names on Linux are usually lower case, so
+	'T5000.MID' needed ⎕LCASE to find t5000.mid. The name is tried
+	exactly as given first; if that file can't be opened, it is tried
+	again with A-Z made lower case (as ⎕LCASE does): the whole name for
+	one under $APLHOME/midi/ (subfolders included), only the part after
+	the last '/' or '\' for an absolute path, whose folders may well
+	have capitals. A name with mixed case on disk ("My Song.mid") isn't
+	found this way; quote it exactly. On Windows the first try already
+	ignores case.
+
+	A file that can't be opened or read counts as missing: ⎕MIDIREAD
+	gives File Not Found, ⎕MIDIINFO a matrix with no rows (so it
+	doubles as "does this file exist", agreed Oct 16, 2026). A file
+	that reads but isn't a MIDI file the reader accepts is Bad MIDI
+	File (ERR_MIDIFILE) for both.
+*/
+
+#define MIDI_NAME_MAX	(PATHBUF_SIZE - 1)
+#define MIDI_INFO_COLS	8		/* ⎕MIDIINFO's columns */
+
+/* Same test as grfuncs.c's is_absolute_path() and commands.c's
+   img_is_absolute() (static in both, so repeated rather than shared):
+   a leading '/', or a drive letter and ':'. */
+static int
+midi_is_absolute(const char *p)
+{
+	int c;
+
+	if (!p || !*p) return 0;
+	if (p[0] == '/') return 1;
+	c = (UCHAR)p[0] | 0x20;
+	return (c >= 'a' && c <= 'z' && p[1] == ':');
+}
+
+/* The file name argument (a character scalar or vector) as a path.
+   Domain Error if it isn't characters or is empty, Rank Error for a
+   matrix, Length Error if the path is too long. *lc receives where
+   the part to lower-case for the second try starts (see above). */
+static short
+midi_path(struct ValEnt *ve, char *path, size_t size, size_t *lc)
+{
+	char name[MIDI_NAME_MAX + 1];
+	int32_t n;
+	size_t dl;
+
+	if (!is_char(ve)) return SET_ERR(ERR_DOMAIN);
+	if (ve->ve_rank > 1) return SET_ERR(ERR_RANK);
+	n = ve->ve_length;
+	if (n < 1) return SET_ERR(ERR_DOMAIN);
+	if (n > MIDI_NAME_MAX) return SET_ERR(ERR_LENGTH);
+	memcpy(name, DATA_AD(ve), (size_t)n);
+	name[n] = '\0';
+	if (midi_is_absolute(name))
+	{
+		memcpy(path, name, (size_t)n + 1);
+		for (*lc = (size_t)n; *lc > 0; (*lc)--)
+			if (path[*lc - 1] == '/' || path[*lc - 1] == '\\') break;
+		return 0;
+	}
+	get_aplhome_dir(path, size, "midi");
+	dl = strlen(path);
+	if (dl + (size_t)n + 1 > size) return SET_ERR(ERR_LENGTH);
+	memcpy(path + dl, name, (size_t)n + 1);
+	*lc = dl;
+	return 0;
+}
+
+#define MIDI_MISSING	(-1)		/* midi_load(): can't open or read */
+
+/* Reads and parses the file at path, or if that can't be opened, at
+   path with A-Z from path[lc] on made lower case (see above). SMF_OK
+   with *f set; MIDI_MISSING if neither can be opened, or the file
+   can't be read; otherwise the parse's error (SMF_ERR_FORMAT,
+   SMF_ERR_NOMEM). path is changed only if the second try is made. */
+static int
+midi_load(char *path, size_t lc, struct smf_file **f)
+{
+	FILE *fp;
+	unsigned char *buf = NULL, *nb;
+	size_t cap = 0, n = 0, got, i;
+	int r, changed = 0;
+
+	*f = NULL;
+	fp = fopen(path, "rb");
+	if (!fp)
+	{
+		for (i = lc; path[i]; i++)
+			if (path[i] >= 'A' && path[i] <= 'Z')
+			{
+				path[i] += 32;
+				changed = 1;
+			}
+		if (!changed) return MIDI_MISSING;
+		fp = fopen(path, "rb");
+		if (!fp) return MIDI_MISSING;
+	}
+	for (;;)
+	{
+		if (n == cap)
+		{
+			cap = cap ? cap * 2 : 65536;
+			nb = realloc(buf, cap);
+			if (!nb)
+			{
+				free(buf);
+				fclose(fp);
+				return SMF_ERR_NOMEM;
+			}
+			buf = nb;
+		}
+		got = fread(buf + n, 1, cap - n, fp);
+		if (got == 0) break;
+		n += got;
+	}
+	r = ferror(fp) ? MIDI_MISSING : SMF_OK;	/* a folder, say */
+	fclose(fp);
+	if (r == SMF_OK) r = smf_parse(buf, n, f);
+	free(buf);
+	return r;
+}
+
+/* 'file' MIDIREAD t, or 'file' MIDIREAD t,v: voice v (default 1) of
+   track t of the file, a 5-row float matrix ready for ⎕SEQTRACK: row
+   1 pitches, 2 steps (beats), 3 velocities, 4 lengths (beats), 5
+   channels. A leading rest (the voice starting after the track's
+   start) is a column with pitch ¯1 and ¯1 in rows 3-5. Tracks are
+   numbered in file order from 1, voices from 1 within a track,
+   whatever ⎕IO is (as track and window numbers are); ⎕MIDIINFO says
+   which exist. 'T5000.MID' finds t5000.mid (see above). Domain Error for a track or voice that isn't there (a
+   track with no notes has no voices), File Not Found, Bad MIDI File.
+   The file is read again on every call: there is nothing to close. */
+static short
+f_midiread(struct ValEnt *le, struct ValEnt *re)
+{
+	char path[PATHBUF_SIZE];
+	struct smf_file *f = NULL;
+	struct smf_col *cols = NULL;
+	struct ValEnt *ve;
+	double *dp;
+	size_t lc;
+	int32_t t, v = 1, n, i;
+	short e;
+	int r;
+
+	/* right: t or t,v */
+	if (!is_numeric(re)) return SET_ERR(ERR_DOMAIN);
+	if (re->ve_rank > 1) return SET_ERR(ERR_RANK);
+	if (re->ve_length != 1 && re->ve_length != 2) return SET_ERR(ERR_LENGTH);
+	if ((e = whole(re, 0, &t)) != 0) return e;
+	if (re->ve_length == 2 && (e = whole(re, 1, &v)) != 0) return e;
+	/* left: the file */
+	if ((e = midi_path(le, path, sizeof path, &lc)) != 0) return e;
+
+	r = midi_load(path, lc, &f);
+	if (r == MIDI_MISSING) return SET_ERR(ERR_FNOTF);
+	if (r == SMF_ERR_NOMEM) return SET_ERR(ERR_NOMEM);
+	if (r != SMF_OK) return SET_ERR(ERR_MIDIFILE);
+	r = smf_voice_cols(f, (int)t, (int)v, &cols, &n);
+	smf_free(f);
+	if (r == SMF_ERR_NOMEM) return SET_ERR(ERR_NOMEM);
+	if (r != SMF_OK) return SET_ERR(ERR_DOMAIN);	/* no such track/voice */
+
+	stack_pop(2);
+	/* ve_rho is columns first: rho[0] is N, rho[1] the row count, and
+	   row k's column i is element k*N + i (as ⎕SEQTRACK reads it) */
+	ve = make_temp(FCONST_CODE, 2, (long)n * 5);
+	if (!ve)
+	{
+		free(cols);
+		return SET_ERR(ERR_WSFULL);
+	}
+	ve->ve_rho[0] = n;
+	ve->ve_rho[1] = 5;
+	dp = (double *)DATA_AD(ve);
+	for (i = 0; i < n; i++)
+	{
+		dp[i] = (double)cols[i].pitch;
+		dp[n + i] = cols[i].step;
+		dp[2 * n + i] = (double)cols[i].vel;
+		dp[3 * n + i] = cols[i].len;
+		dp[4 * n + i] = (double)cols[i].chan;
+	}
+	free(cols);
+	return 0;
+}
+
+/* MIDIINFO 'file': what the file holds, for a program to decide what
+   to read. A float matrix of 8 columns, laid out like ⎕SEQSTATE:
+   column 1 says what the row is.
+     file row (column 1 = 0): 0, format, tracks, ticks per beat, tempo
+       (bpm, ¯1 if the file has none: players assume 120), time
+       signature top and bottom (¯1 ¯1 if none), 0
+     a row per voice of each track: track, voice, notes, length in
+       beats (the track's, rounded to its grid; the same for all its
+       voices, and what the voice's steps add up to), channel (1-16),
+       lowest pitch, highest pitch, program at the voice's start (¯1
+       if none)
+     a track with no notes (a tempo map, say) has one row, voice 0:
+       track, 0, 0, length, ¯1, ¯1, ¯1, ¯1
+   Tracks in file order, voices in order within each. No such file: a
+   0×8 matrix, not an error, so 0=1↑⍴⎕MIDIINFO 'name' tests for one.
+   Bad MIDI File if it exists but can't be read as one. */
+static short
+f_midiinfo(struct ValEnt *re)
+{
+	char path[PATHBUF_SIZE];
+	struct smf_file *f = NULL;
+	struct smf_info info;
+	struct smf_voice_info vi;
+	struct ValEnt *ve;
+	double *dp, *row;
+	size_t lc;
+	int32_t rows;
+	int r, t, v, nv;
+	short e;
+
+	if ((e = midi_path(re, path, sizeof path, &lc)) != 0) return e;
+	r = midi_load(path, lc, &f);
+	if (r == SMF_ERR_NOMEM) return SET_ERR(ERR_NOMEM);
+	if (r != SMF_OK && r != MIDI_MISSING) return SET_ERR(ERR_MIDIFILE);
+
+	rows = 0;
+	if (f)
+	{
+		smf_get_info(f, &info);
+		rows = 1;
+		for (t = 1; t <= info.ntracks; t++)
+		{
+			nv = smf_voices(f, t);
+			rows += nv ? nv : 1;
+		}
+	}
+
+	stack_pop(1);
+	ve = make_temp(FCONST_CODE, 2, (long)rows * MIDI_INFO_COLS);
+	if (!ve)
+	{
+		smf_free(f);
+		return SET_ERR(ERR_WSFULL);
+	}
+	ve->ve_rho[0] = MIDI_INFO_COLS;
+	ve->ve_rho[1] = rows;
+	if (!f) return 0;			/* no such file: no rows */
+
+	dp = (double *)DATA_AD(ve);
+	dp[0] = 0.0;
+	dp[1] = (double)info.format;
+	dp[2] = (double)info.ntracks;
+	dp[3] = (double)info.division;
+	dp[4] = info.tempo;
+	dp[5] = (double)info.ts_num;
+	dp[6] = (double)info.ts_den;
+	dp[7] = 0.0;
+	row = dp + MIDI_INFO_COLS;
+	for (t = 1; t <= info.ntracks; t++)
+	{
+		nv = smf_voices(f, t);
+		for (v = nv ? 1 : 0; v <= nv; v++)
+		{
+			smf_voice_info(f, t, v, &vi);
+			row[0] = (double)t;
+			row[1] = (double)v;
+			row[2] = (double)vi.notes;
+			row[3] = (double)vi.length / (double)info.division;
+			row[4] = (double)vi.channel;
+			row[5] = (double)vi.low;
+			row[6] = (double)vi.high;
+			row[7] = (double)vi.program;
+			row += MIDI_INFO_COLS;
+		}
+	}
+	smf_free(f);
+	return 0;
+}
+
+/* 'file' MIDIWRITE tracks, or 'file' MIDIWRITE ¯1 for every track that
+   has something (Phase 9, step 2; agreed Oct 16, 2026). Writes the
+   tracks to a Standard MIDI File (format 1, 2520 ticks per beat, so
+   timing is exact), as they would sound now: one pass of each track's
+   playing version (or the one waiting to start, if nothing plays on it
+   yet), each note's velocity scaled by the track's, its length from
+   row 4 or the gate, its own channel or the track's
+   (seq_get_track_notes()); rests are gaps; a muted track is written
+   like any other. Sequencer track t is the file's track t: tracks not
+   asked for below the highest one are written empty, as is a track
+   asked for that has nothing. The tempo, ⎕SEQTEMPO's, goes at the start
+   of track 1 (no separate conductor track); no time signature (players
+   assume 4/4), programs or names yet. Each track ends at its loop
+   length.
+   Where the file goes: as for ⎕MIDIREAD (an absolute path as given,
+   anything else in $APLHOME/midi/), but the name is used exactly as
+   typed: no lower-case retry (the person, Oct 16, 2026). An existing
+   file is replaced, as ⎕FCREATE does; ⎕MIDIINFO tells whether one is
+   there first.
+   Result: the tracks written from the sequencer (those with a
+   version), ascending; empty ones written to fill a gap aren't in it.
+   Sequencer Not Open if it's closed; Domain Error for a track outside
+   1-16 (¯1 only on its own); Length Error for an empty list; Can't
+   open file if the file can't be created or written. */
+static short
+f_midiwrite(struct ValEnt *le, struct ValEnt *re)
+{
+	char path[PATHBUF_SIZE];
+	struct smf_wtrack tracks[SEQ_MAX_TRACKS];
+	struct smf_wnote *wn[SEQ_MAX_TRACKS];
+	int want[SEQ_MAX_TRACKS + 1], written[SEQ_MAX_TRACKS];
+	int *list = NULL;
+	int32_t n, i, k, nn;
+	struct seq_note_out *no;
+	int64_t len;
+	unsigned char *buf = NULL;
+	size_t blen, lc;
+	double tempo;
+	int all, t, top = 0, nw = 0, r;
+	short e = 0;
+	FILE *fp;
+
+	/* right: the tracks, or ¯1 alone for all */
+	if ((e = get_list(re, &list, &n)) != 0) return e;
+	if (n < 1)
+	{
+		free(list);
+		return SET_ERR(ERR_LENGTH);
+	}
+	memset(want, 0, sizeof want);
+	all = (n == 1 && list[0] == -1);
+	for (i = 0; i < n && !all; i++)
+	{
+		if (list[i] < 1 || list[i] > SEQ_MAX_TRACKS)
+		{
+			free(list);
+			return SET_ERR(ERR_DOMAIN);
+		}
+		want[list[i]] = 1;
+		if (list[i] > top) top = list[i];
+	}
+	free(list);
+	/* left: the file, as typed (lc unused: no retry when writing) */
+	if ((e = midi_path(le, path, sizeof path, &lc)) != 0) return e;
+	if ((r = seq_get_tempo(&tempo)) != SEQ_OK) return seq_apl_err(r);
+
+	memset(tracks, 0, sizeof tracks);
+	memset(wn, 0, sizeof wn);
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
+	{
+		if (!all && !want[t]) continue;
+		r = seq_get_track_notes(t, &no, &nn, &len);
+		if (r != SEQ_OK)
+		{
+			e = seq_apl_err(r);
+			goto done;
+		}
+		if (len > 0)
+		{
+			written[nw++] = t;
+			if (t > top) top = t;
+		}
+		if (nn > 0)
+		{
+			wn[t - 1] = malloc((size_t)nn * sizeof *wn[t - 1]);
+			if (!wn[t - 1])
+			{
+				free(no);
+				e = SET_ERR(ERR_NOMEM);
+				goto done;
+			}
+			for (k = 0; k < nn; k++)
+			{
+				wn[t - 1][k].start = no[k].start;
+				wn[t - 1][k].off = no[k].off;
+				wn[t - 1][k].pitch = no[k].pitch;
+				wn[t - 1][k].vel = no[k].vel;
+				wn[t - 1][k].chan = no[k].chan;
+			}
+		}
+		free(no);
+		tracks[t - 1].notes = wn[t - 1];
+		tracks[t - 1].n = nn;
+		tracks[t - 1].length = len;
+	}
+	if (top < 1) top = 1;			/* ¯1 with nothing: one empty track */
+
+	r = smf_write(tracks, top, SEQ_TICKS_PER_BEAT, tempo, &buf, &blen);
+	if (r == SMF_ERR_NOMEM) { e = SET_ERR(ERR_NOMEM); goto done; }
+	if (r != SMF_OK) { e = SET_ERR(ERR_DOMAIN); goto done; }	/* a
+					   track too long for the file */
+	fp = fopen(path, "wb");
+	if (!fp) { e = SET_ERR(ERR_FOPEN); goto done; }
+	if (fwrite(buf, 1, blen, fp) != blen)
+	{
+		fclose(fp);
+		e = SET_ERR(ERR_FOPEN);
+		goto done;
+	}
+	if (fclose(fp) != 0) { e = SET_ERR(ERR_FOPEN); goto done; }
+
+	stack_pop(2);
+	e = push_ints(written, nw, 0);
+done:
+	for (t = 0; t < SEQ_MAX_TRACKS; t++) free(wn[t]);
+	free(buf);
+	return e;
+}
+
 /* ── Dispatch ──────────────────────────────────────────────────────── */
 
 short
@@ -1079,6 +1521,12 @@ struct ValEnt *le,*re;
 			return(f_ports());
 		case 17:	/* SEQGATE (Phase 8) */
 			return(f_gate(le,re));
+		case 18:	/* MIDIREAD (Phase 9) */
+			return(f_midiread(le,re));
+		case 19:	/* MIDIINFO (Phase 9) */
+			return(f_midiinfo(re));
+		case 20:	/* MIDIWRITE (Phase 9) */
+			return(f_midiwrite(le,re));
 		case CLEANUP_FUNC:
 			return(0);
 	}

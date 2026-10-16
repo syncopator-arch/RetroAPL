@@ -151,6 +151,10 @@ char *s;
 			s = "MIDI Port Lost";
 			p = 1;
 			break;
+		case ERR_MIDIFILE:
+			s = "Bad MIDI File";
+			p = 1;
+			break;
 		default:
 			sprintf((char *)LINEA,"Error %d",n);
 			s = (char *)LINEA;
