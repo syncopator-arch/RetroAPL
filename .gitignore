@@ -78,6 +78,7 @@
 /sequencer/tests/smf/*
 !/sequencer/tests/smf/*.seq
 !/sequencer/tests/smf/*.expected
+!/sequencer/tests/smf/*.mid
 
 # --- frontend/ ----------------------------------------------------------
 # build/ (CMake output) stays ignored.
