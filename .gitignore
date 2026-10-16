@@ -74,6 +74,10 @@
 /sequencer/tests/device/*
 !/sequencer/tests/device/*.seq
 !/sequencer/tests/device/*.expected
+!/sequencer/tests/smf/
+/sequencer/tests/smf/*
+!/sequencer/tests/smf/*.seq
+!/sequencer/tests/smf/*.expected
 
 # --- frontend/ ----------------------------------------------------------
 # build/ (CMake output) stays ignored.

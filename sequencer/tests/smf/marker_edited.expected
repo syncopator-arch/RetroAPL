@@ -1,0 +1,8 @@
+file: format 1, 1 track, 480 ticks per beat, tempo none, time signature none
+track 1: end 1920, grid 480, length 1920 (4 beats), 1 voice
+  voice 1: 4 notes, channel 1, pitches 60..63, program none
+      60 1             100 1              1
+      61 1             100 1              1
+      62 1             100 1              1
+      63 1             100 1              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
