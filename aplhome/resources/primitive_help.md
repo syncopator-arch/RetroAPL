@@ -283,7 +283,10 @@ from the end. Taking more than there are pads with zeros
 (`6↑1 2 3 4` is `1 2 3 4 0 0`). A shorter `L` applies to the leading
 axes and leaves the rest whole: with `M←2 3⍴⍳6`, `1↓M` is the 1 by 3
 matrix `4 5 6`, the same as `1 0↓M`. A longer `L` adds leading axes
-(`3 4↑⍳9` is 3 by 4). No monadic forms.
+(`3 4↑⍳9` is 3 by 4). A row picked with a vector index
+(`M[(⍳1);]`) is a 1-row matrix, so `4↑M[(⍳1);]` takes 4 rows; ravel it
+first (`4↑,M[(⍳1);]`) to take from the row. Before V97 a short `L` acted
+on the last axis instead. No monadic forms.
 
 ---
 

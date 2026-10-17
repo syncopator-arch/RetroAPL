@@ -118,6 +118,9 @@ UCHAR cmd_table[] = {
 				   above is a prefix of it (FNSL, FNS and
 				   FONT part at the second letter), and it
 				   is typed in full: no short form */
+	'M','I','D','I',0,	/* 47 - )midi -- MEM is the only other M
+				   entry and isn't a prefix of it; typed in
+				   full (no short form), so )MIDIS works too */
 	'@',0,	/* end of table -- do_command() and the command list stop here */
 	0	/* empty name: table_flip() (set_case) stops here; without it,
 		   it read, and could case-flip, the byte past the table */
@@ -707,11 +710,18 @@ int len, filtering;
 }
 
 /* ============================================================
-   do_images() - )IMAG, )IMAG pattern, )IMAG folder/pattern.
+   list_home_folder() - )IMAG and )MIDI (do_images() and
+   do_midi(), after it): the argument, then the $APLHOME folder
+   ("images", "midi") to list when it isn't an absolute path.
+   Written for )IMAG; )MIDI (V98) shares it unchanged, so the
+   img_ helpers below keep their names and everything here that
+   says images/ applies to midi/ the same way.
+
    Lists what's in $APLHOME/images/ (or a folder under it, or any
    absolute folder) exactly as the file system spells it -- no
    case change, extensions kept -- so a name can be copied straight
-   into a string for WILOAD/WIRELOAD/WISAVE.
+   into a string for WILOAD/WIRELOAD/WISAVE (MIDIREAD/MIDIINFO/
+   MIDIWRITE for )MIDI).
 
    What's listed: every file, plus subfolders shown as "name/"
    (not descended into). Names starting with '.' are hidden;
@@ -931,9 +941,10 @@ int clen, olen, nfound;
 	return(0);
 }
 
-short
-do_images(arg)
+static short
+list_home_folder(arg,home)
 UCHAR *arg;
+const char *home;
 {
 char path[PATHBUF_SIZE], dir[PATHBUF_SIZE], pbuf[PATHBUF_SIZE];
 char **names, **tmp, *entry, *pat;
@@ -959,7 +970,7 @@ long n, cap, k;
 		if (last + 1 < plen) last = plen - 1;	/* "C:name" */
 	} else {
 		plen = 0;
-		get_aplhome_dir(dir, sizeof(dir), "images");
+		get_aplhome_dir(dir, sizeof(dir), home);
 	}
 	pat = path + last + 1;
 
@@ -1022,6 +1033,24 @@ long n, cap, k;
 	for (k = 0; k < n; k++) free(names[k]);
 	free(names);
 	return(rc ? SET_ERR(ERR_WSFULL) : 0);
+}
+
+/* )IMAG: $APLHOME/images/, where WILOAD looks */
+short
+do_images(arg)
+UCHAR *arg;
+{
+	return(list_home_folder(arg, "images"));
+}
+
+/* )MIDI (V98): $APLHOME/midi/, where MIDIREAD, MIDIINFO and
+   MIDIWRITE look. Every file is listed, as )IMAG lists every file
+   (agreed V98), not just .mid ones. */
+short
+do_midi(arg)
+UCHAR *arg;
+{
+	return(list_home_folder(arg, "midi"));
 }
 
 short
@@ -3903,6 +3932,8 @@ long l;
 			return(do_images(COMMANDP));
 		case 46:	/* FSEARCH */
 			return(do_fsearch(COMMANDP));
+		case 47:	/* MIDI */
+			return(do_midi(COMMANDP));
 	}
 	return(SET_ERR(ERR_COMMAND));
 }

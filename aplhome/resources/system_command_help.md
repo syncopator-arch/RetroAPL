@@ -19,8 +19,8 @@ and some could damage the workspace.
 Workspaces live in `$APLHOME/ws/` as `name.ws`, and function source
 files in `$APLHOME/fns/` as `name.fn`.
 
-`)LIB`, `)FNSL`, `)FNS`, `)VARS`, `)SYMBOLS`, `)FONT` and `)IMAG` can take a name
-pattern to narrow what they list. A pattern isn't a regular expression. Plain
+`)LIB`, `)FNSL`, `)FNS`, `)VARS`, `)SYMBOLS`, `)FONT`, `)IMAG` and `)MIDI` can
+take a name pattern to narrow what they list. A pattern isn't a regular expression. Plain
 letters match the start of a name: `)FNS G` lists functions starting
 with G. `*` matches any run of characters: `)FNS *TEST` lists functions
 with TEST anywhere in the name. Two letters joined by a dash match any
@@ -424,6 +424,22 @@ the result is `Ambiguous`. To give a name exactly, or one containing
 a space, `%`, `^` or `|`, put it in quotes: `)IMAG 'My Pictures/'`.
 Inside the quotes, `''` stands for one quote, as in an APL string.
 `Can't find` if the folder doesn't exist.
+
+`)MIDI`
+
+`)MIDI pattern`
+
+`)MIDI folder/`
+
+`)MIDI folder/pattern`
+
+Lists the files in `$APLHOME/midi/`, the folder `⎕MIDIREAD`,
+`⎕MIDIINFO` and `⎕MIDIWRITE` use for a name that isn't an absolute
+path. Works exactly as `)IMAG` does, patterns, folders, absolute paths
+and quotes included: `)MIDI S` lists the names starting with S,
+`)MIDI Old/` what's in the folder `Old`. All files are listed, not
+just `.mid` ones, with names spelled as they are on disk. Typed in
+full: no shorter form. Also `)MIDIS`.
 
 ---
 

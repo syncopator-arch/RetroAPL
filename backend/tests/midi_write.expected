@@ -101,4 +101,7 @@ Domain Error
 0 8
      ⎕SEQCLOSE
 1 3 4
+     ⍝ written in lower case (V98): 'W2.MID' is w2.mid on disk; x.mid was never written
+     )MIDI W
+w.mid   w2.mid
      

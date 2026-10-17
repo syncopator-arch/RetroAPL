@@ -23,7 +23,8 @@
  *
  * Settings:
  *   Persistent settings (keyboard layout, font size, background brightness,
- *   dark mode, window geometry) are stored in $APLHOME/settings.ini via
+ *   dark mode, the MIDI port for quad-SEQOPEN '', window geometry) are
+ *   stored in $APLHOME/settings.ini via
  *   QSettings (IniFormat).  Loaded on startup, saved from the Settings dialog
  *   (OK or Apply), and window geometry updated on close.
  *
@@ -465,6 +466,16 @@ extern "C" {
        the port. Safe from any thread and more than once; stopEngine()
        calls it from the GUI thread, dll_cleanup() from the engine. */
     void seqf_close(void);
+    /* seqfuncs.c (V98): the port quad-SEQOPEN '' opens -- the whole
+       label of the port chosen in the Settings dialog, "" for none.
+       Copied under a lock there, so safe from the GUI thread at any
+       time; takes effect at the next quad-SEQOPEN ''. */
+    void seqf_set_default_port(const char *name);
+    /* seqfuncs.c (V98): the MIDI output ports, for the Settings
+       dialog: system name then label per port, each NUL-terminated,
+       into buf; returns the number of ports, -1 if none could be
+       listed. Safe from any thread; needs nothing open. */
+    long seqf_port_list(char *buf, long size);
     /* quad-function syntax mode (parse.c; QSYN_BOTH 0, QSYN_WARN 1,
        QSYN_NEW 2 in parse.h), set from -q in main() before the engine
        thread starts */
@@ -542,6 +553,7 @@ protected:
  *   - Font size (fixed list)
  *   - Terminal background brightness (slider, live preview)
  *   - Dark mode (app-level stylesheet)
+ *   - MIDI output port for ⎕SEQOPEN '' (V98)
  *
  * OK      → apply + save + close
  * Apply   → apply + save, stay open (useful for brightness tuning)
@@ -570,6 +582,11 @@ public:
             internal error ends the session -- see crashlog.c. Nothing is
             written to disk unless that happens. On by default: the first
             crash is the one that can't be reproduced without it. */
+        QString midiPort;   /* V98: the port ⎕SEQOPEN '' opens, as the
+            port's whole label from ⎕SEQPORTS ("U2MIDI Pro / U2MIDI Pro
+            MIDI 1"), not hw:C,D,S or a WinMM number, which change when
+            devices come up in another order; empty for none, when
+            ⎕SEQOPEN '' gives 0. Chosen from the port list only. */
     };
 
     APLSettingsDialog(APLTerminalWidget *terminal,
@@ -658,6 +675,28 @@ public:
             "along with the error, to help work out what led to it.\n"
             "Nothing is written to disk unless that happens.");
 
+        /* MIDI output port for ⎕SEQOPEN '' (V98). Chosen from the
+         * ports there are now; Refresh lists them again (USB devices
+         * come and go). A saved port that isn't plugged in stays in the
+         * list, marked, so opening the dialog doesn't lose it. */
+        QGroupBox *midiGroup = new QGroupBox("MIDI Output Port  (⎕SEQOPEN '')");
+        m_midiPortCombo = new QComboBox();
+        m_midiPortCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        m_midiPortCombo->setToolTip(
+            "The port ⎕SEQOPEN '' opens, so a program needn't name one. "
+            "It is found again by its name even if its card or device "
+            "number changes. With (none), ⎕SEQOPEN '' gives 0, no such "
+            "port.\nA change applies at the next ⎕SEQOPEN '', not to a "
+            "port already open.");
+        QPushButton *midiRefresh = new QPushButton("Refresh");
+        QHBoxLayout *midiLay = new QHBoxLayout(midiGroup);
+        midiLay->addWidget(m_midiPortCombo, 1);
+        midiLay->addWidget(midiRefresh);
+        fillMidiPorts(current.midiPort);
+        connect(midiRefresh, &QPushButton::clicked, this, [this]() {
+            fillMidiPorts(m_midiPortCombo->currentData().toString());
+        });
+
         /* Buttons */
         QDialogButtonBox *buttons = new QDialogButtonBox(
             QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel);
@@ -671,6 +710,7 @@ public:
         mainLay->addWidget(m_unicodeClipboardCheck);
         mainLay->addWidget(m_nativeFileDialogCheck);
         mainLay->addWidget(m_crashTranscriptCheck);
+        mainLay->addWidget(midiGroup);
         mainLay->addSpacing(8);
         mainLay->addWidget(buttons);
 
@@ -696,6 +736,7 @@ public:
         s.unicodeClipboard = m_unicodeClipboardCheck->isChecked();
         s.nativeFileDialog = m_nativeFileDialogCheck->isChecked();
         s.crashTranscript  = m_crashTranscriptCheck->isChecked();
+        s.midiPort         = m_midiPortCombo->currentData().toString();
         return s;
     }
 
@@ -714,6 +755,35 @@ private slots:
     void onApply() { emit applyRequested(currentSettings()); }
 
 private:
+    /* (Re)fill the port list from seqf_port_list() (seqfuncs.c), with
+     * "(none)" first, and select `keep` (a label; "" for none). Each
+     * item shows the label and the system name; its data is the label
+     * alone, which is what gets saved. A `keep` not among the ports is
+     * added at the end, marked "(not connected)". Labels are plain
+     * ASCII (the library makes them so), so Latin-1 is exact. */
+    void fillMidiPorts(const QString &keep)
+    {
+        m_midiPortCombo->clear();
+        m_midiPortCombo->addItem("(none)", QString());
+
+        QByteArray buf(16384, '\0');   /* 128 ports at most, ~160 bytes each */
+        long n = seqf_port_list(buf.data(), buf.size());
+        const char *cp = buf.constData();
+        int found = keep.isEmpty() ? 0 : -1;
+        for (long i = 0; i < n; ++i) {
+            QString port  = QString::fromLatin1(cp);  cp += strlen(cp) + 1;
+            QString label = QString::fromLatin1(cp);  cp += strlen(cp) + 1;
+            m_midiPortCombo->addItem(QString("%1   (%2)").arg(label, port), label);
+            if (found < 0 && label.compare(keep, Qt::CaseInsensitive) == 0)
+                found = m_midiPortCombo->count() - 1;
+        }
+        if (found < 0) {
+            m_midiPortCombo->addItem(QString("%1   (not connected)").arg(keep), keep);
+            found = m_midiPortCombo->count() - 1;
+        }
+        m_midiPortCombo->setCurrentIndex(found);
+    }
+
     APLTerminalWidget *m_terminal;
     Settings           m_original;
     QRadioButton      *m_asciiRadio;
@@ -724,6 +794,7 @@ private:
     QCheckBox         *m_unicodeClipboardCheck;
     QCheckBox         *m_nativeFileDialogCheck;
     QCheckBox         *m_crashTranscriptCheck;
+    QComboBox         *m_midiPortCombo;
 };
 
 /* ── Print options dialog ───────────────────────────────────────────────
@@ -1770,6 +1841,7 @@ private slots:
         m_settings.unicodeClipboard = cfg.value("unicodeclipboard", true).toBool();
         m_settings.nativeFileDialog = cfg.value("nativefiledialog", false).toBool();
         m_settings.crashTranscript  = cfg.value("crashtranscript", true).toBool();
+        m_settings.midiPort         = cfg.value("midiport", QString()).toString();
 
         m_printLandscape   = cfg.value("print_landscape",   true).toBool();
         m_printShrinkToFit = cfg.value("print_shrinktofit", true).toBool();
@@ -1819,6 +1891,7 @@ private slots:
         applyDarkMode(m_settings.darkMode);
         m_graphManager->setUseNativeFileDialog(m_settings.nativeFileDialog);
         crash_set_transcript(m_settings.crashTranscript ? 1 : 0);   /* crashlog.c */
+        seqf_set_default_port(m_settings.midiPort.toLatin1().constData());   /* seqfuncs.c */
     }
 
     /* Write all settings + current geometry to INI file */
@@ -1833,6 +1906,7 @@ private slots:
         cfg.setValue("unicodeclipboard", m_settings.unicodeClipboard);
         cfg.setValue("nativefiledialog", m_settings.nativeFileDialog);
         cfg.setValue("crashtranscript",  m_settings.crashTranscript);
+        cfg.setValue("midiport",         m_settings.midiPort);
         cfg.setValue("print_landscape",   m_printLandscape);
         cfg.setValue("print_shrinktofit", m_printShrinkToFit);
         cfg.setValue("print_topdf",       m_printToPdf);
@@ -1893,6 +1967,8 @@ private slots:
          * ABORTSIG. Turning it off and on again starts the transcript
          * afresh (crashlog.c). */
         crash_set_transcript(s.crashTranscript ? 1 : 0);
+        /* Copied under seqfuncs.c's lock; used from the next ⎕SEQOPEN ''. */
+        seqf_set_default_port(s.midiPort.toLatin1().constData());
         saveSettings();
         statusBar()->showMessage("Settings saved", 2000);
     }

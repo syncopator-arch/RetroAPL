@@ -38,8 +38,7 @@ Sequencer Not Open
      ⍴⎕SEQLOG
 0 0
      ⎕SEQOPEN '' ⍝ k3 slot 0 compiles to byte 0x60, the comment character
-     ^
-Domain Error
+0
      ⎕SEQOPEN 1 2⍴'AB'
      ^
 Rank Error

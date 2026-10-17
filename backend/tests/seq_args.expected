@@ -171,6 +171,26 @@ Domain Error
 120
      ⎕SEQTEMPO 66.5
 1000
+     ⍝ ¯1 is the default tempo, 120 (V98): ⎕MIDIINFO's ¯1 for a file with no tempo; the result is the prior tempo
+     ⎕SEQTEMPO ¯1
+66.5
+     ⎕SEQTEMPO
+120
+     ⎕SEQTEMPO←66.5
+     ⎕SEQTEMPO←¯1
+     ⎕SEQTEMPO
+120
+     ⍝ only ¯1 exactly
+     ⎕SEQTEMPO ¯2
+     ^
+Domain Error
+     ⎕SEQTEMPO ¯1.5
+     ^
+Domain Error
+     ⎕SEQTEMPO
+120
+     ⎕SEQTEMPO 66.5
+120
      ⎕SEQRUNTO 4
      ^
 Domain Error

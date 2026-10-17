@@ -1,0 +1,11 @@
+⍝ ⎕SEQOPEN '' (Phase 8, step b; V98) opens the port chosen in the GUI's settings; apl_cli's -P sets it.
+⍝ Here -P cable under -S: the test backend opens, as for any name (nothing is looked up; matching a
+⍝ label is the library's, tests/device/byname). With no port set, '' gives 0 (seq_closed).
+⎕SEQOPEN ''
+⎕SEQOPEN ''
+⎕SEQCLOSE
+⍝ any empty character vector is the same
+⎕SEQOPEN 0⍴'A'
+⎕SEQCLOSE
+⍝ still text only, and a matrix is a Rank Error
+⎕SEQOPEN 0 0⍴'A'

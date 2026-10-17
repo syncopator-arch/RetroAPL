@@ -7,7 +7,9 @@
 	reaches the sequencer through the hooks at the end of this file:
 	seqf_close() (dll_cleanup() in main.c, stopEngine() in main.cpp)
 	and seqf_panic() (fatal_error() in main.c), plus seqf_virtual,
-	which apl_cli's -S sets for the regression tests.
+	which apl_cli's -S sets for the regression tests, and (V98)
+	seqf_set_default_port() and seqf_port_list() for the front end's
+	port setting (main.cpp; apl_cli's -P).
 
 	Design: MIDI_SEQUENCER_NOTES.md ("APL interface", "Implementation
 	rules", "Events and waiting"); user reference: SEQ_FUNCTION_HELP.md
@@ -29,6 +31,12 @@
 	library looks it up; any port name that isn't "hw:..." on Linux or
 	a number on Windows is one), and ⎕SEQPORTS (slot 16) lists the
 	output ports.
+
+	Phase 8, step b (V98, Oct 17, 2026): ⎕SEQOPEN '' opens the port
+	chosen in the front end's settings, by its whole label, which
+	seqf_set_default_port() hands over (main.cpp; apl_cli's -P);
+	0, no such port, if none is set. seqf_port_list() gives the
+	settings dialog the ports to choose from.
 
 	Phase 8, step 2 (Oct 15, 2026): ⎕SEQTRACK's matrix may have 3 to 5
 	rows: per-note velocity, length and channel after the pitches and
@@ -87,6 +95,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>	/* default_lock (V98); the library uses pthreads
+			   on both platforms, and the makefile links them */
 
 #include "parse.h"
 #include "funcs.h"
@@ -168,6 +178,22 @@ int seqf_virtual = 0;
 #define EV_LIMIT 10000			/* beats the virtual clock runs
 					   looking for a wait's event (7c) */
 #define PORT_MAX 255			/* longest port name accepted */
+
+/*
+	The port ⎕SEQOPEN '' opens (Phase 8, step b; V98): the whole label
+	of the port chosen in the front end's settings (agreed V98: a
+	label rather than hw:C,D,S or a WinMM number, which change when
+	devices come up in another order; the whole label, so a device's
+	second port is told from its first). Empty: none chosen.
+	Written by seqf_set_default_port() on the GUI thread whenever the
+	settings are loaded or applied, read by f_open() on the engine
+	thread, hence the lock -- a new arrangement for this file: the
+	front end's other settings that reach the back end are plain
+	flags (crash_set_transcript()), which a string can't be. Held
+	only to copy the string; nothing else is called under it.
+*/
+static char default_port[PORT_MAX + 1];
+static pthread_mutex_t default_lock = PTHREAD_MUTEX_INITIALIZER;
 #define PUSH_MAX 32767			/* push_val()'s count is a short */
 
 /* ── Argument helpers ──────────────────────────────────────────────── */
@@ -497,8 +523,16 @@ done:
    library looks up in its port list (the first port whose label
    contains it, ignoring case); no match is 0, no such port (¯2 if a
    device couldn't be read for lack of permission). So only
-   '' and (Linux) a malformed 'hw:...' are still Domain Errors;
-   'nonsense', a Domain Error before, now gives 0. */
+   (Linux) a malformed 'hw:...' is still a Domain Error;
+   'nonsense', a Domain Error before, now gives 0.
+   Phase 8, step b (V98): '' (any empty character value) opens the
+   port chosen in the front end's settings, looked up by its label
+   like any device name, so its results are a name's; with none
+   chosen it is 0, no such port (agreed V98: what a program sees for
+   a missing device, rather than the Domain Error '' gave before).
+   apl_cli has no settings; its -P option sets the same thing for
+   the tests. Under -S, '' with a port set opens the test backend
+   as any name does, and with none is still 0. */
 static short
 f_open(struct ValEnt *re)
 {
@@ -512,8 +546,25 @@ f_open(struct ValEnt *re)
 		if (re->ve_rank > 1) return SET_ERR(ERR_RANK);
 		n = re->ve_length;
 		if (n > PORT_MAX) return SET_ERR(ERR_DOMAIN);
-		memcpy(port, DATA_AD(re), (size_t)n);
-		port[n] = '\0';
+		if (n == 0)
+		{
+			/* the configured port (V98); none: no such port */
+			pthread_mutex_lock(&default_lock);
+			strcpy(port, default_port);
+			pthread_mutex_unlock(&default_lock);
+			n = (int32_t)strlen(port);
+			if (n == 0)
+			{
+				acc = 0;
+				stack_pop(1);
+				return push_val(1, 0, &acc);
+			}
+		}
+		else
+		{
+			memcpy(port, DATA_AD(re), (size_t)n);
+			port[n] = '\0';
+		}
 		/* Case doesn't matter (agreed Oct 5, 2026): the APL keyboard
 		   types upper case, and 'HW:3,0,0' should work without
 		   ⎕LCASE. Same change ⎕LCASE makes. A device name (Phase 8)
@@ -729,7 +780,14 @@ f_clear(struct ValEnt *re)
 }
 
 /* SEQTEMPO (MONAD_OPT): reports the tempo; with an argument, sets it
-   and returns the previous one. */
+   and returns the previous one. ¯1 exactly sets the default tempo,
+   SEQ_DEFAULT_TEMPO (120, what ⎕SEQOPEN starts at), so ⎕MIDIINFO's
+   ¯1 for a file with no tempo event (players assume 120) can be
+   passed straight on (V98, agreed with the person; mapped here in
+   the glue, as ⎕SEQOPEN's results are). Any other value outside
+   1-1000 is still the library's Domain Error. The result is still
+   the previous tempo, and bare ⎕SEQTEMPO reports the real one, so
+   never ¯1. */
 static short
 f_tempo(struct ValEnt *re)
 {
@@ -742,6 +800,7 @@ f_tempo(struct ValEnt *re)
 		if (!is_numeric(re)) return SET_ERR(ERR_DOMAIN);
 		if (re->ve_length != 1) return SET_ERR(ERR_LENGTH);
 		bpm = elem(re, 0);
+		if (bpm == -1.0) bpm = SEQ_DEFAULT_TEMPO;	/* V98 */
 		if ((r = seq_set_tempo(bpm, &prev)) != SEQ_OK)
 			return seq_apl_err(r);
 		stack_pop(1);
@@ -1079,8 +1138,8 @@ f_evpost(struct ValEnt *re)
 
 	Where a file is: an absolute path (a leading '/', or a drive letter
 	and ':') as given; anything else under $APLHOME/midi/, as ⎕WILOAD
-	looks under $APLHOME/images/ (agreed Oct 16, 2026; )MIDI, to list
-	the folder, is to come). No extension is added.
+	looks under $APLHOME/images/ (agreed Oct 16, 2026); )MIDI lists
+	the folder (V98), as )IMAG lists images/. No extension is added.
 
 	Letter case (the person, Oct 16, 2026): the APL keyboard types
 	upper case, and file names on Linux are usually lower case, so
@@ -1373,8 +1432,13 @@ f_midiinfo(struct ValEnt *re)
    assume 4/4), programs or names yet. Each track ends at its loop
    length.
    Where the file goes: as for ⎕MIDIREAD (an absolute path as given,
-   anything else in $APLHOME/midi/), but the name is used exactly as
-   typed: no lower-case retry (the person, Oct 16, 2026). An existing
+   anything else in $APLHOME/midi/), with A-Z lower-cased in the part
+   ⎕MIDIREAD's retry lower-cases: the whole name under
+   $APLHOME/midi/, subfolders included; only the file name of an
+   absolute path (decided V95, so MuseScore's *.mid filter on Linux
+   shows the file; written exactly as typed until V98, found V96).
+   So 'W2.MID' writes w2.mid, which ⎕MIDIREAD 'W2.MID' finds on its
+   retry. A file name with capitals can't be written. An existing
    file is replaced, as ⎕FCREATE does; ⎕MIDIINFO tells whether one is
    there first.
    Result: the tracks written from the sequencer (those with a
@@ -1420,8 +1484,10 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 		if (list[i] > top) top = list[i];
 	}
 	free(list);
-	/* left: the file, as typed (lc unused: no retry when writing) */
+	/* left: the file, lower-cased from lc on (see above) */
 	if ((e = midi_path(le, path, sizeof path, &lc)) != 0) return e;
+	for (i = (int32_t)lc; path[i]; i++)
+		if (path[i] >= 'A' && path[i] <= 'Z') path[i] += 32;
 	if ((r = seq_get_tempo(&tempo)) != SEQ_OK) return seq_apl_err(r);
 
 	memset(tracks, 0, sizeof tracks);
@@ -1556,6 +1622,72 @@ void
 seqf_close(void)
 {
 	seq_close(NULL, NULL);
+}
+
+/* The port ⎕SEQOPEN '' opens (V98; see default_port): the whole
+   label of the port chosen in the front end's settings, or NULL or
+   "" for none. Copied; a longer name than PORT_MAX is cut there
+   (labels are at most 119 characters). A-Z are lower-cased, as
+   f_open() does with a name typed in APL; the library ignores
+   their case anyway. Safe from any thread and at any time, before
+   dll_startup() included; it takes effect at the next ⎕SEQOPEN '',
+   not on a port already open. main.cpp calls it after loading the
+   settings and each time they are applied; apl_cli for -P. */
+void
+seqf_set_default_port(const char *name)
+{
+	size_t i;
+
+	pthread_mutex_lock(&default_lock);
+	if (!name) name = "";
+	strncpy(default_port, name, PORT_MAX);
+	default_port[PORT_MAX] = '\0';
+	for (i = 0; default_port[i]; i++)
+		if (default_port[i] >= 'A' && default_port[i] <= 'Z')
+			default_port[i] += 32;
+	pthread_mutex_unlock(&default_lock);
+}
+
+/* The output ports, for the front end's settings dialog (V98): for
+   each port its system name, then its label, each followed by a
+   NUL, in seq_dev_list()'s order (⎕SEQPORTS's rows), whole ports
+   only, into buf. Returns the number of ports written, or -1 if the
+   list can't be made (no memory). Doesn't need the sequencer open;
+   safe from any thread (seq_dev_list() is). Laid out like
+   sys_font_families()'s list, which main.cpp already reads. Under
+   apl_cli -S, ports_test[], as ⎕SEQPORTS. */
+long
+seqf_port_list(char *buf, long size)
+{
+	struct seq_port_info *list;
+	size_t pl, nl, used = 0;
+	int32_t n, i;
+	long count = 0;
+
+	if (seqf_virtual)
+	{
+		list = (struct seq_port_info *)ports_test;
+		n = (int32_t)(sizeof ports_test / sizeof ports_test[0]);
+	}
+	else
+	{
+		list = malloc(SEQ_MAX_PORTS * sizeof *list);
+		if (!list) return -1;
+		n = seq_dev_list(list, SEQ_MAX_PORTS);
+		if (n > SEQ_MAX_PORTS) n = SEQ_MAX_PORTS;
+	}
+	for (i = 0; i < n; i++)
+	{
+		pl = strlen(list[i].port) + 1;
+		nl = strlen(list[i].name) + 1;
+		if (size < 0 || used + pl + nl > (size_t)size) break;
+		memcpy(buf + used, list[i].port, pl);
+		memcpy(buf + used + pl, list[i].name, nl);
+		used += pl + nl;
+		count++;
+	}
+	if (list != ports_test) free(list);
+	return count;
 }
 
 /* fatal_error(), just before _Exit(): note-offs and All Notes Off,

@@ -1,0 +1,22 @@
+Clear WS
+     ⍝ )MIDI (V98): lists $APLHOME/midi/ as )IMAG lists images/ (the same code), every file, names as on disk
+     )MIDI
+chords.mid     conductor.mid  notmidi.mid    t5000.mid      t5000m3.mid
+     ⍝ extra letters are ignored, as for every command
+     )MIDIS
+chords.mid     conductor.mid  notmidi.mid    t5000.mid      t5000m3.mid
+     ⍝ a pattern: leading letters, case ignored, * anywhere
+     )MIDI T
+t5000.mid    t5000m3.mid
+     )MIDI *M3
+t5000m3.mid
+     )MIDI zzz
+     ⍝ a folder that isn't there, and a file given as a folder
+     )MIDI nosuch/
+Can't find: nosuch/
+     )MIDI chords.mid/
+Can't find: chords.mid/
+     ⍝ )IMAG still lists images/
+     )IMAG b
+banana.JPG
+     

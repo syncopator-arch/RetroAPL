@@ -35,3 +35,5 @@
 '' ⎕MIDIWRITE 1
 ⍴⎕MIDIINFO 'x.mid'
 ⎕SEQCLOSE
+⍝ written in lower case (V98): 'W2.MID' is w2.mid on disk; x.mid was never written
+)MIDI W

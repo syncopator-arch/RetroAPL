@@ -840,6 +840,14 @@ of its device name:
 Upper or lower case doesn't matter in either form. In a label, any
 character outside plain ASCII shows as `?` and is matched as `?`.
 
+`⎕SEQOPEN ''` opens the port chosen under **MIDI Output Port** in
+Settings, so a program needn't name a port at all. The setting keeps
+the port's whole label, so it finds the same port again when its card
+or device number changes, and the result is the same as for a device
+name: `0` if that port isn't plugged in. With no port chosen,
+`⎕SEQOPEN ''` gives `0`. A change in Settings is used from the next
+`⎕SEQOPEN ''`; a port already open stays open.
+
 The result says whether it worked, so a program can test for a missing
 or busy device without being stopped by an error:
 
@@ -865,8 +873,8 @@ different one) and keeps the tracks, settings and position, so
 automatically; a workspace's boot function can. `Sequencer Already
 Open` if it's open and the port is working. `MIDI Port Lost` if a port
 reopened after a loss fails again at once. `Domain Error` if `port`
-isn't text (or a number, on Windows), is empty, or (Linux) starts with
-`hw:` but isn't one of the forms above. `Rank Error` if it's a
+isn't text (or a number, on Windows), or (Linux) starts with `hw:` but
+isn't one of the forms above. `Rank Error` if it's a
 character matrix.
 
 `⎕SEQCLOSE`
@@ -1081,7 +1089,10 @@ settings. Same errors as `⎕SEQMUTE`.
 Gets or sets the tempo in beats per minute, `1`–`1000`, fractions
 allowed (default `120`). Takes effect at once and keeps every track in
 place. Setting returns the *prior* value (see Settable functions at
-the top). `Domain Error` outside `1`–`1000`. `Length Error` if `bpm`
+the top). `¯1` sets the default, `120`: a file with no tempo of its
+own shows `¯1` in `⎕MIDIINFO`'s tempo column, and players then assume
+120, so `⎕SEQTEMPO←(⎕MIDIINFO 'song.mid')[⎕IO;⎕IO+4]` works for any
+file. `Domain Error` for anything else outside `1`–`1000`. `Length Error` if `bpm`
 isn't a single number. `Sequencer Not Open` when closed, even when
 just reporting (`⎕SEQSTATE` never fails).
 
@@ -1308,6 +1319,7 @@ file, again with its letters in lower case: `'SONG.MID'` finds
 `song.mid`. For an absolute path only the file's own name is lowered,
 not the folders. A file whose name mixes capitals and lower case (`My
 Song.mid`) has to be named exactly, in quotes as it is on disk.
+`)MIDI` lists the folder, with names spelled as they are on disk.
 
 Tracks are numbered in the order the file has them, from 1, whatever
 `⎕IO` is. A track can hold chords, and the sequencer's tracks play one

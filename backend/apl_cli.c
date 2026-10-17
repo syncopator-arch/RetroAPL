@@ -16,7 +16,7 @@
 	-> quad substitution qt_puts() applies.
 
 	Usage:
-	    apl_cli [-t] [-S] [-w wsname] [-q both|warn|new] [args...]
+	    apl_cli [-t] [-S] [-P port] [-w wsname] [-q both|warn|new] [args...]
 
 	    -t         transcript mode: echo each input line after the
 	               five-space prompt, so stdout reads like a GUI session.
@@ -26,6 +26,10 @@
 	               output to an in-memory log read by ⎕SEQLOG, advanced
 	               by ⎕SEQRUNTO), whatever port it names. For the
 	               regression tests (tests/NAME.opts); seqfuncs.c.
+	    -P port    the port ⎕SEQOPEN '' opens: what the GUI's MIDI port
+	               setting gives it (seqf_set_default_port(), seqfuncs.c;
+	               V98). One word, part of a port's label or a system
+	               name; without -P, ⎕SEQOPEN '' gives 0, no such port.
 	    -w wsname  workspace name passed to dll_startup(); default "",
 	               the same as the GUI with no workspace argument.
 	    -q mode    quad-function syntax (quad_syntax, parse.c), same as
@@ -63,6 +67,7 @@ extern int  exec_apl_line(UCHAR *linebuf);
 extern void dll_cleanup(void);
 extern int  crash_log_pending(char *path, size_t pathsz, char *summary, size_t sumsz);	/* crashlog.c */
 extern int  seqf_virtual;	/* seqfuncs.c: -S */
+extern void seqf_set_default_port(const char *name);	/* seqfuncs.c: -P */
 extern void cli_graphics_init(void);	/* cli_graphics.c */
 /* quad_syntax, QSYN_*: declared in parse.h, defined in parse.c */
 
@@ -269,7 +274,7 @@ static const PlatformFuncs cli_funcs = {
 static void
 usage(const char *prog)
 {
-	fprintf(stderr, "Usage: %s [-t] [-S] [-w wsname] [-q both|warn|new] [args...]\n", prog);
+	fprintf(stderr, "Usage: %s [-t] [-S] [-P port] [-w wsname] [-q both|warn|new] [args...]\n", prog);
 	exit(2);
 }
 
@@ -313,6 +318,8 @@ main(int argc, char **argv)
 			transcript = 1;
 		} else if (strcmp(argv[i], "-S") == 0) {
 			seqf_virtual = 1;
+		} else if (strcmp(argv[i], "-P") == 0 && i + 1 < argc) {
+			seqf_set_default_port(argv[++i]);
 		} else if (strcmp(argv[i], "-w") == 0 && i + 1 < argc) {
 			wsname = argv[++i];
 		} else if (strcmp(argv[i], "-q") == 0 && i + 1 < argc) {

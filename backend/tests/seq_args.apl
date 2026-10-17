@@ -61,6 +61,17 @@ M←2 4⍴60 62 64 ¯1 1 1 1 1
 ⎕SEQTEMPO 0.5
 ⎕SEQTEMPO 1000
 ⎕SEQTEMPO 66.5
+⍝ ¯1 is the default tempo, 120 (V98): ⎕MIDIINFO's ¯1 for a file with no tempo; the result is the prior tempo
+⎕SEQTEMPO ¯1
+⎕SEQTEMPO
+⎕SEQTEMPO←66.5
+⎕SEQTEMPO←¯1
+⎕SEQTEMPO
+⍝ only ¯1 exactly
+⎕SEQTEMPO ¯2
+⎕SEQTEMPO ¯1.5
+⎕SEQTEMPO
+⎕SEQTEMPO 66.5
 ⎕SEQRUNTO 4
 ⎕SEQPLAY←1
 ⎕SEQRUNTO ¯1
