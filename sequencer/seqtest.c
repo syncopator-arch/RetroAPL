@@ -374,11 +374,13 @@ static void show_state(void)
 
 		if (info[i].gate != 1.0)
 			snprintf(g, sizeof g, " gate %g", info[i].gate);
+		/* after V95: finished likewise, only when set */
 		fprintf(out, "  track %d: notes %d ch %d mute %d loop %d vel %d"
-		        " length %s pending %d position %s%s%s\n",
+		        " length %s pending %d position %s%s%s%s\n",
 		        info[i].track, (int)info[i].notes, info[i].channel,
 		        info[i].mute, info[i].loop, info[i].velocity, c,
-		        info[i].pending, d, info[i].report ? " notes 1" : "", g);
+		        info[i].pending, d, info[i].report ? " notes 1" : "", g,
+		        info[i].finished ? " finished 1" : "");
 	}
 }
 

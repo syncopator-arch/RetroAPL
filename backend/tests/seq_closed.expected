@@ -1,6 +1,6 @@
 Clear WS
      ⎕SEQSTATE
-  0  0  0  0  0  0  0  0  0  0  0
+  0  0  0  0  0  0  0  0  0  0  0  0
      ⎕SEQCLOSE
 
      ⍴⎕SEQCLOSE
@@ -44,5 +44,5 @@ Domain Error
      ^
 Rank Error
      ⎕SEQSTATE
-  0  0  0  0  0  0  0  0  0  0  0
+  0  0  0  0  0  0  0  0  0  0  0  0
      

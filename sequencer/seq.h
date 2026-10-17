@@ -289,7 +289,8 @@ int seq_dev_list(struct seq_port_info *ports, int max);
    GUI's stopEngine() calls it too); from CLOSED it returns SEQ_OK with
    *nclosed = 0.
    closed (room for SEQ_MAX_TRACKS, may be NULL) receives the numbers
-   of the tracks that held something, *nclosed how many. */
+   of the tracks that held something (finished play-once tracks
+   included, since V96), *nclosed how many. */
 int seq_close(int *closed, int *nclosed);
 
 enum seq_state {
@@ -303,30 +304,37 @@ enum seq_state {
    be NULL) the current main-clock position (0 when CLOSED). */
 int seq_get_state(int *state, int64_t *tick);
 
-/* One entry per track in use (a playing version or one waiting to take
-   over), for ⎕SEQSTATE's track rows. */
+/* One entry per track in use (a playing version, one waiting to take
+   over, or a finished play-once one), for ⎕SEQSTATE's track rows. */
 struct seq_track_info {
 	int     track;		/* 1..SEQ_MAX_TRACKS */
-	int32_t notes;		/* notes in the playing version, 0 if none
-				   yet (only a pending one, or a version
-				   whose start beat hasn't been reached) */
+	int32_t notes;		/* notes in the playing version (or the
+				   finished one), 0 if none yet (only a
+				   pending one, or a version whose start
+				   beat hasn't been reached) */
 	int     channel;	/* 1..16: the playing version's channel; with
 				   only a waiting version, the channel it
 				   will start on (Phase 2, agreed Oct 4) */
 	int     mute;		/* 0/1 */
 	int     loop;		/* 0/1 */
 	int     velocity;	/* 1..127 */
-	int64_t length;		/* loop length, ticks (playing version;
-				   0 if none) */
+	int64_t length;		/* loop length, ticks (playing or finished
+				   version; 0 if none) */
 	int     pending;	/* 1 if a version is waiting to take over
 				   (including one whose start beat hasn't
 				   been reached yet) */
 	int64_t position;	/* position within the playing version's
 				   current pass, ticks, 0..length-1 (0 if
-				   no playing version) */
+				   no playing version, and when finished) */
 	int     report;		/* Phase 7c: 1 if it reports note events
 				   (seq_set_notes()) */
 	double  gate;		/* Phase 8: seq_set_gate() */
+	int     finished;	/* 1: a play-once track that has played
+				   through. It keeps its version, silent,
+				   until a restart (which plays it again),
+				   a new version, seq_clear() or
+				   seq_close() (agreed after V95). pending
+				   is 0. */
 };
 
 /* Fills info (room for SEQ_MAX_TRACKS) in ascending track order, all
@@ -370,8 +378,9 @@ void seq_panic(void);
      play-once track that has finished): it starts from its first note
      at the next whole beat at or after the current position, which
      becomes its start point. Stopped at beat 0, that is beat 0, so it
-     is in place at once. Resending a finished play-once track is how
-     to play it again.
+     is in place at once. A finished track's kept version is replaced.
+     Resending a finished play-once track plays it again from there; a
+     restart plays it again from beat 0 with the rest.
    A later submission before the takeover replaces the pending one.
    seq_play(SEQ_RESTART) makes every pending version take over at
    beat 0.
@@ -417,8 +426,10 @@ int seq_submit_track_ex(int track, int channel,
 
 /* Removes tracks at their next loop boundaries, or at once if not
    playing: a deliberate exception to "a stop changes nothing", since
-   a stopped track has nothing sounding to cut off.
-   prev[i] is 1 if the track held something, else 0. */
+   a stopped track has nothing sounding to cut off. A finished
+   play-once track has no boundary left, so it goes at once either way.
+   prev[i] is 1 if the track held something (a finished track
+   included), else 0. */
 int seq_clear(const int *tracks, int n, int *prev);
 
 /* Mute on (1) or off (0). Immediate; muting sends note-off for the
@@ -426,7 +437,9 @@ int seq_clear(const int *tracks, int n, int *prev);
 int seq_set_mute(const int *tracks, const int *values, int n, int *prev);
 
 /* Loop (1, default) or play once and fall silent (0). Applies from the
-   track's next boundary. */
+   track's next boundary. A track that has played once keeps its
+   version, finished (see struct seq_track_info); setting loop on
+   doesn't start it again, but applies when a restart does. */
 int seq_set_loop(const int *tracks, const int *values, int n, int *prev);
 
 /* Note-on velocity, 1..127. Applies to notes started from now on. */
@@ -486,8 +499,9 @@ enum seq_play_mode {
 				   all stay */
 	SEQ_CONTINUE = 1,	/* from where it stopped */
 	SEQ_RESTART  = 2	/* from beat 0, a boundary for every track:
-				   every start point is set to 0 and
-				   pending versions take over at once */
+				   every start point is set to 0, pending
+				   versions take over at once and finished
+				   play-once tracks play again */
 };
 
 /* prev (may be NULL) receives 1 if it was playing, else 0. The clock

@@ -371,6 +371,7 @@ int32_t accum,h,l;
 struct Func0Ent *f0e;
 short op_sp;
 short isfloat;
+short undef_now, undef_right;	/* pass 2: see VAR_CODE and case 3 */
 
 	if (DEBUGFLAG) 
 	{
@@ -807,8 +808,14 @@ short isfloat;
 
 /* now fully tokenized, process into output */
 	LASTOP = 1;
+	undef_now = 0;
 	while (cpt > LINEC) 
 	{
+		/* undef_right: the token just processed (immediately to the
+		   right of this one) was a name with no value yet (V96, see
+		   case 3) */
+		undef_right = undef_now;
+		undef_now = 0;
 		cpt--;			/* backup to code in process */
 		c = *cpt;
 		if (c & OP_CODE) 
@@ -823,7 +830,13 @@ short isfloat;
 					if (i < QQUAD_CODE) 
 					{
 						if (!LASTOP && SYMT[i].type != SYM_UNDEF) return(-3);
-						if (SYMT[i].type == SYM_UNDEF) LASTOP = 1;
+						/* a name with no value yet may turn out
+						   to be a function, so it reads as one:
+						   LASTOP 1. Remembered for case 3 below. */
+						if (SYMT[i].type == SYM_UNDEF) {
+							LASTOP = 1;
+							undef_now = 1;
+						}
 						else LASTOP = 0;
 					} else LASTOP = 0;
 					goto dypop;
@@ -877,11 +890,23 @@ short isfloat;
 								   one (⎕IO X). Under -q warn,
 								   taking an argument without ←
 								   gets a note (during )ENTER). */
+								/* V96: with ←, a name with no value
+								   yet just to the right is the
+								   argument, not "nothing there". Such
+								   a name reads as a function (LASTOP 1,
+								   see VAR_CODE), so before this
+								   ⎕F←R, ⎕F←R[1;5] or ⎕F←R+1 failed to
+								   compile until R had a value -- in a
+								   function, a local at )ENTER. With ←
+								   it is the argument whether R ends up
+								   a variable or a monadic function,
+								   as for X←R. Without ← (⎕F R), still
+								   the niladic reading (backlog). */
 								{
 								UCHAR tag = c & 0x0f;
 
 									c = SYS_CODE | (tag & SYS_ASSIGN_BIT);
-									if (LASTOP) {
+									if (LASTOP && !((tag & QTAG_ASSIGN) && undef_right)) {
 										if (tag & QTAG_ASSIGN) return(-3);
 										*cpo++ = OP_NOP;
 										*cpo++ = c;

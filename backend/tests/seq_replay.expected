@@ -1,0 +1,95 @@
+Clear WS
+     ⍝ V96: a finished play-once track keeps its version until a restart plays it again
+     ⎕SEQOPEN 'TEST'
+1
+     ⍝ three voices of different lengths, all played once, as with a file's voices
+     1 ⎕SEQTRACK 2 2⍴60 62 1 1
+0
+     2 ⎕SEQTRACK 2 1⍴48 3
+0
+     3 ⎕SEQTRACK 2 4⍴72 74 76 77,4⍴0.5
+0
+     (⍳3) ⎕SEQLOOP 0
+1 1 1
+     ⎕SEQPLAY←1
+     ⎕SEQRUNTO 4
+4
+     ⎕SEQLOG
+0.000 t0 0.000ms ON  ch1 60 v100     
+0.000 t0 0.000ms ON  ch2 48 v100     
+0.000 t0 0.000ms ON  ch3 72 v100     
+0.500 t1260 250.000ms OFF ch3 72     
+0.500 t1260 250.000ms ON  ch3 74 v100
+1.000 t2520 500.000ms OFF ch1 60     
+1.000 t2520 500.000ms OFF ch3 74     
+1.000 t2520 500.000ms ON  ch1 62 v100
+1.000 t2520 500.000ms ON  ch3 76 v100
+1.500 t3780 750.000ms OFF ch3 76     
+1.500 t3780 750.000ms ON  ch3 77 v100
+2.000 t5040 1000.000ms OFF ch1 62    
+2.000 t5040 1000.000ms OFF ch3 77    
+3.000 t7560 1500.000ms OFF ch2 48    
+     ⍝ all three have finished: their rows stay, with column 12 set
+     ⎕SEQSTATE
+    0    2    4  120    3    0    0    0    0    0    0    0
+    1    2    1    0    0  100    2    0    0    0    1    1
+    2    1    2    0    0  100    3    0    0    0    1    1
+    3    4    3    0    0  100    2    0    0    0    1    1
+     ⎕SEQSTATE[;12]
+0 1 1 1
+     ⍝ a stop and continue doesn't replay them: nothing sounds
+     ⎕SEQPLAY←0
+     ⎕SEQPLAY←1
+     ⎕SEQRUNTO 6
+6
+     ⎕SEQLOG
+
+     ⍝ a restart plays all three again from beat 0
+     ⎕SEQPLAY←2
+     ⎕SEQRUNTO 4
+4
+     ⎕SEQLOG
+0.000 t0 3000.000ms ON  ch1 60 v100   
+0.000 t0 3000.000ms ON  ch2 48 v100   
+0.000 t0 3000.000ms ON  ch3 72 v100   
+0.500 t1260 3250.000ms OFF ch3 72     
+0.500 t1260 3250.000ms ON  ch3 74 v100
+1.000 t2520 3500.000ms OFF ch1 60     
+1.000 t2520 3500.000ms OFF ch3 74     
+1.000 t2520 3500.000ms ON  ch1 62 v100
+1.000 t2520 3500.000ms ON  ch3 76 v100
+1.500 t3780 3750.000ms OFF ch3 76     
+1.500 t3780 3750.000ms ON  ch3 77 v100
+2.000 t5040 4000.000ms OFF ch1 62     
+2.000 t5040 4000.000ms OFF ch3 77     
+3.000 t7560 4500.000ms OFF ch2 48     
+     ⍝ ⎕MIDIWRITE writes finished tracks
+     'r.mid' ⎕MIDIWRITE ¯1
+1 2 3
+     'r.mid' ⎕MIDIREAD 3
+  72.0  74.0  76.0  77.0
+   0.5   0.5   0.5   0.5
+ 100.0 100.0 100.0 100.0
+   0.5   0.5   0.5   0.5
+   3.0   3.0   3.0   3.0
+     ⍝ resending a finished track starts it at the next whole beat
+     ⎕SEQRUNTO 5.5
+5.5
+     1 ⎕SEQTRACK 2 1⍴65 1
+6
+     ⎕SEQSTATE[;12]
+0 0 1 1
+     ⍝ ⎕SEQCLEAR of a finished track: it held something, and its row goes at once
+     ⎕SEQCLEAR 2
+2
+     ⎕SEQSTATE[;1]
+0 1 3
+     ⍝ ⎕SEQCLOSE lists the finished tracks
+     ⎕SEQRUNTO 8
+8
+     ⎕SEQLOG
+6.000 t15120 6000.000ms ON  ch1 65 v100
+7.000 t17640 6500.000ms OFF ch1 65     
+     ⎕SEQCLOSE
+1 3
+     

@@ -49,6 +49,7 @@
 # options (.opts), .fn fixtures. tests/*.out (run output) stays ignored.
 !/backend/tests/
 /backend/tests/*
+!/backend/tests/midi/
 !/backend/tests/*.apl
 !/backend/tests/*.expected
 !/backend/tests/*.opts

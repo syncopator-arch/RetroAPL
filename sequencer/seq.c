@@ -27,6 +27,13 @@
 	that isn't live it replaces cur outright, since nothing of it has
 	played yet.
 
+	A play-once track that reaches the end of its pass with nothing
+	pending keeps its version, finished (agreed after V95): silent, with
+	no events and not live, until a restart rewinds it with the rest, a
+	new version replaces it (starting at the next whole beat, as for any
+	track with nothing playing), or a clear or close drops it. Until V95
+	the version was freed there, so a restart couldn't bring it back.
+
 	Clocks. Real time is always read from CLOCK_MONOTONIC (S.clk),
 	kept as ns since open. Timed waits use it too if
 	pthread_condattr_setclock() accepts it (glibc does); if not
@@ -79,6 +86,9 @@ struct track {
 	int64_t pass_base;	/* tick the current pass of cur began */
 	int32_t next;		/* index of cur's next note */
 	int     clear_req;	/* remove at the next boundary */
+	int     finished;	/* play-once, played through: cur kept,
+				   silent until restart, a new version,
+				   clear or close (after V95) */
 
 	/* settings, kept across versions and seq_clear() */
 	int     channel;	/* 1..16 */
@@ -553,6 +563,7 @@ static void drop_versions(struct track *tr)
 	free_version(tr->pend);
 	tr->cur = tr->pend = NULL;
 	tr->clear_req = 0;
+	tr->finished = 0;
 }
 
 static int64_t length_of(const struct version *v)
@@ -562,7 +573,7 @@ static int64_t length_of(const struct version *v)
 
 static int is_live(const struct track *tr)
 {
-	return tr->cur && tr->start_point < S.done;
+	return tr->cur && !tr->finished && tr->start_point < S.done;
 }
 
 static int is_open(void)
@@ -582,7 +593,7 @@ static int64_t next_event(void)
 
 		if (tr->snd_pitch >= 0 && tr->snd_off < m)
 			m = tr->snd_off;
-		if (tr->cur) {
+		if (tr->cur && !tr->finished) {
 			e = tr->pass_base + tr->cur->start[tr->next];
 			if (e < m)
 				m = e;
@@ -593,7 +604,9 @@ static int64_t next_event(void)
 	return m;
 }
 
-/* The end of a track's pass, at tick T. */
+/* The end of a track's pass, at tick T. A play-once track with nothing
+   pending keeps its version, finished: nothing more is scheduled for it
+   (next_event() skips it) until a restart or a new version. */
 static void boundary(struct track *tr, int64_t T)
 {
 	if (tr->clear_req) {
@@ -605,8 +618,7 @@ static void boundary(struct track *tr, int64_t T)
 		tr->cur = tr->pend;
 		tr->pend = NULL;
 	} else if (!tr->loop) {
-		free_version(tr->cur);
-		tr->cur = NULL;
+		tr->finished = 1;
 		return;
 	}
 	tr->pass_base = T;
@@ -629,7 +641,7 @@ static void play_tick(int64_t T)
 	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
 		struct track *tr = &S.tr[t];
 
-		if (tr->cur && tr->next == tr->cur->n
+		if (tr->cur && !tr->finished && tr->next == tr->cur->n
 		    && tr->pass_base + length_of(tr->cur) == T)
 			boundary(tr, T);
 	}
@@ -639,7 +651,7 @@ static void play_tick(int64_t T)
 		int32_t i;
 		int p;
 
-		if (!v || tr->next >= v->n
+		if (!v || tr->finished || tr->next >= v->n
 		    || tr->pass_base + v->start[tr->next] != T)
 			continue;
 		i = tr->next;
@@ -956,6 +968,9 @@ int seq_get_tracks(struct seq_track_info *info, int *n)
 			struct track *tr = &S.tr[t];
 			struct seq_track_info *in = &info[k];
 			int live = is_live(tr);
+			/* a finished track reports its kept version, the
+			   one a restart plays and a MIDI file gets */
+			int kept = live || tr->finished;
 
 			if (!tr->cur && !tr->pend)
 				continue;
@@ -969,11 +984,12 @@ int seq_get_tracks(struct seq_track_info *info, int *n)
 			in->mute = tr->mute;
 			in->loop = tr->loop;
 			in->velocity = tr->velocity;
-			in->notes = live ? tr->cur->n : 0;
-			in->length = live ? length_of(tr->cur) : 0;
-			in->pending = (tr->pend != NULL) || (tr->cur && !live);
+			in->notes = kept ? tr->cur->n : 0;
+			in->length = kept ? length_of(tr->cur) : 0;
+			in->pending = (tr->pend != NULL) || (tr->cur && !kept);
 			in->report = tr->notes;
 			in->gate = tr->gate;
+			in->finished = tr->finished;
 			in->position = 0;
 			if (live) {
 				int64_t q = pos - tr->pass_base;
@@ -1171,10 +1187,15 @@ int seq_submit_track_ex(int track, int channel,
 		tr->pend = v;
 		swap = tr->pass_base + length_of(tr->cur);
 	} else {
-		swap = tr->cur ? tr->start_point : next_beat(avail_tick());
+		/* cur not live: one waiting to start (replaced, keeping its
+		   start beat), or a finished one (nothing playing: the next
+		   beat, as for an empty track) */
+		swap = (tr->cur && !tr->finished) ? tr->start_point
+		                                  : next_beat(avail_tick());
 		free_version(tr->cur);
 		free_version(tr->pend);
 		tr->pend = NULL;
+		tr->finished = 0;
 		tr->cur = v;
 		tr->start_point = tr->pass_base = swap;
 		tr->next = 0;
@@ -1334,8 +1355,9 @@ int seq_set_gate(const int *tracks, const double *values, int n,
 	return SEQ_OK;
 }
 
-/* Phase 9: see seq.h. The version is cur: the playing one, or the one
-   about to start (pend exists only behind a live cur). Worked out with
+/* Phase 9: see seq.h. The version is cur: the playing one, a finished
+   play-once one, or the one about to start (pend exists only behind a
+   live cur). Worked out with
    the same note_vel(), note_chan() and note_end() play_tick() uses, so
    a file gets what the synth hears. */
 int seq_get_track_notes(int track, struct seq_note_out **notes, int32_t *n,
@@ -1461,6 +1483,7 @@ int seq_play(int mode, int *prev)
 					tr->cur = tr->pend;
 					tr->pend = NULL;
 				}
+				tr->finished = 0;	/* plays again */
 				tr->start_point = tr->pass_base = 0;
 				tr->next = 0;
 				tr->ev_count = 0;	/* Phase 7c */
@@ -1586,14 +1609,18 @@ int seq_get_note_late(double *ms)
 	return r;
 }
 
-/* 1 if some reporting track has a version, playing or waiting. */
+/* 1 if some reporting track has a version, playing or waiting (a
+   finished one plays nothing more until a restart or a new version). */
 static int notes_possible(void)
 {
 	int t;
 
-	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
-		if (S.tr[t].notes && (S.tr[t].cur || S.tr[t].pend))
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+
+		if (tr->notes && ((tr->cur && !tr->finished) || tr->pend))
 			return 1;
+	}
 	return 0;
 }
 

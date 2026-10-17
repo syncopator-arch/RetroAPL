@@ -48,6 +48,12 @@
 	sequencer tracks to a MIDI file, as they would sound, with the
 	tempo; it needs the sequencer open.
 
+	After V95 (V96, Oct 16, 2026): a play-once track that has played
+	through keeps its version, silent, until a restart plays it again
+	(the library, seq.c). Its ⎕SEQSTATE row stays, with column 12
+	(finished) 1; ⎕SEQCLEAR's and ⎕SEQCLOSE's results and ⎕MIDIWRITE
+	include it. Before, the row went and a restart didn't replay it.
+
 	House rules followed here:
 	  - Every function produces a new value: arguments are copied out
 	    of the workspace first (into malloc'd C arrays -- the library
@@ -156,8 +162,9 @@ UCHAR seq_ftypes[] = {
 int seqf_virtual = 0;
 
 #define TPB	((double)SEQ_TICKS_PER_BEAT)
-#define NCOLS	11			/* ⎕SEQSTATE columns (10th: 7c;
-					   11th, the gate: Phase 8) */
+#define NCOLS	12			/* ⎕SEQSTATE columns (10th: 7c;
+					   11th, the gate: Phase 8;
+					   12th, finished: V96) */
 #define EV_LIMIT 10000			/* beats the virtual clock runs
 					   looking for a wait's event (7c) */
 #define PORT_MAX 255			/* longest port name accepted */
@@ -803,7 +810,10 @@ f_beat(struct ValEnt *re)
    of the sequencer row is ⎕SEQBEAT, column 7 how late the last note
    event was handed over (ms; for watching a loop while tuning it),
    column 10 of a track row ⎕SEQNOTES (the sequencer row's column 10
-   is 0). */
+   is 0). Phase 8: column 11 the gate. V96: column 12 is 1 for a
+   play-once track that has played through and kept its version
+   (columns 2 and 7 describe that version; 8 and 9 are 0); 0 in every
+   other row. */
 static short
 f_state(void)
 {
@@ -850,6 +860,7 @@ f_state(void)
 		row[8] = (double)info[i].position / TPB;
 		row[9] = (double)info[i].report;
 		row[10] = info[i].gate;			/* Phase 8 */
+		row[11] = (double)info[i].finished;	/* V96 */
 	}
 	return 0;
 }
@@ -1352,7 +1363,7 @@ f_midiinfo(struct ValEnt *re)
    tracks to a Standard MIDI File (format 1, 2520 ticks per beat, so
    timing is exact), as they would sound now: one pass of each track's
    playing version (or the one waiting to start, if nothing plays on it
-   yet), each note's velocity scaled by the track's, its length from
+   yet, or a finished play-once one's: V96), each note's velocity scaled by the track's, its length from
    row 4 or the gate, its own channel or the track's
    (seq_get_track_notes()); rests are gaps; a muted track is written
    like any other. Sequencer track t is the file's track t: tracks not

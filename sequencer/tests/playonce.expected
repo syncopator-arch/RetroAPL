@@ -1,6 +1,8 @@
-# A play-once track (loop 0) plays through, then falls silent; it has
-# no playing version afterwards (no state row). Resending it plays it
-# again from the next whole beat. Loop applies at the next boundary.
+# A play-once track (loop 0) plays through, then falls silent. It keeps
+# its version, finished, until a restart, a new version, a clear or a
+# close (agreed after V95): its state row stays, marked "finished 1".
+# Resending it plays it again from the next whole beat. Loop applies at
+# the next boundary.
 open virtual
 loop 1 = 0
   prev: 1
@@ -10,7 +12,8 @@ play continue
   was playing: 0
 runto 2.5
 state
-  seq: PLAYING beat 2.500 (t6300) tempo 120 tracks 0
+  seq: PLAYING beat 2.500 (t6300) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 0 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0) finished 1
 track 1 64:1 65:1
   takes over at beat 3.000 (t7560)
 runto 6
@@ -24,7 +27,8 @@ log
   4.000 t10080 2000.000ms ON  ch1 65 v100
   5.000 t12600 2500.000ms OFF ch1 65
 state
-  seq: PLAYING beat 6.000 (t15120) tempo 120 tracks 0
+  seq: PLAYING beat 6.000 (t15120) tempo 120 tracks 1
+  track 1: notes 2 ch 1 mute 0 loop 0 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0) finished 1
 track 2 48:1
   takes over at beat 6.000 (t15120)
 runto 7.5
@@ -37,4 +41,90 @@ log
   7.000 t17640 3500.000ms ON  ch2 48 v100
   8.000 t20160 4000.000ms OFF ch2 48
 state
-  seq: PLAYING beat 10.000 (t25200) tempo 120 tracks 0
+  seq: PLAYING beat 10.000 (t25200) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 0 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0) finished 1
+  track 2: notes 1 ch 2 mute 0 loop 0 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0) finished 1
+# Neither a stop and continue nor turning loop back on replays a
+# finished track (the setting waits for the restart). Its notes are
+# still there for a MIDI file.
+play stop
+  was playing: 1
+play continue
+  was playing: 0
+loop 1 = 1
+  prev: 0
+runto 12
+log
+state
+  seq: PLAYING beat 12.000 (t30240) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0) finished 1
+  track 2: notes 1 ch 2 mute 0 loop 0 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0) finished 1
+trackout 1
+  length 2.000 (t5040), 2 notes
+  0.000 (t0) to 1.000 (t2520): 64 v100 ch1
+  1.000 (t2520) to 2.000 (t5040): 65 v100 ch1
+# A finished track that reports notes gives a wait nothing to wait for.
+notes 1 2 = 1
+  prev: 0 0
+evwait
+  error: SEQ_ERR_NO_EVENT (no event to wait for)
+notes 1 2 = 0
+  prev: 1 1
+# A restart rewinds every track to beat 0, finished ones included:
+# track 1 now loops, track 2 plays once again, track 3 loops as before.
+track 3 72:2
+  takes over at beat 12.000 (t30240)
+runto 14
+play restart
+  was playing: 1
+runto 4.5
+log
+  12.000 t30240 6000.000ms ON  ch3 72 v100
+  14.000 t35280 7000.000ms OFF ch3 72
+  0.000 t0 7000.000ms ON  ch1 64 v100
+  0.000 t0 7000.000ms ON  ch2 48 v100
+  0.000 t0 7000.000ms ON  ch3 72 v100
+  1.000 t2520 7500.000ms OFF ch1 64
+  1.000 t2520 7500.000ms OFF ch2 48
+  1.000 t2520 7500.000ms ON  ch1 65 v100
+  2.000 t5040 8000.000ms OFF ch1 65
+  2.000 t5040 8000.000ms OFF ch3 72
+  2.000 t5040 8000.000ms ON  ch1 64 v100
+  2.000 t5040 8000.000ms ON  ch3 72 v100
+  3.000 t7560 8500.000ms OFF ch1 64
+  3.000 t7560 8500.000ms ON  ch1 65 v100
+  4.000 t10080 9000.000ms OFF ch1 65
+  4.000 t10080 9000.000ms OFF ch3 72
+  4.000 t10080 9000.000ms ON  ch1 64 v100
+  4.000 t10080 9000.000ms ON  ch3 72 v100
+state
+  seq: PLAYING beat 4.500 (t11340) tempo 120 tracks 3
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.500 (t1260)
+  track 2: notes 1 ch 2 mute 0 loop 0 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0) finished 1
+  track 3: notes 1 ch 3 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.500 (t1260)
+# Clearing a finished track while playing: it held something, and its
+# row goes at once (there's no boundary left to wait for).
+clear 2
+  held: 1
+state
+  seq: PLAYING beat 4.500 (t11340) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.500 (t1260)
+  track 3: notes 1 ch 3 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.500 (t1260)
+# A track that finishes later; a close lists the finished tracks too.
+loop 3 = 0
+  prev: 1
+runto 8
+log
+  5.000 t12600 9500.000ms OFF ch1 64
+  5.000 t12600 9500.000ms ON  ch1 65 v100
+  6.000 t15120 10000.000ms OFF ch1 65
+  6.000 t15120 10000.000ms OFF ch3 72
+  6.000 t15120 10000.000ms ON  ch1 64 v100
+  7.000 t17640 10500.000ms OFF ch1 64
+  7.000 t17640 10500.000ms ON  ch1 65 v100
+state
+  seq: PLAYING beat 8.000 (t20160) tempo 120 tracks 2
+  track 1: notes 2 ch 1 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0)
+  track 3: notes 1 ch 3 mute 0 loop 0 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0) finished 1
+close
+  closed: 1 3

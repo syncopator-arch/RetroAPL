@@ -1,6 +1,8 @@
-# A play-once track (loop 0) plays through, then falls silent; it has
-# no playing version afterwards (no state row). Resending it plays it
-# again from the next whole beat. Loop applies at the next boundary.
+# A play-once track (loop 0) plays through, then falls silent. It keeps
+# its version, finished, until a restart, a new version, a clear or a
+# close (agreed after V95): its state row stays, marked "finished 1".
+# Resending it plays it again from the next whole beat. Loop applies at
+# the next boundary.
 open virtual
 loop 1 = 0
 track 1 60:1 62:1
@@ -17,3 +19,35 @@ loop 2 = 0
 runto 10
 log
 state
+# Neither a stop and continue nor turning loop back on replays a
+# finished track (the setting waits for the restart). Its notes are
+# still there for a MIDI file.
+play stop
+play continue
+loop 1 = 1
+runto 12
+log
+state
+trackout 1
+# A finished track that reports notes gives a wait nothing to wait for.
+notes 1 2 = 1
+evwait
+notes 1 2 = 0
+# A restart rewinds every track to beat 0, finished ones included:
+# track 1 now loops, track 2 plays once again, track 3 loops as before.
+track 3 72:2
+runto 14
+play restart
+runto 4.5
+log
+state
+# Clearing a finished track while playing: it held something, and its
+# row goes at once (there's no boundary left to wait for).
+clear 2
+state
+# A track that finishes later; a close lists the finished tracks too.
+loop 3 = 0
+runto 8
+log
+state
+close

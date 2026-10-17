@@ -11,6 +11,14 @@
 /* File-local macro: cast ws_off_t workspace offset to struct ValEnt* */
 #define WSVAL_PTR(off) ((struct ValEnt *)WS_PTR(off))
 
+/* An argument's entry, or 0 for a name with no value (offset 0). The
+   offset is tested, not the pointer: WS_PTR(0) is wspace itself, never
+   null (INVARIANTS.md, "WS_PTR(0) Safety"). Until V96 do_sys() tested
+   the pointer, so its Value Error checks never fired, and a quad
+   function given a name with no value read the workspace header as its
+   argument (⎕UCASE Q gave Domain Error, ⎕IO←Q set ⎕IO from the header). */
+#define ARG_PTR(vp) (*(vp) ? WSVAL_PTR(*(vp)) : (struct ValEnt *)0)
+
 extern UCHAR *all_ftypes[];
 extern PTF all_funcs[];
 
@@ -31,15 +39,15 @@ UCHAR *types;
 		case MONAD:
 			VRIGHT = get_vparm(0);
 			if (!VRIGHT) return(SET_ERR(ERR_SYNTAX));
-			re = WSVAL_PTR(*VRIGHT);
+			re = ARG_PTR(VRIGHT);
 			if (!re) return(SET_ERR(ERR_VALUE));
 			break;
 		case DYAD:
 			VLEFT = get_vparm(0);
 			VRIGHT = get_vparm(1);
 			if (!VLEFT || !VRIGHT) return(SET_ERR(ERR_SYNTAX));
-			le = WSVAL_PTR(*VLEFT);
-			re = WSVAL_PTR(*VRIGHT);
+			le = ARG_PTR(VLEFT);
+			re = ARG_PTR(VRIGHT);
 			if (!re || !le) return(SET_ERR(ERR_VALUE));
 			break;
 		case MONAD_OPT_NOASSIGN:	/* MONAD_OPT with no ⎕F←X form
@@ -48,7 +56,7 @@ UCHAR *types;
 		case MONAD_OPT:
 			VRIGHT = get_vparm(0);
 			if (VRIGHT) {
-				re = WSVAL_PTR(*VRIGHT);
+				re = ARG_PTR(VRIGHT);
 				if (!re) return(SET_ERR(ERR_VALUE));
 			} else if (*MSTACK == STACK_MARK) {
 				/* parse.c determined at compile time that this

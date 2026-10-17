@@ -35,4 +35,4 @@ logticks
 play stop
   was playing: 1
 close
-  closed: (none)
+  closed: 1 2
