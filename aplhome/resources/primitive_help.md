@@ -94,7 +94,8 @@ Add. There's no monadic `+`.
 
 `L÷R`
 
-Reciprocal, divide. Dividing by zero is a `Domain Error`. Whether
+Reciprocal, divide. Dividing by zero is a `Domain Error`, except
+`0÷0`, which is `1`, as in the book. Whether
 `7÷2` is `3.5` or `3` depends on the `)INTDIV` setting (also
 `⎕INTDIV`): off, the default, gives the usual APL result; on, a
 division of two integers is truncated toward zero. Monadic `÷`
@@ -131,7 +132,9 @@ cosine and tangent, and the negatives are their inverses. Any other
 
 `L|R`
 
-Magnitude, residue. `0|R` is `R`.
+Magnitude, residue. `0|R` is `R`. The result has `L`'s sign
+(`¯3|7` is `¯2`, `3|¯7` is `2`): for `L` not 0, `R` is always
+`(L×⌊R÷L)+L|R`.
 
 `⌈R`
 
@@ -144,6 +147,13 @@ Ceiling, maximum.
 `L⌊R`
 
 Floor, minimum.
+
+`⌈` rounds up and `⌊` rounds down (`⌈¯2.1` is `¯2`, `⌊¯2.1` is `¯3`),
+and the result is stored as a whole number when it fits. For a whole
+number, monadic `⌈` and `⌊` leave the value alone and change only how
+it's stored: `⌈` moves it up one storage size (the last step makes it a
+float, so `(⌈⌈⌈3)÷2` is `1.5` even under `)INTDIV ON`), and `⌊` stores
+it in the smallest size that holds it. `⎕VT` shows the storage type.
 
 `?R`
 
@@ -270,7 +280,10 @@ Reverse, rotate along the first axis.
 
 Take, drop: one number in `L` for each axis of `R`, negative to count
 from the end. Taking more than there are pads with zeros
-(`6↑1 2 3 4` is `1 2 3 4 0 0`). No monadic forms.
+(`6↑1 2 3 4` is `1 2 3 4 0 0`). A shorter `L` applies to the leading
+axes and leaves the rest whole: with `M←2 3⍴⍳6`, `1↓M` is the 1 by 3
+matrix `4 5 6`, the same as `1 0↓M`. A longer `L` adds leading axes
+(`3 4↑⍳9` is 3 by 4). No monadic forms.
 
 ---
 
@@ -354,7 +367,8 @@ including a `0` in `L` meaning an unlimited radix (`0 10⊤123` is
 
 Which functions each operator takes. The scalar functions are the
 arithmetic, comparison, logic and bitwise ones above. Any other
-function gives a `Syntax Error`.
+function gives a `Syntax Error`, except in outer product, where it's
+a `Domain Error` (`1 2∘.⍴3`).
 
 | Operator | Functions |
 |---|---|
@@ -449,6 +463,7 @@ place:
 - Monadic `⍳` with a vector argument gives a matrix of indices.
 - Replicate accepts negative counts (as APL2).
 - `⌈/` and `⌊/` of an empty array give integer limits.
+- Monadic `⌈` and `⌊` of a whole number change its storage size.
 - `⍕` and `⍎` are monadic only, and `⍕` expects numbers.
 - There's no bracket axis.
 - `∆` and `⍙` can't be used in names.
@@ -477,20 +492,3 @@ APL2's nested arrays aren't supported, so neither are the primitives
 built on them: enclose and disclose (`⊂ ⊃`, which here are shifts),
 match (`≡`), each (`¨`), first, pick, and the rest. `⍺`, `⍵`, `⌶` and
 `⍫` are in the font but do nothing.
-
----
-
-## Known problems
-
-Being worked on. Until fixed:
-
-- Monadic `⌈` returns floats unchanged (`⌈2.1` is `2.1`).
-- Residue with a negative `L` and positive `R` gives the wrong sign
-  (`¯3|7` gives `1`; it should be `¯2`).
-- `↑` and `↓` with one number on the left and a matrix on the right
-  give a wrong result instead of an error (`1↓M`). Give one number per
-  axis (`1 0↓M`).
-- `0÷0` is a `Domain Error`; the book gives `1`.
-- Outer product with a function whose results differ in length
-  (`1 2∘.⍴3`, `1 2∘.↑3 4 5`) shows part of the answer instead of an
-  error.

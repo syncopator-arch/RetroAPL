@@ -45,6 +45,7 @@ Windows from the same source.
 - **MIDI Sequencer.** Uses quad functions to communicate with MIDI
   sequencer background process.  Multiple tracks of loops or one shots.
   Send it sequences of notes and control playback via APL expressions.
+- **MIDI File I/O.** Uses quad functions to read & write sequences to/from MIDI format files.
   
 
 The list of primitives supported by RetroAPL is here: [`aplhome/resources/primitive_help.md`](aplhome/resources/primitive_help.md)

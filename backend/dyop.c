@@ -340,6 +340,15 @@ double dacc = 0.0;
 				{
 					FLOATVS[flt] = (ws_off_t)acc;
 					tmp = dup_val(&FLOATVS[flt]);
+					if (!tmp)	/* V97: was dereferenced */
+					{
+						/* the result's later cells are still 0
+						   (zeroed above), and each copy made so
+						   far is owned by its cell: the result
+						   can be dropped as it stands */
+						FLOATVS[flt] = (ws_off_t)0;
+						return(SET_ERR(ERR_WSFULL));
+					}
 					re = WSVAL_PTR(*VRIGHT);
 					le = WSVAL_PTR(*VLEFT);
 					te = WSVAL_PTR(*VTEMP);
@@ -349,12 +358,18 @@ double dacc = 0.0;
 					ls.lp += ltscan;
 					rs.lp += rtscan;
 					ts.lp += ttscan;
-					ttscan++;
 					tmp->ve_reference = WS_OFF(ts.lp);
 					debug_check_ref("dyop.c/ts.lp", (struct MemEnt*)tmp, tmp->ve_reference); /* %%% DBG */
 					acc = (int32_t)WS_OFF(tmp);
 				}
 				*ts.lp++ = acc;
+				/* ttscan is the index of the cell just written, so it
+				   counts every cell, empty ones too. Until V97 it
+				   counted only copied children, so after an empty cell
+				   (offset 0) each later copy went one cell too early:
+				   T,T with T[2] empty put T[3] in cell 2 and left the
+				   last cells empty. */
+				if (structflag) ttscan++;
 				break;
 			case FLOATSIZE:
 				if (srctype != FLOATSIZE) dacc = acc;
@@ -594,6 +609,13 @@ double dacc = 0.0;
 				{
 					FLOATVS[flt] = (ws_off_t)acc;
 					tmp = dup_val(&FLOATVS[flt]);
+					if (!tmp)	/* V97: was dereferenced */
+					{
+						/* as in do_drav(): later cells are
+						   still 0, earlier copies owned */
+						FLOATVS[flt] = (ws_off_t)0;
+						return(SET_ERR(ERR_WSFULL));
+					}
 					re = WSVAL_PTR(*VRIGHT);
 					le = WSVAL_PTR(*VLEFT);
 					te = WSVAL_PTR(*VTEMP);
@@ -603,12 +625,18 @@ double dacc = 0.0;
 					ls.lp += lconsumed;
 					rs.lp += rconsumed;
 					ts.lp += ttscan;
-					ttscan++;
 					tmp->ve_reference = WS_OFF(ts.lp);
 					debug_check_ref("dyop.c/ts.lp", (struct MemEnt*)tmp, tmp->ve_reference); /* %%% DBG */
 					acc = (int32_t)WS_OFF(tmp);
 				}
 				*ts.lp++ = acc;
+				/* ttscan is the index of the cell just written, so it
+				   counts every cell, empty ones too. Until V97 it
+				   counted only copied children, so after an empty cell
+				   (offset 0) each later copy went one cell too early:
+				   T,T with T[2] empty put T[3] in cell 2 and left the
+				   last cells empty. */
+				if (structflag) ttscan++;
 				break;
 			case FLOATSIZE:
 				if (srctype != FLOATSIZE) dacc = acc;
@@ -1465,7 +1493,7 @@ short
 do_drho(f)
 short f;
 {
-short b,i,j;
+short b,i,j,k,pad;
 long lscan,lend,rend,rscan,acc;
 long outoff,inoff;
 struct ValEnt *te,*re,*le;
@@ -1485,12 +1513,30 @@ struct TakeScan *tscan;
 	lscan = 1;
 	i = 1;
 	if (b) i = (short)le->ve_rho[0];
-	j = i - 1;
+	/* Take/drop with a short L (fewer elements than R has axes): L
+	   applies to R's leading axes, and each trailing axis is kept
+	   whole, as in APL2 -- 1↓M drops M's first row, ⍬↑M is M (V97).
+	   Until V97 the result had only L's rank, and L landed on R's
+	   *trailing* axes (rho[] is columns first, and L's elements are
+	   stored last-axis first below), so 1↓M (M 2 by 3) gave 2 3.
+	   pad is the number of trailing axes L doesn't reach; they take
+	   rho_array[0..pad-1], L's elements the slots above them. Not for
+	   dyadic rho, whose L is the whole shape. A longer L than R has
+	   axes is unchanged: it adds leading axes (3 4↑⍳9). */
+	pad = 0;
+	if (f && re->ve_rank > i) pad = (short)(re->ve_rank - i);
+	j = i + pad - 1;
 	rs.cp = DATA_AD(le);
 	ts.cp = (char *)re->ve_rho;
 	b = re->ve_rank;
-	while(i--) 
+	for (k = 0; k < pad; k++)	/* trailing axes, whole */
 	{
+		rho_array[k] = ts.lp[k];
+		lscan *= ts.lp[k];
+	}
+	while(i--)
+	{
+		k = i + pad;		/* the axis (rho[] slot) this element is for */
 		switch (le->ve_vtype & BYTES_MASK) 
 		{
 			case 1:
@@ -1521,18 +1567,18 @@ struct TakeScan *tscan;
 		if (f == 0 && acc < 0L) return(SET_ERR(ERR_DOMAIN));
 		if (f == 2) 		/* drop, convert to a take */
 		{
-			if (acc < 0L) 
+			if (acc < 0L)
 			{
-				if (i < b) acc += ts.lp[i];
+				if (k < b) acc += ts.lp[k];
 				else acc = 0L;		/* drop too much */
 				if (acc < 0L) acc = 0L;		/* drop too much */
 			} else {
-				if (i < b) acc -= ts.lp[i];
+				if (k < b) acc -= ts.lp[k];
 				else acc = 0L;		/* drop too much */
 				if (acc > 0L) acc = 0L;		/* drop too much */
 			}
 		}
-		rho_array[i] = acc;
+		rho_array[k] = acc;
 		lscan *= ABS(acc);
 	}
 	if (f == 2) f = 1;		/* drop converted to take */
@@ -1554,7 +1600,13 @@ struct TakeScan *tscan;
 	i = j - 1;
 	while (j--) te->ve_rho[j] = ABS(rho_array[j]);
 
-	if (f) 	/* take */
+	if (f && i < 0)	/* a rank-0 take: ⍬↑5, ⍬↓5 -- R itself (V97) */
+	{
+		/* only an empty L and a scalar R get here (any axis in R
+		   pads L). The take loop below needs at least one axis: it
+		   read and wrote tscan[0] of a zero-size entry. */
+		memcpy(DATA_AD(te), DATA_AD(re), (size_t)(te->ve_vtype & BYTES_MASK));
+	} else if (f) 	/* take */
 	{
 /* allocate temp data entry */
 		acc = (long)(i+1) * sizeof(struct TakeScan);
@@ -3069,7 +3121,13 @@ double dacc,dacc2;
 					dacc *= dacc2;
 					break;
 				case OP_DIV:
-					if (!dacc2) return(SET_ERR(ERR_DOMAIN));
+					/* 0÷0 is 1, as in APL2 and the book (V97);
+					   any other ÷0 stays a Domain Error */
+					if (!dacc2) {
+						if (dacc) return(SET_ERR(ERR_DOMAIN));
+						dacc = 1.0;
+						break;
+					}
 					dacc /= dacc2;
 					break;
 				case OP_POW:
@@ -3080,6 +3138,9 @@ double dacc,dacc2;
 					if (!isfinite(dacc)) return(SET_ERR(ERR_DOMAIN));
 					break;
 				case OP_AB:	/* modulo ! */
+					/* 0|R is R, as in the integer branch. Without
+					   this, R - 0×⌊R÷0 is 0×∞, NaN (V97). */
+					if (!dacc) { dacc = dacc2; break; }
 					dacc = dacc2 - (dacc * floor(dacc2 / dacc));
 					/* return(SET_ERR(ERR_DOMAIN)); */
 /*
@@ -3245,7 +3306,12 @@ double dacc,dacc2;
 					acc *= acc2;
 					break;
 				case OP_DIV:
-					if (!acc2) return(SET_ERR(ERR_DOMAIN));
+					/* 0÷0 is 1 (V97), as in the float branch */
+					if (!acc2) {
+						if (acc) return(SET_ERR(ERR_DOMAIN));
+						acc = 1L;
+						break;
+					}
 					acc /= acc2;
 					break;
 				case OP_POW:
@@ -3257,8 +3323,17 @@ double dacc,dacc2;
 				case OP_AB:	/* modulo ! */
 /* %%%					if (!acc) return(SET_ERR(ERR_DOMAIN)); */
 					if (!acc) { acc = acc2; break; } // Iverson's way
-					if (acc2 < 0L) acc2 += (1 - acc2/acc) * acc;
-					acc = acc2 % acc;
+					/* floor residue: the result takes L's sign, so
+					   L|R = R - L×⌊R÷L, as the float branch computes.
+					   C's % takes R's sign; when that differs from L's,
+					   add L once. The old code only corrected a
+					   negative R, so ¯3|7 gave 1, not ¯2 (V97). acc2 is
+					   left as it was read, an operand. */
+					{
+						int64_t r = acc2 % acc;
+						if (r && ((r < 0) != (acc < 0))) r += acc;
+						acc = r;
+					}
 					break;
 				case OP_EQ:
 					if (acc == acc2) acc = 1L;
@@ -3350,14 +3425,49 @@ int lbitc,rbitc,tbitc;
 	VRIGHT = get_vparm(1);
 	if (!VRIGHT || !VLEFT) return(SET_ERR(ERR_SYNTAX));
 	if (!*VRIGHT) return(SET_ERR(ERR_VALUE));
+	/* Outer product with a function that isn't scalar: only , ⌽ and ⊖
+	   have an outer form (do_ocat(), do_ohrot(), do_ovrot()). Every
+	   other function below ignored OUTERFLAG and ran as plain dyadic,
+	   so 1 2∘.⍴3 was 1 2⍴3 -- a wrong answer, not an error (V97).
+	   Domain Error (the person, V97). parse.c accepts any function
+	   after ∘., so a line holding one still compiles. */
+	if (OUTERFLAG)
+	{
+		switch (c)
+		{
+			case OP_ASS:
+			case OP_RHO:
+			case OP_TAK:
+			case OP_DRP:
+			case OP_CATF:
+			case OP_COMP:
+			case OP_EXP:
+			case OP_COMPF:
+			case OP_EXPF:
+			case OP_IOT:
+			case OP_QU:
+			case OP_TRA:
+			case OP_ENC:
+			case OP_DEC:
+			case OP_EPS:
+			case OP_SQUAD:
+				return(SET_ERR(ERR_DOMAIN));
+		}
+	}
 	switch (c) 	/* test after get_vparms */
 	{
 		case OP_ASS:
 			if (!(*MSTACK & STACK_VARIABLE)) return(SET_ERR(ERR_SYNTAX));
 			if (MSTACK[1] != STACK_TEMP_VAL) 	/* src is variable */
 			{
-				*VLEFT = WS_OFF(dup_val(VRIGHT));	/* make copy of src */			
-				if (!*VLEFT) return(SET_ERR(ERR_WSFULL));
+				/* make copy of src. Test the pointer before taking
+				   its offset: WS_OFF() of a null pointer isn't 0, so
+				   the old test (!*VLEFT after WS_OFF(dup_val(...)))
+				   never fired, and a failed copy wrote through a wild
+				   pointer just below (V97). */
+				te = dup_val(VRIGHT);
+				if (!te) return(SET_ERR(ERR_WSFULL));
+				*VLEFT = WS_OFF(te);
 			} else *VLEFT = *VRIGHT;	/* update variable */
 			/* update references */
 			i = *MSTACK & VNUM_MASK;
@@ -3411,9 +3521,18 @@ int lbitc,rbitc,tbitc;
 	re = WSVAL_PTR(*VRIGHT);
 	le = WSVAL_PTR(*VLEFT);
 
+	/* A scalar function of a struct array is a Domain Error (V97).
+	   Its cells are child offsets, not numbers: S+1 gave the offsets
+	   plus 1, and for an op below RESIZE_DESTRUCT (|, ⌈, ⌊, ...) the
+	   struct temp itself could be reused as the result, leaving a
+	   struct whose "children" are arbitrary numbers. Covers outer
+	   product too (1 2∘.×S). */
+	if ((re->ve_vtype | VARIABLE_BIT) == STRUCT_CODE ||
+	    (le->ve_vtype | VARIABLE_BIT) == STRUCT_CODE) return(SET_ERR(ERR_DOMAIN));
+
 	rscan = re->ve_length;
 	lscan = le->ve_length;
-	
+
 	if (!rscan || !lscan) 		/* rho 0 is special case */
 	{
 		stack_pop(2);		/* pop both off stack */

@@ -335,22 +335,55 @@ static union MultiP vp;
 
 	sz = ((struct ValEnt *)WS_PTR(*ve))->ve_length;
 
+	/* The dest's cells start as dup_sval()'s byte copy of the source's,
+	   so they hold the source's child offsets. Zero them before any
+	   allocation: if a GC moved the dest while they did, its step 3
+	   would adjust the *source's* children's back-references by the
+	   move (a child has one owner, its cell; INVARIANTS.md, indexed
+	   assignment), and the next GC could free them under the source.
+	   monop.c's struct_copy_cells() zeroes first for the same reason.
+	   The loop reads each child from the source, never from here (V97). */
+	memset(DATA_AD(re), 0, (size_t)sz * sizeof(int32_t));
+
 	/* get a floater */
 	i = AllocFloatv();
-	if (i == -1) return((struct ValEnt *)0L);
-
-	for (ind=0;ind<sz;ind++) 
+	if (i == -1)
 	{
+		MSTACK[1] = 0;	/* disown the dest: garbage at the next GC */
+		MSTACK += 2;	/* and pop it, as the end does */
+		return((struct ValEnt *)0L);
+	}
+
+	for (ind=0;ind<sz;ind++)
+	{
+		ws_off_t child;
+
 		vp.cp = DATA_AD((struct ValEnt *)WS_PTR(*ve));	/* point to source */
 
-		/* nested struct pointers stored as ws_off_t in data area */
-		te = (struct ValEnt *)WS_PTR(*(vp.lp + ind));
-		if (te) 
+		/* nested struct pointers stored as ws_off_t in data area.
+		   Test the offset, not WS_PTR() of it, which is never null
+		   (INVARIANTS.md, "WS_PTR(0) Safety"): an empty cell went
+		   into the recursion as offset 0, dup_sval() returned 0 for
+		   it, and the whole copy failed -- T←S for a struct with an
+		   empty cell gave a wild write in dyop.c's OP_ASS (V97). */
+		child = (ws_off_t)*(vp.lp + ind);
+		te = (struct ValEnt *)0;
+		if (child)
 		{
-			FLOATVS[i] = WS_OFF(te);
+			FLOATVS[i] = child;
 			te = dup_val(&FLOATVS[i]);	/* recurse via ws_off_t slot */
-			if (!te) return(te);
-		}	
+			if (!te)
+			{
+				/* Workspace Full. Free the floater, disown and
+				   pop the dest (the copies made so far are its
+				   children and go with it), so the stack is as
+				   it was on entry (V97: both were left). */
+				FLOATVS[i] = 0;
+				MSTACK[1] = 0;
+				MSTACK += 2;
+				return(te);
+			}
+		}
 
 		re = (struct ValEnt *)WS_PTR(MSTACK[1]);	/* find dest */
 		vp.cp = DATA_AD(re);

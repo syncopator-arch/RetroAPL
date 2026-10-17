@@ -1,0 +1,78 @@
+Clear WS
+     ⍝ a struct with an empty cell, copied by assignment (crashed before V97)
+     S←⎕STRUCT 3
+     S[1]←⍳3
+     S[3]←'AB'
+     T←S
+     T[1]
+1 2 3
+     T[3]
+AB
+     S[1]←99
+     T[1]
+1 2 3
+     S[1]
+99
+     )ERASE S
+     T[1]
+1 2 3
+     T[3]
+AB
+     ⍝ a struct of structs, copied (nested empty cells)
+     N←⎕STRUCT 2
+     N[2]←T
+     P←N
+     P[2][3]
+AB
+     )ERASE N
+     P[2][1]
+1 2 3
+     ⍝ catenate copies too
+     U←T,T
+     ⍴U
+6
+     U[1]
+1 2 3
+     U[3]
+AB
+     U[4]
+1 2 3
+     U[6]
+AB
+     V←T⍪T
+     V[3]
+AB
+     V[4]
+1 2 3
+     V[6]
+AB
+     )ERASE T
+     U[4]
+1 2 3
+     V[6]
+AB
+     ⍝ scalar functions on a struct: Domain Error (S+1 gave the cell offsets)
+     S←⎕STRUCT 2
+     S[1]←5
+     S+1
+     ^
+Domain Error
+     1+S
+     ^
+Domain Error
+     S=S
+     ^
+Domain Error
+     S|1
+     ^
+Domain Error
+     S⌈S
+     ^
+Domain Error
+     1 2∘.×S
+     ^
+Domain Error
+     ⍴S
+2
+     )ERASE S U V P
+     

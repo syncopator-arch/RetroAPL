@@ -874,8 +874,9 @@ character matrix.
 Stops playback, turns off every sounding note, closes the port and
 discards all tracks and settings. Works in every state, including after
 the port was lost, and never gives an error. Returns the numbers of the
-tracks that held something, or an empty vector if none did (including
-when already closed).
+tracks that held something (a play-once track that has finished
+included), or an empty vector if none did (including when already
+closed).
 
 `⎕SEQPORTS`
 
@@ -912,7 +913,8 @@ version starts from its first note on the next beat. This is the same
 whether or not the sequencer is playing; before the first start, at
 beat 0, it takes over as soon as playback starts. Sending another
 version before it takes over replaces the waiting one. Sending a
-finished play-once track again plays it again.
+finished play-once track again plays it again from the next beat; a
+restart (`⎕SEQPLAY←2`) plays it again from beat 0 with the rest.
 
 Returns the beat at which the version takes over, counting from the
 start of playback. That's as things stand when it returns: a restart
@@ -967,9 +969,10 @@ is a fraction, or either argument is text.
 `⎕SEQCLEAR tracks`
 
 Removes the tracks given, each at the end of its current loop (at once
-if nothing is playing). Their settings are kept for later versions.
-Returns those of the given tracks that held something, as `⎕SEQCLOSE`
-does. An empty list gives an empty result. `Domain Error` if a track
+if nothing is playing, or for a play-once track that has finished).
+Their settings are kept for later versions. Returns those of the given
+tracks that held something, a finished play-once track included, as
+`⎕SEQCLOSE` does. An empty list gives an empty result. `Domain Error` if a track
 isn't `1`–`16`. `Rank Error` if `tracks` is a matrix.
 
 ```
@@ -997,8 +1000,12 @@ either argument is a matrix.
 `tracks ⎕SEQLOOP flags`
 
 Sets whether tracks loop (`1`, the default) or play once and fall
-silent (`0`), from each track's next loop boundary. To play a
-finished play-once track again, send it again with `⎕SEQTRACK`.
+silent (`0`), from each track's next loop boundary. A track that has
+played once keeps its notes, silent, until a restart (`⎕SEQPLAY←2`)
+plays it again with the rest; sending it again with `⎕SEQTRACK` plays
+it from the next beat. Setting a finished track back to `1` doesn't
+start it; the setting applies from the restart. A finished track's row
+in `⎕SEQSTATE` has column 12 set, and `⎕MIDIWRITE` writes it.
 Returns the previous settings. Same errors as `⎕SEQMUTE`.
 
 ```
@@ -1085,7 +1092,9 @@ just reporting (`⎕SEQSTATE` never fails).
 Starts and stops playback. `0` stops: a pause, turning off sounding
 notes but keeping tracks, settings and position. `1` continues from
 where it stopped. `2` restarts from beat 0: every track starts again
-from its first note, and any waiting versions take over at once. On
+from its first note, play-once tracks that have finished included, and
+any waiting versions take over at once. A stop and continue doesn't
+replay a finished play-once track. On
 the first start `1` and `2` are the same. Used alone, reports `1` if playing, `0` if not; setting returns the *prior*
 value. The beat keeps counting while playing even if every track is
 silent. `Domain Error` if `n` isn't `0`, `1` or `2`. `MIDI Port Lost`
@@ -1110,8 +1119,8 @@ isn't `0` or `1`. `Length Error` if it isn't a single number.
 Reports everything about the sequencer as a matrix, never giving an
 error. Column 1 says what each row is: `0` for the sequencer itself, a
 track number for a track. The sequencer row comes first, then one row
-per track in use (holding notes, or a new version waiting), in track
-order. A version counts as waiting until the beat it takes over at has
+per track in use (holding notes, a new version waiting, or a play-once
+track that has finished), in track order. A version counts as waiting until the beat it takes over at has
 been reached, so a track sent before the first start shows as waiting
 (column 2 `0`, column 8 `1`) until playback starts. When closed, only
 the sequencer row is there.
@@ -1119,16 +1128,17 @@ the sequencer row is there.
 | Column | Sequencer row | Track row |
 | --- | --- | --- |
 | 1 | `0` | track number |
-| 2 | state: `2` playing, `1` stopped, `0` closed, `¯1` port lost (greater than `0` means open) | notes in the playing version (`0` if only a waiting one) |
+| 2 | state: `2` playing, `1` stopped, `0` closed, `¯1` port lost (greater than `0` means open) | notes in the playing version, or the finished one (`0` if only a waiting one) |
 | 3 | current beat | the track's channel (with only a waiting version, the one it will start on); notes with a channel of their own (row 5) aren't shown here |
 | 4 | tempo | mute (`0`/`1`) |
 | 5 | number of track rows | loop (`0`/`1`) |
 | 6 | beats reported (`⎕SEQBEAT`, `0`/`1`) | velocity |
 | 7 | how late the last notes were reported, in milliseconds (see `⎕EVWAIT`) | loop length in beats |
 | 8 | `0` | new version waiting (`0`/`1`) |
-| 9 | `0` | position within the playing version's current loop, in beats |
+| 9 | `0` | position within the playing version's current loop, in beats (`0` when finished) |
 | 10 | `0` | notes reported (`⎕SEQNOTES`, `0`/`1`) |
 | 11 | `0` | gate (`⎕SEQGATE`) |
+| 12 | `0` | finished: `1` for a play-once track that has played through. It keeps its notes, silent, until a restart plays it again, a new version, `⎕SEQCLEAR` or `⎕SEQCLOSE`. Its loop length and notes are in columns 7 and 2; column 8 is `0` |
 
 More columns and more kinds of row may be added later, so pick rows by
 column 1 rather than by position (other than the sequencer row being
@@ -1350,20 +1360,40 @@ this can read (damaged, or SMPTE timing, which is rare).
 
 `⎕MIDIINFO 'file'`
 
-What the file holds, for deciding what to read: a matrix of 8 columns
-whose first column says what each row is, as `⎕SEQSTATE`'s does.
+What the file holds, for deciding what to read: a matrix of 8 columns,
+one row for the file and then one for each voice of each track. As in
+`⎕SEQSTATE`, the first column says what a row is: `0` for the file,
+otherwise the track number. Columns are numbered here from 1; index
+them with `⎕IO` in mind.
 
-- The first row is the file: `0`, the format (0, 1 or 2), the number
-  of tracks, ticks per beat, the tempo in beats per minute (`¯1` if
-  the file has none; players assume 120), the time signature's top
-  and bottom numbers (`¯1 ¯1` if none), and `0`.
-- Then a row for each voice of each track: the track, the voice, the
-  number of notes, the track's length in beats, the channel, the
-  lowest and highest pitch, and the program (instrument) on that
-  channel when the voice starts (`¯1` if the file sets none).
-- A track with no notes (one holding only the tempo, say) has one
-  row, with voice `0`: track, `0`, `0`, its length, then `¯1 ¯1 ¯1
-  ¯1`.
+The file row, first:
+
+| Column | What it holds |
+|---|---|
+| 1 | `0` (the file row) |
+| 2 | the file's format: `0` (everything in one track), `1` (several tracks, the usual), `2` (rare) |
+| 3 | how many tracks the file has |
+| 4 | ticks per beat (the file's time resolution) |
+| 5 | the tempo in beats per minute, from the first tempo in the file; `¯1` if it has none (players then assume 120) |
+| 6, 7 | the time signature's top and bottom numbers (`3 4` for 3/4); `¯1 ¯1` if none |
+| 8 | `0` |
+
+Then a row for each voice of each track, tracks in file order and
+voices in order within each:
+
+| Column | What it holds |
+|---|---|
+| 1 | the track number, from 1 |
+| 2 | the voice number within the track, from 1; `0` for a track with no notes |
+| 3 | how many notes the voice has (rests not counted) |
+| 4 | the track's length in beats (the same on every voice row of a track): what the voice's steps add up to, so its voices loop together |
+| 5 | the channel the voice plays on, `1`–`16` (a voice is always one channel); `¯1` for a track with no notes |
+| 6, 7 | the voice's lowest and highest pitch; `¯1` for a track with no notes |
+| 8 | the program (instrument, `0`–`127` as sent) on that channel when the voice starts; `¯1` if the file sets none |
+
+A track with no notes (one holding only the tempo, say) still has a
+row, so every track shows: voice `0`, no notes, its length, and `¯1` in
+the last four columns.
 
 ```
       ⎕MIDIINFO 't5000m3.mid'
@@ -1371,6 +1401,27 @@ whose first column says what each row is, as `⎕SEQSTATE`'s does.
     1    1  140   35    2   41   71    0
     2    1  140   35    3   29   47    0
 ```
+
+Here the file is format 1 with 2 tracks, 480 ticks per beat, 120 beats
+per minute, in 4/4. Each track is one voice of 140 notes, 35 beats
+long; track 1 is on channel 2, pitches 41 to 71, and track 2 on
+channel 3, 29 to 47; both start with program 0.
+
+**Voices.** A track can hold chords, and each sequencer track plays one
+note at a time, so a track is split into voices (see above). How many
+voices a track has is how many voice rows it has: the most notes it
+ever sounds at once on a channel, summed over its channels (a line
+played legato, each note held a little past the next, counts as two).
+For track `T`, with `I←⎕MIDIINFO 'song.mid'`:
+
+```
++/(I[;1]=T)∧I[;2]>0                ⍝ how many voices track T has
++/(⍳I[1;3])∘.=(I[;2]>0)/I[;1]      ⍝ the same for every track (⎕IO←1)
+```
+
+A voice with only a few notes (a single note where a chord briefly has
+one more note than usual) may not be worth sending to a track of its
+own.
 
 If there's no such file the result has no rows (shape `0 8`) rather
 than an error, so `0=1↑⍴⎕MIDIINFO 'song.mid'` asks whether a file is
