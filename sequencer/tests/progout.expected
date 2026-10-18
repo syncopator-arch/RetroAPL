@@ -1,0 +1,77 @@
+# V100: what seq_get_track_notes() reports for a MIDI file: the
+# version's channel and the program and bank heard with it (in effect
+# since its pass began), or, for one waiting to start, the settings it
+# will start with. Shown by trackout only when there is a program or
+# bank.
+open virtual
+track 1 60:1 62:1
+  takes over at beat 0.000 (t0)
+trackout 1
+  length 2.000 (t5040), 2 notes
+  0.000 (t0) to 1.000 (t2520): 60 v100 ch1
+  1.000 (t2520) to 2.000 (t5040): 62 v100 ch1
+prog 1 = 40
+  prev: -1
+bank 1 = 128
+  prev: -1
+# waiting to start: the settings
+trackout 1
+  length 2.000 (t5040), 2 notes
+  ch 1 prog 40 bank 128
+  0.000 (t0) to 1.000 (t2520): 60 v100 ch1
+  1.000 (t2520) to 2.000 (t5040): 62 v100 ch1
+play continue
+  was playing: 0
+runto 1
+trackout 1
+  length 2.000 (t5040), 2 notes
+  ch 1 prog 40 bank 128
+  0.000 (t0) to 1.000 (t2520): 60 v100 ch1
+  1.000 (t2520) to 2.000 (t5040): 62 v100 ch1
+# a new setting waits for the next pass: the file still gets 40
+prog 1 = 41
+  prev: 40
+trackout 1
+  length 2.000 (t5040), 2 notes
+  ch 1 prog 40 bank 128
+  0.000 (t0) to 1.000 (t2520): 60 v100 ch1
+  1.000 (t2520) to 2.000 (t5040): 62 v100 ch1
+runto 3
+trackout 1
+  length 2.000 (t5040), 2 notes
+  ch 1 prog 41 bank 128
+  0.000 (t0) to 1.000 (t2520): 60 v100 ch1
+  1.000 (t2520) to 2.000 (t5040): 62 v100 ch1
+# a version waiting behind the playing one doesn't change it
+track 1:4 64:1
+  takes over at beat 4.000 (t10080)
+trackout 1
+  length 2.000 (t5040), 2 notes
+  ch 1 prog 41 bank 128
+  0.000 (t0) to 1.000 (t2520): 60 v100 ch1
+  1.000 (t2520) to 2.000 (t5040): 62 v100 ch1
+runto 5
+trackout 1
+  length 1.000 (t2520), 1 note
+  ch 4 prog 41 bank 128
+  0.000 (t0) to 1.000 (t2520): 64 v100 ch4
+# a finished play-once track keeps what it played with
+loop 2 = 0
+  prev: 1
+prog 2 = 5
+  prev: -1
+track 2 67:1
+  takes over at beat 5.000 (t12600)
+runto 8
+prog 2 = 6
+  prev: 5
+trackout 2
+  length 1.000 (t2520), 1 note
+  ch 2 prog 5 bank -1
+  0.000 (t0) to 1.000 (t2520): 67 v100 ch2
+state
+  seq: PLAYING beat 8.000 (t20160) tempo 120 tracks 2
+  track 1: notes 1 ch 4 mute 0 loop 1 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0) prog 41 bank 128
+  track 2: notes 1 ch 2 mute 0 loop 0 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0) finished 1 prog 6 bank -1
+close
+  closed: 1 2

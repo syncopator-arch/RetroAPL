@@ -246,7 +246,8 @@ void heapsort(long n,char *rap,char *rbp);
 
 #ifndef SYS_C
 extern short do_sys(short f);
-short push_val(short c,short r,int32_t *l);
+short push_val(int32_t c,short r,int32_t *l);	/* c int32_t since V99, as
+						   in funcs.h */
 #endif
 
 #ifndef TERMINAL_C

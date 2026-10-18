@@ -2,9 +2,9 @@ Clear WS
      ⍝ ⎕MIDIREAD and ⎕MIDIINFO (Phase 9): files from tests/midi/, which run_tests copies to $APLHOME/midi/
      ⍝ t5000.mid: the old utility's file, two tracks, no tempo
      ⎕MIDIINFO 't5000.mid'
-    0    1    2  120   ¯1   ¯1   ¯1    0
-    1    1   48   18    1   24   44   ¯1
-    2    1   48   18    2   24   44   ¯1
+    0    1    2  120   ¯1   ¯1   ¯1    0    0
+    1    1   48   18    1   24   44   ¯1   ¯1
+    2    1   48   18    2   24   44   ¯1   ¯1
      M←'t5000.mid' ⎕MIDIREAD 1
      ⍴M
 5 48
@@ -21,9 +21,9 @@ Clear WS
 2 2 2 2 2 2
      ⍝ t5000m3.mid: MuseScore 3; its end (1 tick after the last note-off) rounds up to 35 beats
      ⎕MIDIINFO 't5000m3.mid'
-    0    1    2  480  120    4    4    0
-    1    1  140   35    2   41   71    0
-    2    1  140   35    3   29   47    0
+    0    1    2  480  120    4    4    0    0
+    1    1  140   35    2   41   71    0   ¯1
+    2    1  140   35    3   29   47    0   ¯1
      M←'t5000m3.mid' ⎕MIDIREAD 2
      ⍴M
 5 140
@@ -37,10 +37,10 @@ Clear WS
 35
      ⍝ chords.mid: a chord with its bottom note held under a melody: three voices
      ⎕MIDIINFO 'chords.mid'
-   0   0   1  96  ¯1  ¯1  ¯1   0
-   1   1   1   4   1  48  48  ¯1
-   1   2   4   4   1  64  72  ¯1
-   1   3   1   4   1  67  67  ¯1
+   0   0   1  96  ¯1  ¯1  ¯1   0   0
+   1   1   1   4   1  48  48  ¯1  ¯1
+   1   2   4   4   1  64  72  ¯1  ¯1
+   1   3   1   4   1  67  67  ¯1  ¯1
      'chords.mid' ⎕MIDIREAD 1 1
    48
     4
@@ -67,10 +67,10 @@ Clear WS
     1
      ⍝ conductor.mid: a first track with no notes (voice 0 in ⎕MIDIINFO), a leading program change
      ⎕MIDIINFO 'conductor.mid'
-    0    1    3  480   90    6    8    0
-    1    0    0    0   ¯1   ¯1   ¯1   ¯1
-    2    1    2    2    2   55   57   12
-    3    0    0    0   ¯1   ¯1   ¯1   ¯1
+    0    1    3  480   90    6    8    0    0
+    1    0    0    0   ¯1   ¯1   ¯1   ¯1   ¯1
+    2    1    2    2    2   55   57   12   ¯1
+    3    0    0    0   ¯1   ¯1   ¯1   ¯1   ¯1
      'conductor.mid' ⎕MIDIREAD 2
    55   57
     1    1
@@ -79,19 +79,19 @@ Clear WS
     2    2
      ⍝ no such file: no rows, not an error
      ⍴⎕MIDIINFO 'nosuch.mid'
-0 8
+0 9
      0=1↑⍴⎕MIDIINFO 'nosuch.mid'
 1
      ⍝ a name typed in capitals: tried as given, then with A-Z in lower case
      ⎕MIDIINFO 'CHORDS.MID'
-   0   0   1  96  ¯1  ¯1  ¯1   0
-   1   1   1   4   1  48  48  ¯1
-   1   2   4   4   1  64  72  ¯1
-   1   3   1   4   1  67  67  ¯1
+   0   0   1  96  ¯1  ¯1  ¯1   0   0
+   1   1   1   4   1  48  48  ¯1  ¯1
+   1   2   4   4   1  64  72  ¯1  ¯1
+   1   3   1   4   1  67  67  ¯1  ¯1
      ⍴'T5000M3.MID' ⎕MIDIREAD 2 1
 5 140
      ⍴⎕MIDIINFO 'NOSUCH.MID'
-0 8
+0 9
      ⍝ results don't depend on ⎕IO
      ⎕IO←0
      'chords.mid' ⎕MIDIREAD 1 2

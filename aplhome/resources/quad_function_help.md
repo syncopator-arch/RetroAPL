@@ -784,7 +784,7 @@ General MIDI drum channel unless changed) and keeps whatever channel it
 was last given.
 
 **Track lists.** `⎕SEQMUTE`, `⎕SEQLOOP`, `⎕SEQVEL`, `⎕SEQGATE`,
-`⎕SEQNOTES` and `⎕SEQCLEAR` take a list of tracks and apply to all of them at the same
+`⎕SEQPROG`, `⎕SEQBANK`, `⎕SEQNOTES` and `⎕SEQCLEAR` take a list of tracks and apply to all of them at the same
 instant. The
 other argument is one value for all of them or one per track. The
 result is the previous setting for each track listed. Only `⎕SEQTRACK`
@@ -1055,6 +1055,70 @@ greater than `0` and at most `1`. `Length Error` as for `⎕SEQMUTE`.
 0.5
 ```
 
+`tracks ⎕SEQPROG programs`
+
+Sets the program (the instrument or preset) of each track listed,
+`0`–`127`, the number as sent (a synth's manual may count from 1:
+its program 1 is `0` here). `¯1`, the default, is none: nothing is
+sent, and the synth keeps whatever it had. A track's program is a
+setting like its channel: kept for later versions and through
+`⎕SEQCLEAR`, gone at `⎕SEQCLOSE`. Returns the previous settings.
+
+The program isn't sent at once. It goes out on the track's channel at
+the start of the track's next pass, just before its first note:
+
+- for a track with nothing playing, when its new version starts, so
+  `1 ⎕SEQPROG 40` and `1 ⎕SEQTRACK M` take effect together, in either
+  order;
+- for a track playing, at the end of its current pass (its next loop
+  boundary), whether or not a new version takes over there.
+
+It is sent only when something changed: a new program or bank, or a
+new version on another channel. A new version with the same program
+and channel sends nothing, since some synths cut sounding notes at a
+program change. It is sent again at a restart (`⎕SEQPLAY←2`), so a
+restart always sounds the same, and when the port is opened again
+after it was lost (the synth may have been reset). A stop and continue
+sends nothing. A muted track's program is sent like any other's.
+Notes with a channel of their own (row 5 of the track's matrix) get
+nothing from it. Two tracks on one channel with different programs:
+whichever was sent last wins.
+
+`Domain Error` if a program isn't `¯1`–`127`. `Length Error` as for
+`⎕SEQMUTE`.
+
+```
+1 2 ⎕SEQPROG 0 32       ⍝ piano and bass on tracks 1 and 2
+¯1 ¯1
+```
+
+`tracks ⎕SEQBANK banks`
+
+Sets the bank of each track listed, `0`–`16383`, for synths with more
+than 128 programs. It is sent just before the program, as bank select
+controllers 0 and 32 (`⌊b÷128` and `128|b`), whenever the program is;
+a bank with no program (`¯1`) sends nothing, since a bank takes effect
+only at the next program change. A manual that lists banks as two
+numbers (MSB and LSB) converts with `128⊥MSB LSB`. `¯1`, the default,
+is none: only the program is sent. Kept like the program; returns the
+previous settings. `Domain Error` if a bank isn't `¯1`–`16383`.
+`Length Error` as for `⎕SEQMUTE`.
+
+```
+1 ⎕SEQBANK 128⊥1 0      ⍝ MSB 1, LSB 0
+¯1
+```
+
+The settings show in `⎕SEQSTATE`'s columns 13 and 14, and
+`⎕MIDIINFO`'s columns 8 and 9 (the program and bank a file's voice
+starts with) pass straight on:
+
+```
+I←⎕MIDIINFO 'song.mid'
+1 ⎕SEQPROG I[2;8]
+1 ⎕SEQBANK I[2;9]
+```
+
 `tracks ⎕SEQNOTES flags`
 
 Sets whether tracks report their notes to `⎕EVWAIT ¯1` (`1`) or not
@@ -1150,6 +1214,8 @@ the sequencer row is there.
 | 10 | `0` | notes reported (`⎕SEQNOTES`, `0`/`1`) |
 | 11 | `0` | gate (`⎕SEQGATE`) |
 | 12 | `0` | finished: `1` for a play-once track that has played through. It keeps its notes, silent, until a restart plays it again, a new version, `⎕SEQCLEAR` or `⎕SEQCLOSE`. Its loop length and notes are in columns 7 and 2; column 8 is `0` |
+| 13 | `0` | program (`⎕SEQPROG`, `¯1` none): the setting, which applies from the track's next pass |
+| 14 | `0` | bank (`⎕SEQBANK`, `¯1` none), likewise |
 
 More columns and more kinds of row may be added later, so pick rows by
 column 1 rather than by position (other than the sequencer row being
@@ -1307,7 +1373,8 @@ fraction, or a negative number other than `¯1`.
 
 `⎕MIDIREAD` and `⎕MIDIINFO` read Standard MIDI Files (`.mid`), such as
 MuseScore and Cakewalk export, into arrays a program can send straight
-to the sequencer. They don't need the sequencer open. A file name is
+to the sequencer. They don't need the sequencer open. `⎕MIDIWRITE`
+writes the sequencer's tracks to a file, at the end of this section. A file name is
 used as given if it's an absolute path (starting with `/`, or a drive
 letter and `:`); anything else is looked for in the `midi` folder
 under `$APLHOME`, as `⎕WILOAD` looks in `images`. No extension is
@@ -1372,7 +1439,7 @@ this can read (damaged, or SMPTE timing, which is rare).
 
 `⎕MIDIINFO 'file'`
 
-What the file holds, for deciding what to read: a matrix of 8 columns,
+What the file holds, for deciding what to read: a matrix of 9 columns,
 one row for the file and then one for each voice of each track. As in
 `⎕SEQSTATE`, the first column says what a row is: `0` for the file,
 otherwise the track number. Columns are numbered here from 1; index
@@ -1388,7 +1455,7 @@ The file row, first:
 | 4 | ticks per beat (the file's time resolution) |
 | 5 | the tempo in beats per minute, from the first tempo in the file; `¯1` if it has none (players then assume 120) |
 | 6, 7 | the time signature's top and bottom numbers (`3 4` for 3/4); `¯1 ¯1` if none |
-| 8 | `0` |
+| 8, 9 | `0` |
 
 Then a row for each voice of each track, tracks in file order and
 voices in order within each:
@@ -1402,22 +1469,24 @@ voices in order within each:
 | 5 | the channel the voice plays on, `1`–`16` (a voice is always one channel); `¯1` for a track with no notes |
 | 6, 7 | the voice's lowest and highest pitch; `¯1` for a track with no notes |
 | 8 | the program (instrument, `0`–`127` as sent) on that channel when the voice starts; `¯1` if the file sets none |
+| 9 | the bank on that channel when the voice starts, `0`–`16383`: 128 times bank select controller 0 plus controller 32, a missing one counting as `0`; `¯1` if the file sets neither (most files) |
 
 A track with no notes (one holding only the tempo, say) still has a
 row, so every track shows: voice `0`, no notes, its length, and `¯1` in
-the last four columns.
+the last five columns.
 
 ```
       ⎕MIDIINFO 't5000m3.mid'
-    0    1    2  480  120    4    4    0
-    1    1  140   35    2   41   71    0
-    2    1  140   35    3   29   47    0
+    0    1    2  480  120    4    4    0    0
+    1    1  140   35    2   41   71    0   ¯1
+    2    1  140   35    3   29   47    0   ¯1
 ```
 
 Here the file is format 1 with 2 tracks, 480 ticks per beat, 120 beats
 per minute, in 4/4. Each track is one voice of 140 notes, 35 beats
 long; track 1 is on channel 2, pitches 41 to 71, and track 2 on
-channel 3, 29 to 47; both start with program 0.
+channel 3, 29 to 47; both start with program 0, and neither sets a
+bank. (Until Oct 18, 2026 the matrix had 8 columns, without the bank.)
 
 **Voices.** A track can hold chords, and each sequencer track plays one
 note at a time, so a track is split into voices (see above). How many
@@ -1435,7 +1504,7 @@ A voice with only a few notes (a single note where a chord briefly has
 one more note than usual) may not be worth sending to a track of its
 own.
 
-If there's no such file the result has no rows (shape `0 8`) rather
+If there's no such file the result has no rows (shape `0 9`) rather
 than an error, so `0=1↑⍴⎕MIDIINFO 'song.mid'` asks whether a file is
 there. `Bad MIDI File` if it's there but can't be read as one.
 
@@ -1449,6 +1518,59 @@ I←(I[;2]>0)⌿I                   ⍝ without the tracks that have no notes
 Row `K` of `I` is then sent with `K ⎕SEQTRACK 'song.mid' ⎕MIDIREAD
 I[K;1 2]`, as long as there are no more than 16 rows (the sequencer's
 tracks).
+
+`'file' ⎕MIDIWRITE tracks`
+
+`'file' ⎕MIDIWRITE ¯1`
+
+Writes sequencer tracks to a MIDI file, for MuseScore, Cakewalk and the
+like, or to read back later with `⎕MIDIREAD`. `¯1` writes every track
+that has something; otherwise list the tracks. The sequencer must be
+open (`Sequencer Not Open` if it isn't); it doesn't need to be playing.
+
+Each track goes in as it would sound now: one pass of the version
+playing (or, if nothing is playing on the track yet, the one waiting
+to start; or a play-once track's that has finished), with each note's velocity scaled by the track's `⎕SEQVEL`,
+its length from row 4 of its matrix or the track's `⎕SEQGATE`, and its
+own channel or the track's. Rests are silence. A muted track is
+written like any other. To write a longer arrangement than one pass,
+send the track a longer matrix first (`M,M,M,M` repeats it).
+
+Sequencer track 3 is the file's track 3: tracks below the highest one
+written that weren't asked for, or have nothing, are written empty, so
+`⎕MIDIREAD` finds each track under its own number. The tempo,
+`⎕SEQTEMPO`'s, goes at the start of track 1, with the key signature C
+major (the file has no key of its own; C major is what other programs
+write for music with no key, and stops MuseScore guessing one). Each
+track's bank and program (`⎕SEQBANK`, `⎕SEQPROG`) go at its start, on
+its channel: the ones heard with the version written, so a program
+set while the track plays, still waiting for the end of the pass, isn't
+the one written yet; for a track waiting to start, the ones it will
+start with. A track with no program gets none in the file. Each track ends at its
+loop length, which is also recorded exactly for `⎕MIDIREAD` (in a
+"sequencer-specific" event that other programs skip). The file keeps
+the sequencer's 2520 ticks per beat, so the timing is exact, triplets
+included. Not written: a time signature
+(programs assume 4/4), track names, and tempo changes made while
+playing.
+
+The file is written with its name in lower case, so `'SONG.MID'`
+writes `song.mid`, the way other programs expect (MuseScore's file
+selector on Linux doesn't show `.MID` files), and `⎕MIDIREAD 'SONG.MID'`
+finds it again. An absolute path is used as given except for the
+file's own name; anything else goes in the `midi` folder under
+`$APLHOME`. An existing file is replaced, as `⎕FCREATE` does;
+`0=1↑⍴⎕MIDIINFO 'song.mid'` tells you first whether there is one.
+
+```
+      'song.mid' ⎕MIDIWRITE ¯1
+1 2 3
+```
+
+Returns the tracks it wrote from the sequencer (not the empty ones put
+in to fill a gap). `Domain Error` for a track outside 1–16 (`¯1` only
+on its own), `Length Error` for an empty list, `Can't open file` if
+the file can't be written (no such folder, no permission).
 
 ---
 

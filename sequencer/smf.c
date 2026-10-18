@@ -52,9 +52,12 @@ struct note {
 	int32_t order;		/* position in the file, for a stable sort */
 };
 
+/* a program change, or (V100) a bank select half */
+enum { K_PROG, K_MSB, K_LSB };
+
 struct prog {
 	int64_t tick;
-	int     chan, prog;
+	int     chan, kind, prog;	/* kind K_*; prog the value */
 };
 
 struct track {
@@ -158,7 +161,7 @@ add_note(struct track *t, int64_t tick, int chan, int pitch, int vel)
 }
 
 static int
-add_prog(struct track *t, int64_t tick, int chan, int prog)
+add_prog(struct track *t, int64_t tick, int chan, int kind, int prog)
 {
 	if (t->nprogs == t->capprogs)
 	{
@@ -173,6 +176,7 @@ add_prog(struct track *t, int64_t tick, int chan, int prog)
 	}
 	t->progs[t->nprogs].tick = tick;
 	t->progs[t->nprogs].chan = chan;
+	t->progs[t->nprogs].kind = kind;
 	t->progs[t->nprogs].prog = prog;
 	t->nprogs++;
 	return SMF_OK;
@@ -427,7 +431,13 @@ read_track(struct smf_file *f, int tno, const unsigned char *buf,
 		}
 		else if (hi == 0xC0)
 		{
-			if ((r = add_prog(t, tick, chan, d1)) != SMF_OK)
+			if ((r = add_prog(t, tick, chan, K_PROG, d1)) != SMF_OK)
+				goto done;
+		}
+		else if (hi == 0xB0 && (d1 == 0 || d1 == 32))	/* V100 */
+		{
+			if ((r = add_prog(t, tick, chan,
+			                  d1 == 0 ? K_MSB : K_LSB, d2)) != SMF_OK)
 				goto done;
 		}
 	}
@@ -555,7 +565,7 @@ smf_voice_info(const struct smf_file *f, int t, int v,
 	vi->end = tr->end;
 	vi->grid = tr->grid;
 	vi->channel = v ? tr->vchan[v] : -1;
-	vi->low = vi->high = vi->program = -1;
+	vi->low = vi->high = vi->program = vi->bank = -1;
 	if (v == 0) return SMF_OK;
 
 	for (i = 0; i < tr->nnotes; i++)
@@ -569,9 +579,23 @@ smf_voice_info(const struct smf_file *f, int t, int v,
 		if (n->pitch > vi->high) vi->high = n->pitch;
 	}
 	/* program changes are in file order, so ticks never go down */
-	for (i = 0; i < tr->nprogs; i++)
-		if (tr->progs[i].chan == vi->channel && tr->progs[i].tick <= first)
-			vi->program = tr->progs[i].prog;
+	{
+		int msb = -1, lsb = -1;
+
+		for (i = 0; i < tr->nprogs; i++)
+		{
+			const struct prog *pg = &tr->progs[i];
+
+			if (pg->chan != vi->channel || pg->tick > first)
+				continue;
+			if (pg->kind == K_PROG) vi->program = pg->prog;
+			else if (pg->kind == K_MSB) msb = pg->prog;
+			else lsb = pg->prog;
+		}
+		/* V100: a missing half counts as 0 */
+		if (msb >= 0 || lsb >= 0)
+			vi->bank = (msb > 0 ? msb : 0) * 128 + (lsb > 0 ? lsb : 0);
+	}
 	return SMF_OK;
 }
 
@@ -717,6 +741,12 @@ static int write_track(struct wbuf *w, const struct smf_wtrack *t,
 
 	if (t->n < 0 || t->n > INT32_MAX / 2 || t->length < 0)
 		return SMF_ERR_VALUE;
+	/* V100: a program needs a channel; a bank is checked only with a
+	   program (it's written only then) */
+	if (t->program < -1 || t->program > 127
+	    || (t->program >= 0 && (t->channel < 1 || t->channel > 16
+	                            || t->bank < -1 || t->bank > 16383)))
+		return SMF_ERR_VALUE;
 	for (i = 0; i < t->n; i++) {
 		const struct smf_wnote *n = &t->notes[i];
 
@@ -752,6 +782,12 @@ static int write_track(struct wbuf *w, const struct smf_wtrack *t,
 		put1(w, 0xFF); put1(w, 0x51); put1(w, 3);
 		put_be(w, (uint32_t)us, 3);
 	}
+	if (first) {			/* V100: C major, as MuseScore writes
+					   music with no key */
+		put_vlq(w, 0);
+		put1(w, 0xFF); put1(w, 0x59); put1(w, 2);
+		put1(w, 0); put1(w, 0);
+	}
 	if (t->length > 0) {		/* the loop length, exactly */
 		int b8;
 
@@ -760,6 +796,18 @@ static int write_track(struct wbuf *w, const struct smf_wtrack *t,
 		put(w, MARK_ID, MARK_IDLEN);
 		for (b8 = 7; b8 >= 0; b8--)
 			put1(w, (int)((t->length >> (8 * b8)) & 0xff));
+	}
+	if (t->program >= 0) {		/* V100: bank, then program */
+		int c = t->channel - 1;
+
+		if (t->bank >= 0) {
+			put_vlq(w, 0);
+			put1(w, 0xB0 | c); put1(w, 0); put1(w, t->bank / 128);
+			put_vlq(w, 0);
+			put1(w, 0xB0 | c); put1(w, 32); put1(w, t->bank % 128);
+		}
+		put_vlq(w, 0);
+		put1(w, 0xC0 | c); put1(w, t->program);
 	}
 	for (i = 0; i < k; i++) {
 		const struct smf_wnote *n = &t->notes[ev[i].note];

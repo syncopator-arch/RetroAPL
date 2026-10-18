@@ -62,6 +62,14 @@
 	(finished) 1; ⎕SEQCLEAR's and ⎕SEQCLOSE's results and ⎕MIDIWRITE
 	include it. Before, the row went and a restart didn't replay it.
 
+	V100 (Oct 18, 2026; design agreed V99): ⎕SEQPROG (slot 21) and
+	⎕SEQBANK (slot 22) set each track's program and bank, sent by the
+	library at the track's next pass start; ⎕SEQSTATE's track rows
+	gain columns 13 and 14 (the settings). ⎕MIDIWRITE writes each
+	track's bank and program at its start, and C major as the key
+	signature (the library's writer); ⎕MIDIINFO gains column 9, the
+	bank at each voice's start.
+
 	House rules followed here:
 	  - Every function produces a new value: arguments are copied out
 	    of the workspace first (into malloc'd C arrays -- the library
@@ -77,8 +85,9 @@
 	    float as long as it is whole (T←8÷2); a fraction is ERR_DOMAIN.
 	    ⎕CTRL and ⎕RL reject floats outright.
 	  - Elements are read by this file's elem(), not get_data()/
-	    get_fdata(): those take a short index, so they can't reach past
-	    element 32767, and a track has no length limit.
+	    get_fdata(): chosen when those took a short index (they can't
+	    reach past element 32767); int32_t since V99, but elem()
+	    stays.
 
 	The table below is permanent once shipped: compiled code holds
 	module+index, never the name (INVARIANTS.md, "Quad-Function
@@ -131,6 +140,8 @@ UCHAR seq_fnames[] = {
 	'M','I','D','I','R','E','A','D',0,	/* 18 read a MIDI file (Phase 9) */
 	'M','I','D','I','I','N','F','O',0,	/* 19 describe a MIDI file (Phase 9) */
 	'M','I','D','I','W','R','I','T','E',0,	/* 20 write a MIDI file (Phase 9) */
+	'S','E','Q','P','R','O','G',0,		/* 21 programs (V100) */
+	'S','E','Q','B','A','N','K',0,		/* 22 banks (V100) */
 	0,0,0
 };
 
@@ -156,6 +167,8 @@ UCHAR seq_ftypes[] = {
 	DYAD,		/* 18 'file' MIDIREAD t, 'file' MIDIREAD t,v */
 	MONAD,		/* 19 MIDIINFO 'file' */
 	DYAD,		/* 20 'file' MIDIWRITE tracks, 'file' MIDIWRITE ¯1 */
+	DYAD,		/* 21 tracks SEQPROG programs */
+	DYAD,		/* 22 tracks SEQBANK banks */
 	0
 };
 
@@ -172,9 +185,11 @@ UCHAR seq_ftypes[] = {
 int seqf_virtual = 0;
 
 #define TPB	((double)SEQ_TICKS_PER_BEAT)
-#define NCOLS	12			/* ⎕SEQSTATE columns (10th: 7c;
+#define NCOLS	14			/* ⎕SEQSTATE columns (10th: 7c;
 					   11th, the gate: Phase 8;
-					   12th, finished: V96) */
+					   12th, finished: V96; 13th
+					   and 14th, program and bank:
+					   V100) */
 #define EV_LIMIT 10000			/* beats the virtual clock runs
 					   looking for a wait's event (7c) */
 #define PORT_MAX 255			/* longest port name accepted */
@@ -194,7 +209,9 @@ int seqf_virtual = 0;
 */
 static char default_port[PORT_MAX + 1];
 static pthread_mutex_t default_lock = PTHREAD_MUTEX_INITIALIZER;
-#define PUSH_MAX 32767			/* push_val()'s count is a short */
+#define PUSH_MAX 32767			/* push_val()'s count was a short
+					   until V99; kept: tracks are
+					   1-16, so it never matters */
 
 /* ── Argument helpers ──────────────────────────────────────────────── */
 
@@ -872,7 +889,9 @@ f_beat(struct ValEnt *re)
    is 0). Phase 8: column 11 the gate. V96: column 12 is 1 for a
    play-once track that has played through and kept its version
    (columns 2 and 7 describe that version; 8 and 9 are 0); 0 in every
-   other row. */
+   other row. V100: columns 13 and 14 the track's program and bank
+   settings (⎕SEQPROG, ⎕SEQBANK; ¯1 none), which apply from its next
+   pass; 0 in the sequencer row. */
 static short
 f_state(void)
 {
@@ -920,6 +939,8 @@ f_state(void)
 		row[9] = (double)info[i].report;
 		row[10] = info[i].gate;			/* Phase 8 */
 		row[11] = (double)info[i].finished;	/* V96 */
+		row[12] = (double)info[i].program;	/* V100 */
+		row[13] = (double)info[i].bank;
 	}
 	return 0;
 }
@@ -1160,7 +1181,8 @@ f_evpost(struct ValEnt *re)
 */
 
 #define MIDI_NAME_MAX	(PATHBUF_SIZE - 1)
-#define MIDI_INFO_COLS	8		/* ⎕MIDIINFO's columns */
+#define MIDI_INFO_COLS	9		/* ⎕MIDIINFO's columns (9th, the
+					   bank: V100) */
 
 /* Same test as grfuncs.c's is_absolute_path() and commands.c's
    img_is_absolute() (static in both, so repeated rather than shared):
@@ -1329,20 +1351,22 @@ f_midiread(struct ValEnt *le, struct ValEnt *re)
 }
 
 /* MIDIINFO 'file': what the file holds, for a program to decide what
-   to read. A float matrix of 8 columns, laid out like ⎕SEQSTATE:
-   column 1 says what the row is.
+   to read. A float matrix of 9 columns (8 until V100), laid out like
+   ⎕SEQSTATE: column 1 says what the row is.
      file row (column 1 = 0): 0, format, tracks, ticks per beat, tempo
        (bpm, ¯1 if the file has none: players assume 120), time
-       signature top and bottom (¯1 ¯1 if none), 0
+       signature top and bottom (¯1 ¯1 if none), 0, 0
      a row per voice of each track: track, voice, notes, length in
        beats (the track's, rounded to its grid; the same for all its
        voices, and what the voice's steps add up to), channel (1-16),
        lowest pitch, highest pitch, program at the voice's start (¯1
-       if none)
+       if none), bank at the voice's start (V100: 0-16383, ¯1 if
+       none), so columns 8 and 9 pass straight to ⎕SEQPROG and
+       ⎕SEQBANK
      a track with no notes (a tempo map, say) has one row, voice 0:
-       track, 0, 0, length, ¯1, ¯1, ¯1, ¯1
+       track, 0, 0, length, ¯1, ¯1, ¯1, ¯1, ¯1
    Tracks in file order, voices in order within each. No such file: a
-   0×8 matrix, not an error, so 0=1↑⍴⎕MIDIINFO 'name' tests for one.
+   0×9 matrix, not an error, so 0=1↑⍴⎕MIDIINFO 'name' tests for one.
    Bad MIDI File if it exists but can't be read as one. */
 static short
 f_midiinfo(struct ValEnt *re)
@@ -1395,6 +1419,7 @@ f_midiinfo(struct ValEnt *re)
 	dp[5] = (double)info.ts_num;
 	dp[6] = (double)info.ts_den;
 	dp[7] = 0.0;
+	dp[8] = 0.0;
 	row = dp + MIDI_INFO_COLS;
 	for (t = 1; t <= info.ntracks; t++)
 	{
@@ -1410,6 +1435,7 @@ f_midiinfo(struct ValEnt *re)
 			row[5] = (double)vi.low;
 			row[6] = (double)vi.high;
 			row[7] = (double)vi.program;
+			row[8] = (double)vi.bank;	/* V100 */
 			row += MIDI_INFO_COLS;
 		}
 	}
@@ -1428,9 +1454,12 @@ f_midiinfo(struct ValEnt *re)
    like any other. Sequencer track t is the file's track t: tracks not
    asked for below the highest one are written empty, as is a track
    asked for that has nothing. The tempo, ⎕SEQTEMPO's, goes at the start
-   of track 1 (no separate conductor track); no time signature (players
-   assume 4/4), programs or names yet. Each track ends at its loop
-   length.
+   of track 1 (no separate conductor track), with the key signature C
+   major (V100); no time signature (players assume 4/4) or names yet.
+   V100: each written track's bank and program at its start, on the
+   version's channel: those in effect for the version written (heard
+   with it), or the settings for one waiting to start; nothing for
+   ¯1. Each track ends at its loop length.
    Where the file goes: as for ⎕MIDIREAD (an absolute path as given,
    anything else in $APLHOME/midi/), with A-Z lower-cased in the part
    ⎕MIDIREAD's retry lower-cases: the whole name under
@@ -1460,7 +1489,7 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 	unsigned char *buf = NULL;
 	size_t blen, lc;
 	double tempo;
-	int all, t, top = 0, nw = 0, r;
+	int all, t, top = 0, nw = 0, r, chan, prog, bank;
 	short e = 0;
 	FILE *fp;
 
@@ -1492,10 +1521,16 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 
 	memset(tracks, 0, sizeof tracks);
 	memset(wn, 0, sizeof wn);
+	for (t = 0; t < SEQ_MAX_TRACKS; t++)	/* V100: zeros would be
+						   program 0 on channel 0 */
+	{
+		tracks[t].channel = 1;
+		tracks[t].program = tracks[t].bank = SEQ_NONE;
+	}
 	for (t = 1; t <= SEQ_MAX_TRACKS; t++)
 	{
 		if (!all && !want[t]) continue;
-		r = seq_get_track_notes(t, &no, &nn, &len);
+		r = seq_get_track_notes(t, &no, &nn, &len, &chan, &prog, &bank);
 		if (r != SEQ_OK)
 		{
 			e = seq_apl_err(r);
@@ -1528,6 +1563,12 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 		tracks[t - 1].notes = wn[t - 1];
 		tracks[t - 1].n = nn;
 		tracks[t - 1].length = len;
+		if (len > 0 && prog >= 0)	/* V100 */
+		{
+			tracks[t - 1].channel = chan;
+			tracks[t - 1].program = prog;
+			tracks[t - 1].bank = bank;
+		}
 	}
 	if (top < 1) top = 1;			/* ¯1 with nothing: one empty track */
 
@@ -1604,6 +1645,10 @@ struct ValEnt *le,*re;
 			return(f_midiinfo(re));
 		case 20:	/* MIDIWRITE (Phase 9) */
 			return(f_midiwrite(le,re));
+		case 21:	/* SEQPROG (V100) */
+			return(list_set(seq_set_program,le,re));
+		case 22:	/* SEQBANK (V100) */
+			return(list_set(seq_set_bank,le,re));
 		case CLEANUP_FUNC:
 			return(0);
 	}

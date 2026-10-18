@@ -1,0 +1,290 @@
+# V100: programs and banks (seq_set_program(), seq_set_bank()). Sticky
+# per-track settings, -1 (none) by default. Never sent at once: at the
+# start of a pass of the track, after boundaries and before note-ons,
+# if the track has a program and it differs (with the bank and the
+# version's channel) from what the track last sent, or the pass is a
+# fresh start or a restart. Bank first, as controllers 0 and 32.
+open virtual
+state
+  seq: STOPPED beat 0.000 (t0) tempo 120 tracks 0
+# settings and their errors: nothing changes on an error
+prog 1 = 40
+  prev: -1
+bank 1 = 129
+  prev: -1
+state
+  seq: STOPPED beat 0.000 (t0) tempo 120 tracks 0
+prog 1 2 = 7 8
+  prev: 40 -1
+prog 1 = 128
+  error: SEQ_ERR_VALUE (value out of range)
+prog 1 = -2
+  error: SEQ_ERR_VALUE (value out of range)
+bank 1 = 16384
+  error: SEQ_ERR_VALUE (value out of range)
+bank 1 = -2
+  error: SEQ_ERR_VALUE (value out of range)
+prog 17 = 1
+  error: SEQ_ERR_TRACK (track number out of range)
+state
+  seq: STOPPED beat 0.000 (t0) tempo 120 tracks 0
+# set before the track, stopped at beat 0: goes out at beat 0 when
+# playback starts, bank first, before the note-on. Track 2's program
+# is set after its version is sent: either order is the same.
+prog 2 = 8
+  prev: 8
+track 1 60:1 62:1
+  takes over at beat 0.000 (t0)
+track 2 67:2
+  takes over at beat 0.000 (t0)
+prog 2 = 9
+  prev: 8
+play continue
+  was playing: 0
+runto 1
+log
+  0.000 t0 0.000ms CC  ch1 0 1
+  0.000 t0 0.000ms CC  ch1 32 1
+  0.000 t0 0.000ms PC  ch1 7
+  0.000 t0 0.000ms PC  ch2 9
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t0 0.000ms ON  ch2 67 v100
+# the next passes: nothing new to send
+runto 4
+log
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 62 v100
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms OFF ch2 67
+  2.000 t5040 1000.000ms ON  ch1 60 v100
+  2.000 t5040 1000.000ms ON  ch2 67 v100
+  3.000 t7560 1500.000ms OFF ch1 60
+  3.000 t7560 1500.000ms ON  ch1 62 v100
+# a change while track 1 plays, with no new version: at the end of its
+# pass (beat 6); the bank too, alone
+runto 4.5
+prog 1 = 41
+  prev: 7
+runto 7
+log
+  4.000 t10080 2000.000ms OFF ch1 62
+  4.000 t10080 2000.000ms OFF ch2 67
+  4.000 t10080 2000.000ms ON  ch1 60 v100
+  4.000 t10080 2000.000ms ON  ch2 67 v100
+  5.000 t12600 2500.000ms OFF ch1 60
+  5.000 t12600 2500.000ms ON  ch1 62 v100
+  6.000 t15120 3000.000ms OFF ch1 62
+  6.000 t15120 3000.000ms OFF ch2 67
+  6.000 t15120 3000.000ms CC  ch1 0 1
+  6.000 t15120 3000.000ms CC  ch1 32 1
+  6.000 t15120 3000.000ms PC  ch1 41
+  6.000 t15120 3000.000ms ON  ch1 60 v100
+  6.000 t15120 3000.000ms ON  ch2 67 v100
+bank 1 = 0
+  prev: 129
+runto 9
+log
+  7.000 t17640 3500.000ms OFF ch1 60
+  7.000 t17640 3500.000ms ON  ch1 62 v100
+  8.000 t20160 4000.000ms OFF ch1 62
+  8.000 t20160 4000.000ms OFF ch2 67
+  8.000 t20160 4000.000ms CC  ch1 0 0
+  8.000 t20160 4000.000ms CC  ch1 32 0
+  8.000 t20160 4000.000ms PC  ch1 41
+  8.000 t20160 4000.000ms ON  ch1 60 v100
+  8.000 t20160 4000.000ms ON  ch2 67 v100
+# a new version with the same program and channel: nothing; with a new
+# channel: sent there
+track 1 60:1 64:1
+  takes over at beat 10.000 (t25200)
+runto 11
+log
+  9.000 t22680 4500.000ms OFF ch1 60
+  9.000 t22680 4500.000ms ON  ch1 62 v100
+  10.000 t25200 5000.000ms OFF ch1 62
+  10.000 t25200 5000.000ms OFF ch2 67
+  10.000 t25200 5000.000ms ON  ch1 60 v100
+  10.000 t25200 5000.000ms ON  ch2 67 v100
+track 1:5 60:1 64:1
+  takes over at beat 12.000 (t30240)
+runto 13
+log
+  11.000 t27720 5500.000ms OFF ch1 60
+  11.000 t27720 5500.000ms ON  ch1 64 v100
+  12.000 t30240 6000.000ms OFF ch1 64
+  12.000 t30240 6000.000ms OFF ch2 67
+  12.000 t30240 6000.000ms CC  ch5 0 0
+  12.000 t30240 6000.000ms CC  ch5 32 0
+  12.000 t30240 6000.000ms PC  ch5 41
+  12.000 t30240 6000.000ms ON  ch5 60 v100
+  12.000 t30240 6000.000ms ON  ch2 67 v100
+# -1: nothing is sent, and the synth keeps what it had; a bank with no
+# program sends nothing either
+prog 2 = -1
+  prev: 9
+runto 15
+log
+  13.000 t32760 6500.000ms OFF ch5 60
+  13.000 t32760 6500.000ms ON  ch5 64 v100
+  14.000 t35280 7000.000ms OFF ch5 64
+  14.000 t35280 7000.000ms OFF ch2 67
+  14.000 t35280 7000.000ms ON  ch5 60 v100
+  14.000 t35280 7000.000ms ON  ch2 67 v100
+bank 2 = 3
+  prev: -1
+runto 17
+log
+  15.000 t37800 7500.000ms OFF ch5 60
+  15.000 t37800 7500.000ms ON  ch5 64 v100
+  16.000 t40320 8000.000ms OFF ch5 64
+  16.000 t40320 8000.000ms OFF ch2 67
+  16.000 t40320 8000.000ms ON  ch5 60 v100
+  16.000 t40320 8000.000ms ON  ch2 67 v100
+# a muted track sends its program anyway
+mute 1 = 1
+  prev: 0
+prog 1 = 42
+  prev: 41
+runto 19
+log
+  17.000 t42840 8500.000ms OFF ch5 60
+  18.000 t45360 9000.000ms OFF ch2 67
+  18.000 t45360 9000.000ms CC  ch5 0 0
+  18.000 t45360 9000.000ms CC  ch5 32 0
+  18.000 t45360 9000.000ms PC  ch5 42
+  18.000 t45360 9000.000ms ON  ch2 67 v100
+mute 1 = 0
+  prev: 1
+# stop and continue: a pause, nothing resent
+play stop
+  was playing: 1
+play continue
+  was playing: 0
+runto 20
+log
+  19.000 t47880 9500.000ms OFF ch2 67
+  19.000 t47880 9500.000ms ON  ch5 64 v100
+# a restart sends every track's program again at beat 0
+prog 2 = 10
+  prev: -1
+play restart
+  was playing: 1
+runto 1
+log
+  20.000 t50400 10000.000ms OFF ch5 64
+  0.000 t0 10000.000ms CC  ch5 0 0
+  0.000 t0 10000.000ms CC  ch5 32 0
+  0.000 t0 10000.000ms PC  ch5 42
+  0.000 t0 10000.000ms CC  ch2 0 0
+  0.000 t0 10000.000ms CC  ch2 32 3
+  0.000 t0 10000.000ms PC  ch2 10
+  0.000 t0 10000.000ms ON  ch5 60 v100
+  0.000 t0 10000.000ms ON  ch2 67 v100
+# clear and send again, unchanged program: a fresh start sends it.
+# (Sent before the boundary at beat 2, a version cancels the clear
+# and is an ordinary swap, sending nothing.)
+clear 1
+  held: 1
+runto 2.5
+track 1:5 60:1 64:1
+  takes over at beat 3.000 (t7560)
+runto 4
+log
+  1.000 t2520 10500.000ms OFF ch5 60
+  1.000 t2520 10500.000ms ON  ch5 64 v100
+  2.000 t5040 11000.000ms OFF ch5 64
+  2.000 t5040 11000.000ms OFF ch2 67
+  2.000 t5040 11000.000ms ON  ch2 67 v100
+  3.000 t7560 11500.000ms CC  ch5 0 0
+  3.000 t7560 11500.000ms CC  ch5 32 0
+  3.000 t7560 11500.000ms PC  ch5 42
+  3.000 t7560 11500.000ms ON  ch5 60 v100
+# a play-once track that finished: a restart plays it again with its
+# program
+prog 3 = 20
+  prev: -1
+loop 3 = 0
+  prev: 1
+track 3 72:1
+  takes over at beat 4.000 (t10080)
+runto 6
+log
+  4.000 t10080 12000.000ms OFF ch5 60
+  4.000 t10080 12000.000ms OFF ch2 67
+  4.000 t10080 12000.000ms PC  ch3 20
+  4.000 t10080 12000.000ms ON  ch5 64 v100
+  4.000 t10080 12000.000ms ON  ch2 67 v100
+  4.000 t10080 12000.000ms ON  ch3 72 v100
+  5.000 t12600 12500.000ms OFF ch5 64
+  5.000 t12600 12500.000ms OFF ch3 72
+  5.000 t12600 12500.000ms ON  ch5 60 v100
+state
+  seq: PLAYING beat 6.000 (t15120) tempo 120 tracks 3
+  track 1: notes 2 ch 5 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 1.000 (t2520) prog 42 bank 0
+  track 2: notes 1 ch 2 mute 0 loop 1 vel 100 length 2.000 (t5040) pending 0 position 0.000 (t0) prog 10 bank 3
+  track 3: notes 1 ch 3 mute 0 loop 0 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0) finished 1 prog 20 bank -1
+play restart
+  was playing: 1
+runto 1
+log
+  6.000 t15120 13000.000ms OFF ch5 60
+  6.000 t15120 13000.000ms OFF ch2 67
+  0.000 t0 13000.000ms CC  ch5 0 0
+  0.000 t0 13000.000ms CC  ch5 32 0
+  0.000 t0 13000.000ms PC  ch5 42
+  0.000 t0 13000.000ms CC  ch2 0 0
+  0.000 t0 13000.000ms CC  ch2 32 3
+  0.000 t0 13000.000ms PC  ch2 10
+  0.000 t0 13000.000ms PC  ch3 20
+  0.000 t0 13000.000ms ON  ch5 60 v100
+  0.000 t0 13000.000ms ON  ch2 67 v100
+  0.000 t0 13000.000ms ON  ch3 72 v100
+# a lost port: reopening sends each playing track's program at once,
+# after the note releases and All Notes Off; the finished track 3 (not
+# playing) sends nothing until a restart
+runto 2.5
+log
+  1.000 t2520 13500.000ms OFF ch5 60
+  1.000 t2520 13500.000ms OFF ch3 72
+  1.000 t2520 13500.000ms ON  ch5 64 v100
+  2.000 t5040 14000.000ms OFF ch5 64
+  2.000 t5040 14000.000ms OFF ch2 67
+  2.000 t5040 14000.000ms ON  ch5 60 v100
+  2.000 t5040 14000.000ms ON  ch2 67 v100
+failwrites on
+runto 3.5
+  error: SEQ_ERR_IO (MIDI port lost)
+failwrites off
+open virtual
+logticks
+  3.000 t7560 OFF ch2 67
+  3.000 t7560 OFF ch5 60
+  3.000 t7560 CC  ch1 123 0
+  3.000 t7560 CC  ch2 123 0
+  3.000 t7560 CC  ch3 123 0
+  3.000 t7560 CC  ch4 123 0
+  3.000 t7560 CC  ch5 123 0
+  3.000 t7560 CC  ch6 123 0
+  3.000 t7560 CC  ch7 123 0
+  3.000 t7560 CC  ch8 123 0
+  3.000 t7560 CC  ch9 123 0
+  3.000 t7560 CC  ch10 123 0
+  3.000 t7560 CC  ch11 123 0
+  3.000 t7560 CC  ch12 123 0
+  3.000 t7560 CC  ch13 123 0
+  3.000 t7560 CC  ch14 123 0
+  3.000 t7560 CC  ch15 123 0
+  3.000 t7560 CC  ch16 123 0
+  3.000 t7560 CC  ch5 0 0
+  3.000 t7560 CC  ch5 32 0
+  3.000 t7560 PC  ch5 42
+  3.000 t7560 CC  ch2 0 0
+  3.000 t7560 CC  ch2 32 3
+  3.000 t7560 PC  ch2 10
+play continue
+  was playing: 0
+runto 4
+log
+  3.000 t7560 14500.000ms ON  ch5 64 v100
+close
+  closed: 1 2 3

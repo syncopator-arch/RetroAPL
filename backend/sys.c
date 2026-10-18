@@ -98,7 +98,9 @@ int32_t l;
 
 short
 push_val(c,r,l)
-short c;
+int32_t c;	/* element count; short until V99, when a result of more
+		   than 32767 elements (⎕WPIXEL, ⎕WVIS) reached make_temp()
+		   as a negative length */
 short r;
 int32_t *l;
 {
@@ -115,7 +117,7 @@ union MultiP tp;
 short type;
 int32_t *lp;
 int32_t m,mn,mx;
-REG short t;
+int32_t t;
 
 	lp = l;
 
@@ -154,15 +156,25 @@ REG short t;
 	return(0);
 }
 
+/*
+	get_data(), get_fdata() -- element n of ve, read flat (ve_rho and
+	ve_rank play no part), as an integer or a double; 0 outside the
+	data. n is int32_t since V99: it was short, so past element 32767
+	it wrapped negative, passed the range check and read before the
+	data (⍕ of a matrix with more than 32767 elements, and the long
+	point lists of ⎕POLY, ⎕WPOINTS, ⎕FPOLY, ⎕WPIXEL, ⎕WVIS).
+	Prototyped in funcs.h (and monop.c), so a long index from the
+	caller is converted, not passed through an undeclared parameter.
+*/
 int32_t
 get_data(ve,n)
 struct ValEnt *ve;
-short n;
+int32_t n;
 {
 union MultiP dp;
 double dval;
 
-	if (n >= ve->ve_length) return(0);
+	if (n < 0 || n >= ve->ve_length) return(0);
 	dp.cp = DATA_AD(ve);
 	switch (ve->ve_vtype & BYTES_MASK) 
 	{
@@ -214,13 +226,13 @@ double dval;
 double
 get_fdata(ve,n)
 struct ValEnt *ve;
-short n;
+int32_t n;
 {
 union MultiP dp;
 double dacc;
 
 	dacc = 0.0;
-	if (n >= ve->ve_length) return(dacc);
+	if (n < 0 || n >= ve->ve_length) return(dacc);
 	dp.cp = DATA_AD(ve);
 	switch (ve->ve_vtype & BYTES_MASK) 
 	{

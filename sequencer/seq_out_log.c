@@ -72,6 +72,9 @@ static int log_send(const unsigned char *m, int len, int64_t tick,
 	else if (len == 3 && kind == 0xB0)
 		n += snprintf(line + n, sizeof line - n, "CC  ch%d %d %d\n",
 		              ch, m[1], m[2]);
+	else if (len == 2 && kind == 0xC0)	/* V100 */
+		n += snprintf(line + n, sizeof line - n, "PC  ch%d %d\n",
+		              ch, m[1]);
 	else {
 		int i;
 

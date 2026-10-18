@@ -23,7 +23,8 @@
 // backend 4.5 adds monadic table: ⍪
 // backend 4.7 adds sequencer and ^ glyph corrections
 // backend 4.8 adds midi file I/O and some dyop.c correctness fixes & struct bugs
-#define BACKEND_VERSION  "4.8"
+// backend 4.9 adds midi program change, finish midiwrite
+#define BACKEND_VERSION  "4.9"
 #define FRONTEND_VERSION "2.4"
 #define APL_PRODUCT_NAME "retroapl"
 

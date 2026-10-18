@@ -1044,7 +1044,19 @@ char cb[16];
 		if (!ILEN) break;
 		if (ILEN == -1)  	/* a command */
 		{
-			ERROR_CODE = do_command(IP);				
+			/* Commands run only from the prompt (V99): a typed
+			   line with no function running -- a suspended one
+			   is fine, suspending sets FUNC_NUM to -1 -- and not
+			   inside ⍎, ⎕X or ⎕ input (lexec_depth 2 or more).
+			   Elsewhere )CLEAR, )LOAD and )PURGE would reset or
+			   replace the workspace under the code that's
+			   running, so every command is refused there, )OFF
+			   included until ⎕SYS 1's exit is wired up. The
+			   same test lexec() uses for "a typed line". */
+			if (lexec_depth == 1 && FUNC_NUM == -1)
+				ERROR_CODE = do_command(IP);
+			else
+				ERROR_CODE = SET_ERR(ERR_COMMAND);
 			ILEN = 0;
 			break;
 		}

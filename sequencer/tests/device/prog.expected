@@ -1,0 +1,31 @@
+# V100: bank select and a program change reach the device as they are:
+# two 3-byte controllers, then a 2-byte program change, before the
+# first note-on. Tempo 120; the script acts 250 ms from any note.
+fakedev port 1 0 1
+open device hw:1,0,0
+prog 1 = 40
+  prev: -1
+bank 1 = 129
+  prev: -1
+track 1 60:1
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+sleep 250
+fakedev log
+  open controlC1: ok
+  ioctl prefer-subdevice 0
+  open midiC1D0 nonblock: ok
+  ioctl info: subdevice 0
+  close controlC1
+  write b0 00 01
+  write b0 20 01
+  write c0 28
+  write 90 3c 64
+devdiag
+  failed: (none)
+  writes 4, waited 0, subdevice 0
+play stop
+  was playing: 1
+close
+  closed: 1

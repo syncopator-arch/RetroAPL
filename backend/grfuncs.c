@@ -308,13 +308,14 @@ long vis;	/* WOPEN's optional 5th / WILOAD's optional 3rd right-arg
 		   for an unrecognized opcode. Its own named local rather
 		   than reusing count/ncols, so what it holds is obvious at
 		   the gw_open()/gw_load_image() call sites. */
-long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
-	   NOT reusing short i for these: i safely covered 0..257 under
-	   the old fixed LSCRATCH_INT32_CAP ceiling, but would silently
-	   wrap negative past SHRT_MAX now that count is bounded only by
-	   available memory via gscratch_ensure(). i is left alone for
-	   its existing small-bounded uses elsewhere in this function
-	   (WCLOSE's loop over SBOUNDS(re)). */
+long j;	/* loop var for every loop over an argument's elements: POLY/
+	   WPOINTS/FPOLY/WPIXEL/WVIS's copy loops, and since V99 the
+	   bulk loops over a list of window numbers (WCLOSE, PEN, WCTRL,
+	   WTAG). NOT short i: past SHRT_MAX it wraps negative, and a
+	   loop "while (i < SBOUNDS(re))" over 32768 or more elements
+	   never ends. The lists are bounded only by workspace memory
+	   (gscratch_ensure() for the copies). get_data() itself took a
+	   short index until V99, so j was cut down there anyway. */
 
 	acc = 0L;
 	switch (f) 
@@ -366,8 +367,8 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 			   reads one element past the end of re (off-by-one --
 			   e.g. SBOUNDS==3 lets i reach 3, a 3-element vector's
 			   valid indices are 0..2). Not carrying that forward. */
-			i = 0;
-			while (i < SBOUNDS(re)) gw_close(get_data(re,i++));
+			j = 0;
+			while (j < SBOUNDS(re)) gw_close(get_data(re,j++));
 			return(0);	/* leave window list for return */
 		case 2:	/* PEN. Dispatch is by re's element count, not
 			   arity -- same technique WPOINTS already uses to
@@ -459,17 +460,17 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 						if (!i) return(push_val(0,1,LSCRATCH));
 						return(push_val(4,1,LSCRATCH));
 					}
-					i = 0;		/* set width only, bulk */
-					while (i < SBOUNDS(le))
-						gw_pen(get_data(le,i++),
+					j = 0;		/* set width only, bulk */
+					while (j < SBOUNDS(le))
+						gw_pen(get_data(le,j++),
 							-1L,-1L,-1L,acc);
 					swapdrop();
 					return(0);
 				case 3:	/* set color only, width unchanged --
 					   bulk over le */
-					i = 0;
-					while (i < SBOUNDS(le))
-						gw_pen(get_data(le,i++),
+					j = 0;
+					while (j < SBOUNDS(le))
+						gw_pen(get_data(le,j++),
 							get_data(re,0),
 							get_data(re,1),
 							get_data(re,2),-1L);
@@ -477,9 +478,9 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 					return(0);
 				case 4:	/* set color+width, unchanged -- bulk
 					   over le */
-					i = 0;
-					while (i < SBOUNDS(le))
-						gw_pen(get_data(le,i++),
+					j = 0;
+					while (j < SBOUNDS(le))
+						gw_pen(get_data(le,j++),
 							get_data(re,0),
 							get_data(re,1),
 							get_data(re,2),
@@ -752,9 +753,9 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 				case 6:	/* show */
 					if (SBOUNDS(re) != 1)
 						return(SET_ERR(ERR_LENGTH));
-					i = 0;
-					while (i < SBOUNDS(le))
-						gw_ctrl(get_data(le,i++),acc,0L,0L);
+					j = 0;
+					while (j < SBOUNDS(le))
+						gw_ctrl(get_data(le,j++),acc,0L,0L);
 					break;
 				case 4:	/* move, re = 4,x,y -- single window only */
 					if (SBOUNDS(re) != 3)
@@ -883,10 +884,10 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 			   result. */
 			stack_pop(2);
 			if (!i) return(SET_ERR(ERR_DOMAIN));
-			/* Same (short) narrowing push_val() already applies
-			   everywhere else in this file (WNUMS/WSIZE/etc.) --
-			   not a new limitation WPIXEL introduces. */
-			return(push_val((short)(count/2),1,g_gscratch));
+			/* push_val()'s count is int32_t since V99; it was
+			   short, and a result of more than 32767 pixels
+			   reached make_temp() as a negative length. */
+			return(push_val((int32_t)(count/2),1,g_gscratch));
 		case 13:	/* WTEXT, 'string' WTEXT wnum,x,y. Char le /
 			   numeric re, deliberately mirroring WOPEN's
 			   'title' WOPEN x,y,w,h shape rather than
@@ -1045,9 +1046,9 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 			cp = (char *)LSCRATCH;
 			if (e) memcpy(cp,DATA_AD(le),e);
 			cp[e] = '\0';
-			i = 0;
-			while (i < SBOUNDS(re))
-				gw_tag(get_data(re,i++),cp);
+			j = 0;
+			while (j < SBOUNDS(re))
+				gw_tag(get_data(re,j++),cp);
 			swapdrop();
 			return(0);
 		case 16:	/* WTAGOF, ⎕WTAGOF wnum -- MONAD, reverse of
@@ -1721,10 +1722,9 @@ long j;	/* loop var for POLY/WPOINTS/FPOLY's now-unbounded copy loops --
 				g_gscratch[j] = (int32_t)get_data(re,j);
 			gw_vis(g_gscratch,count,g_gscratch + count);
 			stack_pop(1);
-			/* Same (short) narrowing push_val() already applies
-			   everywhere else in this file (WNUMS/WSIZE/WPIXEL)
-			   -- not a new limitation WVIS introduces. */
-			return(push_val((short)count,1,g_gscratch + count));
+			/* push_val()'s count is int32_t since V99 (was
+			   short: see WPIXEL). */
+			return(push_val((int32_t)count,1,g_gscratch + count));
 		case 24:	/* WBLIT, dst ⎕WBLIT src[,dx,dy[,sx,sy,sw,sh]]
 			   -- copies a rectangle of window src's backing
 			   image into window dst's at dx,dy. Plain opaque

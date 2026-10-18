@@ -16,8 +16,8 @@
    `short do_dhrot(short f);` above under modern C's stricter empty-parens
    rules -- externs.h avoids this collision with an #ifndef MONOP_C guard,
    funcs.h doesn't have one. */
-extern int32_t get_data();
-extern double get_fdata();
+extern int32_t get_data(struct ValEnt *ve, int32_t n);	/* as in funcs.h */
+extern double get_fdata(struct ValEnt *ve, int32_t n);
 extern short  floatlen(double f, short w, int *dpp, int *efp);
 extern short push_str();
 extern int step_resumed;	/* exec.c -- )STEP */

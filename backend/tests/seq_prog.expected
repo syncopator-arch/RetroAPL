@@ -1,0 +1,113 @@
+Clear WS
+     ⍝ V100: ⎕SEQPROG and ⎕SEQBANK (k3 slots 21, 22), sent at a track's pass start
+     1 ⎕SEQPROG 40
+     ^
+Sequencer Not Open
+     ⎕SEQOPEN 'TEST'
+1
+     1 2 ⎕SEQPROG 40 41
+¯1 ¯1
+     1 ⎕SEQBANK 129
+¯1
+     1 2 ⎕SEQBANK 5
+129 ¯1
+     1 ⎕SEQBANK 129
+5
+     ⍝ errors: nothing changes
+     1 ⎕SEQPROG 128
+     ^
+Domain Error
+     1 ⎕SEQPROG ¯2
+     ^
+Domain Error
+     1 ⎕SEQPROG 1.5
+     ^
+Domain Error
+     1 2 ⎕SEQPROG 1 2 3
+     ^
+Length Error
+     17 ⎕SEQBANK 0
+     ^
+Domain Error
+     1 ⎕SEQBANK 16384
+     ^
+Domain Error
+     ⍝ a whole float is fine
+     2 ⎕SEQPROG 82÷2
+41
+     1 ⎕SEQTRACK 2 2⍴60 62 1 1
+0
+     3 5 ⎕SEQTRACK 2 1⍴72 1
+0
+     3 ⎕SEQPROG 0
+¯1
+     ⍝ columns 13 and 14: program and bank
+     S←⎕SEQSTATE
+     ⍴S
+3 14
+     S[;1 13 14]
+    0    0    0
+    1   40  129
+    3    0   ¯1
+     ⎕SEQPLAY←1
+     ⎕SEQRUNTO 1
+1
+     ⎕SEQLOG
+0.000 t0 0.000ms CC  ch1 0 1    
+0.000 t0 0.000ms CC  ch1 32 1   
+0.000 t0 0.000ms PC  ch1 40     
+0.000 t0 0.000ms PC  ch5 0      
+0.000 t0 0.000ms ON  ch1 60 v100
+0.000 t0 0.000ms ON  ch5 72 v100
+     ⍝ a change while playing: at the track's next pass (beat 2)
+     1 ⎕SEQPROG 42
+40
+     ⎕SEQRUNTO 3
+3
+     ⎕SEQLOG
+1.000 t2520 500.000ms OFF ch1 60      
+1.000 t2520 500.000ms OFF ch5 72      
+1.000 t2520 500.000ms ON  ch1 62 v100 
+1.000 t2520 500.000ms ON  ch5 72 v100 
+2.000 t5040 1000.000ms OFF ch1 62     
+2.000 t5040 1000.000ms OFF ch5 72     
+2.000 t5040 1000.000ms CC  ch1 0 1    
+2.000 t5040 1000.000ms CC  ch1 32 1   
+2.000 t5040 1000.000ms PC  ch1 42     
+2.000 t5040 1000.000ms ON  ch1 60 v100
+2.000 t5040 1000.000ms ON  ch5 72 v100
+     ⍝ the file gets the program heard with the version, the bank too
+     'PROG.MID' ⎕MIDIWRITE ¯1
+1 3
+     I←⎕MIDIINFO 'PROG.MID'
+     ⍴I
+4 9
+     I
+     0     1     3  2520   120    ¯1    ¯1     0     0
+     1     1     2     2     1    60    62    42   129
+     2     0     0     0    ¯1    ¯1    ¯1    ¯1    ¯1
+     3     1     1     1     5    72    72     0    ¯1
+     ⍝ columns 8 and 9 pass straight on
+     1 ⎕SEQPROG I[2;8]
+42
+     1 ⎕SEQBANK I[2;9]
+129
+     ⍝ a restart sends every track's program again at beat 0
+     ⎕SEQPLAY←2
+     ⎕SEQRUNTO 1
+1
+     ⎕SEQLOG
+3.000 t7560 1500.000ms OFF ch1 60  
+3.000 t7560 1500.000ms OFF ch5 72  
+0.000 t0 1500.000ms CC  ch1 0 1    
+0.000 t0 1500.000ms CC  ch1 32 1   
+0.000 t0 1500.000ms PC  ch1 42     
+0.000 t0 1500.000ms PC  ch5 0      
+0.000 t0 1500.000ms ON  ch1 60 v100
+0.000 t0 1500.000ms ON  ch5 72 v100
+     ⎕SEQCLOSE
+1 3
+     1 ⎕SEQPROG 40
+     ^
+Sequencer Not Open
+     

@@ -1,0 +1,81 @@
+Clear WS
+     ⍝ System commands run only from the prompt (V99). On a function line, in
+     ⍝ ⍎ and in ⎕ input they're Incorrect Command. At the prompt they work,
+     ⍝ with a function suspended too -- the debugging commands above all.
+     )ENTER CMW
+     )ENTER QQ
+     )LIST CMW
+     ∇ CMW
+[1]  )WIDTH
+[2]  5
+     )WIDTH
+Is 82
+     CMW
+     ^
+Incorrect Command
+CMW [1] *
+     )SI
+CMW [1] * 
+     ⍝ at the suspended prompt
+     )STOP CMW 2
+Now: CMW[2]
+     )STOP OFF
+Now: None
+     )STEP
+Is OFF
+     )LEFT
+No left parm
+     )RIGHT
+No right parm
+     )DEBUG
+Was OFF
+     )DEBUG
+Was ON
+     )WIDTH
+Is 82
+     →
+     )SI
+     ⍝ in ⍎, at the prompt
+     ⍎')WIDTH'
+     ^
+Incorrect Command
+     ⍝ in ⎕ input, at the prompt and in a function
+     X←⎕
+⎕:
+     )WIDTH
+     ^
+Incorrect Command
+     5
+5
+     X
+     ^
+Value Error
+     QQ
+⎕:
+     )WIDTH
+     ^
+Incorrect Command
+QQ [1] *
+     5
+5
+     )SI
+QQ [1] * 
+     →
+     )SI
+     ⍝ )OFF is refused too, until ⎕SYS 1's exit works. Before the guard it
+     ⍝ ended the function quietly and left the stack inconsistent (the next
+     ⍝ → printed a line of the function, and an earlier suspension survived)
+     )ENTER CMOFF
+     )LIST CMOFF
+     ∇ CMOFF
+[1]  )OFF
+[2]  5
+     CMOFF
+     ^
+Incorrect Command
+CMOFF [1] *
+     )SI
+CMOFF [1] * 
+     →
+     )SI
+     

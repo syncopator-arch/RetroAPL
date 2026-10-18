@@ -31,10 +31,10 @@ Clear WS
 3.000 t7560 1500.000ms OFF ch2 48    
      ⍝ all three have finished: their rows stay, with column 12 set
      ⎕SEQSTATE
-    0    2    4  120    3    0    0    0    0    0    0    0
-    1    2    1    0    0  100    2    0    0    0    1    1
-    2    1    2    0    0  100    3    0    0    0    1    1
-    3    4    3    0    0  100    2    0    0    0    1    1
+    0    2    4  120    3    0    0    0    0    0    0    0    0    0
+    1    2    1    0    0  100    2    0    0    0    1    1   ¯1   ¯1
+    2    1    2    0    0  100    3    0    0    0    1    1   ¯1   ¯1
+    3    4    3    0    0  100    2    0    0    0    1    1   ¯1   ¯1
      ⎕SEQSTATE[;12]
 0 1 1 1
      ⍝ a stop and continue doesn't replay them: nothing sounds

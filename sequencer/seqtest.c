@@ -34,6 +34,8 @@
 	  loop T ... = V ...
 	  vel  T ... = V ...
 	  gate T ... = F ...        Phase 8: F a fraction (1/2, 0.75)
+	  prog T ... = P ...        V100: program 0-127, -1 none
+	  bank T ... = B ...        V100: bank 0-16383, -1 none
 	  play stop | continue | restart
 	  tempo [BPM]               bare: report
 	  runto X                   X in beats (8, 4/3) or ticks (t20160)
@@ -56,6 +58,8 @@
 	                            (seq_get_track_notes(), Phase 9): the
 	                            pass's length, then each note's start,
 	                            note-off, pitch, velocity and channel
+	                            (V100: and, when it has one, the
+	                            version's channel, program and bank)
 	  log                       the log since the last `log`
 	  logticks                  the same without the time column
 	                            (repeatable on the real clock)
@@ -374,13 +378,19 @@ static void show_state(void)
 
 		if (info[i].gate != 1.0)
 			snprintf(g, sizeof g, " gate %g", info[i].gate);
+		/* V100: program and bank likewise, only when set */
+		char pb[40] = "";
+
+		if (info[i].program >= 0 || info[i].bank >= 0)
+			snprintf(pb, sizeof pb, " prog %d bank %d",
+			         info[i].program, info[i].bank);
 		/* after V95: finished likewise, only when set */
 		fprintf(out, "  track %d: notes %d ch %d mute %d loop %d vel %d"
-		        " length %s pending %d position %s%s%s%s\n",
+		        " length %s pending %d position %s%s%s%s%s\n",
 		        info[i].track, (int)info[i].notes, info[i].channel,
 		        info[i].mute, info[i].loop, info[i].velocity, c,
 		        info[i].pending, d, info[i].report ? " notes 1" : "", g,
-		        info[i].finished ? " finished 1" : "");
+		        info[i].finished ? " finished 1" : "", pb);
 	}
 }
 
@@ -617,10 +627,13 @@ static void do_line(char *line)
 		if (!report(seq_clear(tracks, n, prev)))
 			print_ints("held", prev, n);
 	} else if (strcmp(cmd, "mute") == 0 || strcmp(cmd, "loop") == 0
-	           || strcmp(cmd, "vel") == 0 || strcmp(cmd, "notes") == 0) {
+	           || strcmp(cmd, "vel") == 0 || strcmp(cmd, "notes") == 0
+	           || strcmp(cmd, "prog") == 0 || strcmp(cmd, "bank") == 0) {
 		if (!parse_list(w + 1, nw - 1, tracks, values, &n))
 			goto bad;
-		r = cmd[0] == 'm' ? seq_set_mute(tracks, values, n, prev)
+		r = cmd[0] == 'p' ? seq_set_program(tracks, values, n, prev)
+		  : cmd[0] == 'b' ? seq_set_bank(tracks, values, n, prev)
+		  : cmd[0] == 'm' ? seq_set_mute(tracks, values, n, prev)
 		  : cmd[0] == 'l' ? seq_set_loop(tracks, values, n, prev)
 		  : cmd[0] == 'n' ? seq_set_notes(tracks, values, n, prev)
 		  : seq_set_velocity(tracks, values, n, prev);
@@ -745,15 +758,21 @@ static void do_line(char *line)
 		struct seq_note_out *no;
 		int32_t nn, k;
 		int64_t len;
+		int tch, tpg, tbk;
 		char b[64], c[64];
 
 		if (nw < 2 || !parse_int(w[1], &v))
 			goto bad;
-		if (report(seq_get_track_notes(v, &no, &nn, &len)))
+		if (report(seq_get_track_notes(v, &no, &nn, &len, &tch, &tpg,
+		                               &tbk)))
 			return;
 		beats(b, sizeof b, len);
 		fprintf(out, "  length %s, %d note%s\n", b, (int)nn,
 		        nn == 1 ? "" : "s");
+		/* V100: shown only when there is a program or bank, so
+		   the transcripts from before stay as they were */
+		if (tpg >= 0 || tbk >= 0)
+			fprintf(out, "  ch %d prog %d bank %d\n", tch, tpg, tbk);
 		for (k = 0; k < nn; k++) {
 			beats(b, sizeof b, no[k].start);
 			beats(c, sizeof c, no[k].off);

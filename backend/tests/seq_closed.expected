@@ -1,6 +1,6 @@
 Clear WS
      ⎕SEQSTATE
-  0  0  0  0  0  0  0  0  0  0  0  0
+  0  0  0  0  0  0  0  0  0  0  0  0  0  0
      ⎕SEQCLOSE
 
      ⍴⎕SEQCLOSE
@@ -43,5 +43,5 @@ Sequencer Not Open
      ^
 Rank Error
      ⎕SEQSTATE
-  0  0  0  0  0  0  0  0  0  0  0  0
+  0  0  0  0  0  0  0  0  0  0  0  0  0  0
      

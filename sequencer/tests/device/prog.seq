@@ -1,0 +1,14 @@
+# V100: bank select and a program change reach the device as they are:
+# two 3-byte controllers, then a 2-byte program change, before the
+# first note-on. Tempo 120; the script acts 250 ms from any note.
+fakedev port 1 0 1
+open device hw:1,0,0
+prog 1 = 40
+bank 1 = 129
+track 1 60:1
+play continue
+sleep 250
+fakedev log
+devdiag
+play stop
+close

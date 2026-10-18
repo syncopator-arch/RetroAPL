@@ -57,7 +57,8 @@
 	  (the built-in USB MIDI driver lets one program at a time have a
 	  device); a bad number, MMSYSERR_NODRIVER or MIDIERR_NODEVICE is
 	  "no such port".
-	- midiOutShortMsg() per message (always a complete 3-byte message).
+	- midiOutShortMsg() per message (always a complete message: 3
+	  bytes, or 2 for a program change since V100).
 	  MIDIERR_NOTREADY (driver busy) is retried every 1 ms for up to
 	  SEQ_DEV_WRITE_LIMIT_MS, as a full buffer is on Linux; any other
 	  error counts as port lost. Whether an unplugged device gives an
@@ -585,9 +586,13 @@ static int dev_send(const unsigned char *m, int len, int64_t tick,
 	int64_t start = 0;
 
 	(void)tick; (void)ns;
-	if (!is_open || len != 3)
+	/* 3 bytes, or 2 for a program change (V100: until then only 3
+	   came here, and a 2-byte message would have been a lost port) */
+	if (!is_open || len < 2 || len > 3)
 		return -1;
-	msg = (DWORD)m[0] | ((DWORD)m[1] << 8) | ((DWORD)m[2] << 16);
+	msg = (DWORD)m[0] | ((DWORD)m[1] << 8);
+	if (len == 3)
+		msg |= (DWORD)m[2] << 16;
 	for (;;) {
 		r = midiOutShortMsg(hout, msg);
 		if (r == MMSYSERR_NOERROR)

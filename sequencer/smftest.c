@@ -115,6 +115,10 @@ dump_buf(FILE *out, const unsigned char *buf, size_t len)
 			        vi.notes == 1 ? "" : "s", vi.channel, vi.low,
 			        vi.high);
 			num_or_none(out, "program", vi.program);
+			/* V100: only when there is one, so the transcripts
+			   from before stay as they were */
+			if (vi.bank >= 0)
+				fprintf(out, ", bank %d", vi.bank);
 			fprintf(out, "\n");
 			r = smf_voice_cols(f, t, v, &cols, &ncols);
 			if (r != SMF_OK)
@@ -223,6 +227,13 @@ dump_write(FILE *out)
 		{ 7 * B / 2, 4 * B, 65, 100, 3 } };
 	static const struct smf_wnote bad[] = { { 0, 0, 60, 100, 1 } };
 	struct smf_wtrack t[5];
+	int i;
+
+	/* V100: no programs unless a case gives them */
+	for (i = 0; i < 5; i++) {
+		t[i].channel = 1;
+		t[i].program = t[i].bank = -1;
+	}
 
 	t[0].notes = a; t[0].n = 3; t[0].length = 4 * B;
 	write_case(out, "one track, tempo 120", t, 1, 120.0, 1);
@@ -243,6 +254,28 @@ dump_write(FILE *out)
 	t[0].length = 0x10000000LL + 4 * B;
 	write_case(out, "a gap too long for a delta time", t, 1, 120.0, 0);
 	write_case(out, "no tracks", t, 0, 120.0, 0);
+
+	/* V100: programs and banks at each track's start, on its
+	   channel; read back as the voices' program and bank */
+	t[0].notes = a; t[0].n = 3; t[0].length = 4 * B;
+	t[0].program = 40; t[0].bank = 129;
+	write_case(out, "a program and bank 129 on channel 1", t, 1, 120.0, 1);
+	t[0].bank = -1;
+	t[1].channel = 2; t[1].program = 7;		/* a track with no notes */
+	t[2].channel = 10; t[2].program = 0; t[2].bank = 16383;
+	t[3].channel = 2; t[3].program = 127; t[3].bank = 0;
+	write_case(out, "programs 40, 7 (no notes), 0 bank 16383, 127 bank 0, "
+	           "none", t, 5, 120.0, 0);
+	t[1].program = -1;
+	t[0].program = 128;
+	write_case(out, "program 128", t, 1, 120.0, 0);
+	t[0].program = 0; t[0].channel = 0;
+	write_case(out, "a program on channel 0", t, 1, 120.0, 0);
+	t[0].channel = 1; t[0].bank = 16384;
+	write_case(out, "bank 16384", t, 1, 120.0, 0);
+	t[0].program = -1;
+	write_case(out, "bank 16384 with no program (not looked at)", t, 1,
+	           120.0, 0);
 }
 
 static int

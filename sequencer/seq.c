@@ -47,6 +47,15 @@
 	sounds one note at a time: a length never reaches past the next
 	note's start.
 
+	Programs (V100, Oct 18, 2026). A track's program and bank are
+	settings; each track also remembers what it last sent (program,
+	bank, channel) and what was in effect when its current pass began.
+	At the start of a pass, after the boundary step and before any
+	note-on, pass_program() sends bank select and program change if
+	the track has a program and it differs from what was last sent, or
+	the pass is forced (a fresh start, a restart). Reopening after a
+	lost port sends each live track's program at once.
+
 	Floating point: positions and deadlines are computed in double.
 	Built with -ffp-contract=off so x86-64 and aarch64 round the same
 	way, which keeps the test logs identical on both.
@@ -99,6 +108,16 @@ struct track {
 	double  gate;		/* Phase 8: sounding fraction of each
 				   note's step, (0, 1], for notes with
 				   no length of their own */
+	int     program;	/* V100: 0..127, SEQ_NONE */
+	int     bank;		/* V100: 0..16383, SEQ_NONE */
+
+	/* V100: the program and bank in effect since cur's current pass
+	   began (what was heard with it; ⎕MIDIWRITE writes them), what
+	   was last sent (SEQ_NONE: nothing yet), and whether the next
+	   pass start sends whatever it has (a fresh start, a restart) */
+	int     prog_on, bank_on;
+	int     sent_prog, sent_bank, sent_chan;
+	int     prog_force;
 
 	/* Phase 7c: the latest note started and not yet reported (only
 	   while notes is on): its pitch and column, and how many notes
@@ -419,8 +438,9 @@ static void port_lost(int64_t tick)
 	pthread_cond_broadcast(&S.held);
 }
 
-/* 0 if sent; -1 if not (port already lost, or lost by this write). */
-static int send3(int status, int d1, int d2, int64_t tick)
+/* 0 if sent; -1 if not (port already lost, or lost by this write).
+   len 3, or 2 for a program change (V100; d2 unused). */
+static int sendn(int len, int status, int d1, int d2, int64_t tick)
 {
 	unsigned char m[3];
 
@@ -429,10 +449,38 @@ static int send3(int status, int d1, int d2, int64_t tick)
 	m[0] = (unsigned char)status;
 	m[1] = (unsigned char)d1;
 	m[2] = (unsigned char)d2;
-	if (S.out->send(m, 3, tick, now_ns()) != 0) {
+	if (S.out->send(m, len, tick, now_ns()) != 0) {
 		port_lost(tick);
 		return -1;
 	}
+	return 0;
+}
+
+static int send3(int status, int d1, int d2, int64_t tick)
+{
+	return sendn(3, status, d1, d2, tick);
+}
+
+/* V100: bank select (if a bank is given) and program change on channel
+   chan (1..16); prog must be 0..127. 0 if all sent. Records what was
+   sent only once it has all gone out, so a lost port partway sends it
+   again (a reopen, or the rest of the tick on continuing). */
+static int send_program(struct track *tr, int chan, int prog, int bank,
+                        int64_t tick)
+{
+	int c = chan - 1;
+
+	if (bank >= 0) {
+		if (send3(0xB0 | c, 0, bank / 128, tick) != 0
+		    || send3(0xB0 | c, 32, bank % 128, tick) != 0)
+			return -1;
+	}
+	if (sendn(2, 0xC0 | c, prog, 0, tick) != 0)
+		return -1;
+	tr->sent_prog = prog;
+	tr->sent_bank = bank;
+	tr->sent_chan = chan;
+	tr->prog_force = 0;	/* sent: a forced pass needn't again */
 	return 0;
 }
 
@@ -532,6 +580,26 @@ static int release_lost(int64_t tick)
 	return 0;
 }
 
+/* V100: reopened after a lost port, after release_lost(): the synth
+   may have been reset, so every live track's program in effect goes
+   out again at once. A track not yet started sends its own at its
+   start. 0 if all sent. */
+static int resend_programs(int64_t tick)
+{
+	int t;
+
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+
+		if (tr->cur && !tr->finished && tr->start_point < S.done
+		    && tr->prog_on >= 0)
+			if (send_program(tr, tr->cur->channel, tr->prog_on,
+			                 tr->bank_on, tick) != 0)
+				return -1;
+	}
+	return 0;
+}
+
 static void release_all(int64_t tick)
 {
 	int t;
@@ -582,6 +650,27 @@ static int is_open(void)
 }
 
 /* ── Playback ─────────────────────────────────────────────────────── */
+
+/* V100: a pass of tr's version starts at tick T: what is set now is in
+   effect for this pass; it is sent if there is a program and it
+   differs from what the track last sent (with the bank and the
+   version's channel), or the pass is forced (a fresh start, a
+   restart). -1 if the port was lost. */
+static int pass_program(struct track *tr, int64_t T)
+{
+	int chan = tr->cur->channel;
+
+	tr->prog_on = tr->program;
+	tr->bank_on = tr->bank;
+	if (tr->program < 0) {
+		tr->prog_force = 0;
+		return 0;
+	}
+	if (!tr->prog_force && tr->sent_prog == tr->program
+	    && tr->sent_bank == tr->bank && tr->sent_chan == chan)
+		return 0;
+	return send_program(tr, chan, tr->program, tr->bank, T);
+}
 
 static int64_t next_event(void)
 {
@@ -644,6 +733,17 @@ static void play_tick(int64_t T)
 		if (tr->cur && !tr->finished && tr->next == tr->cur->n
 		    && tr->pass_base + length_of(tr->cur) == T)
 			boundary(tr, T);
+	}
+	/* V100: program changes for every track starting a pass here
+	   (pass_base is T and its first column hasn't played; start[0]
+	   is always 0), before any note-on */
+	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+		struct track *tr = &S.tr[t];
+
+		if (tr->cur && !tr->finished && tr->next == 0
+		    && tr->pass_base == T)
+			if (pass_program(tr, T) != 0)
+				return;
 	}
 	for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
 		struct track *tr = &S.tr[t];
@@ -825,6 +925,9 @@ static void reset_tracks(void)
 		tr->velocity = SEQ_DEFAULT_VELOCITY;
 		tr->gate = SEQ_DEFAULT_GATE;
 		tr->snd_pitch = -1;
+		tr->program = tr->bank = SEQ_NONE;		/* V100 */
+		tr->prog_on = tr->bank_on = SEQ_NONE;
+		tr->sent_prog = tr->sent_bank = tr->sent_chan = SEQ_NONE;
 	}
 	memset(S.count, 0, sizeof S.count);
 }
@@ -850,7 +953,8 @@ int seq_open(const struct seq_config *cfg)
 			S.notify = cfg->notify;
 			S.ctx = cfg->ctx;
 			S.state = SEQ_STOPPED;
-			if (release_lost((int64_t)S.stop_pos) != 0)
+			if (release_lost((int64_t)S.stop_pos) != 0
+			    || resend_programs((int64_t)S.stop_pos) != 0)
 				r = SEQ_ERR_IO;		/* lost again */
 		}
 	} else {
@@ -990,6 +1094,8 @@ int seq_get_tracks(struct seq_track_info *info, int *n)
 			in->report = tr->notes;
 			in->gate = tr->gate;
 			in->finished = tr->finished;
+			in->program = tr->program;	/* V100 */
+			in->bank = tr->bank;
 			in->position = 0;
 			if (live) {
 				int64_t q = pos - tr->pass_base;
@@ -1199,6 +1305,7 @@ int seq_submit_track_ex(int track, int channel,
 		tr->cur = v;
 		tr->start_point = tr->pass_base = swap;
 		tr->next = 0;
+		tr->prog_force = 1;	/* V100: a fresh start sends it */
 	}
 	wake_thread();
 	pthread_mutex_unlock(&S.lock);
@@ -1256,14 +1363,17 @@ int seq_clear(const int *tracks, int n, int *prev)
 	return SEQ_OK;
 }
 
-enum { SET_MUTE, SET_LOOP, SET_VEL, SET_NOTES };
+enum { SET_MUTE, SET_LOOP, SET_VEL, SET_NOTES, SET_PROG, SET_BANK };
 
 static int set_list(int which, const int *tracks, const int *values,
                     int n, int *prev)
 {
 	int i, r;
-	int lo = (which == SET_VEL) ? 1 : 0;
-	int hi = (which == SET_VEL) ? 127 : 1;	/* 0/1 for the rest */
+	int lo = (which == SET_VEL) ? 1
+	       : (which == SET_PROG || which == SET_BANK) ? SEQ_NONE : 0;
+	int hi = (which == SET_VEL) ? 127
+	       : (which == SET_PROG) ? SEQ_PROGRAM_MAX
+	       : (which == SET_BANK) ? SEQ_BANK_MAX : 1; /* 0/1 for the rest */
 
 	if ((r = check_list(tracks, values, n, lo, hi)) != SEQ_OK)
 		return r;
@@ -1278,7 +1388,9 @@ static int set_list(int which, const int *tracks, const int *values,
 
 			prev[i] = which == SET_MUTE ? tr->mute
 			        : which == SET_LOOP ? tr->loop
-			        : which == SET_NOTES ? tr->notes : tr->velocity;
+			        : which == SET_NOTES ? tr->notes
+			        : which == SET_PROG ? tr->program
+			        : which == SET_BANK ? tr->bank : tr->velocity;
 		}
 	for (i = 0; i < n; i++) {
 		struct track *tr = &S.tr[tracks[i]];
@@ -1300,6 +1412,12 @@ static int set_list(int which, const int *tracks, const int *values,
 				S.given_count[tracks[i]] = 0;
 			}
 			tr->notes = values[i];
+			break;
+		case SET_PROG:		/* V100: from the next pass start */
+			tr->program = values[i];
+			break;
+		case SET_BANK:
+			tr->bank = values[i];
 			break;
 		default:
 			tr->velocity = values[i];
@@ -1329,6 +1447,16 @@ int seq_set_velocity(const int *tracks, const int *values, int n, int *prev)
 int seq_set_notes(const int *tracks, const int *values, int n, int *prev)
 {
 	return set_list(SET_NOTES, tracks, values, n, prev);
+}
+
+int seq_set_program(const int *tracks, const int *values, int n, int *prev)
+{
+	return set_list(SET_PROG, tracks, values, n, prev);
+}
+
+int seq_set_bank(const int *tracks, const int *values, int n, int *prev)
+{
+	return set_list(SET_BANK, tracks, values, n, prev);
 }
 
 int seq_set_gate(const int *tracks, const double *values, int n,
@@ -1361,7 +1489,8 @@ int seq_set_gate(const int *tracks, const double *values, int n,
    the same note_vel(), note_chan() and note_end() play_tick() uses, so
    a file gets what the synth hears. */
 int seq_get_track_notes(int track, struct seq_note_out **notes, int32_t *n,
-                        int64_t *length)
+                        int64_t *length, int *chan, int *program,
+                        int *bank)
 {
 	struct seq_note_out *a = NULL;
 	struct version *v;
@@ -1371,6 +1500,9 @@ int seq_get_track_notes(int track, struct seq_note_out **notes, int32_t *n,
 	*notes = NULL;
 	*n = 0;
 	*length = 0;
+	if (chan) *chan = SEQ_NONE;
+	if (program) *program = SEQ_NONE;
+	if (bank) *bank = SEQ_NONE;
 	if (bad_track(track))
 		return SEQ_ERR_TRACK;
 	pthread_mutex_lock(&S.lock);
@@ -1402,6 +1534,16 @@ int seq_get_track_notes(int track, struct seq_note_out **notes, int32_t *n,
 			k++;
 		}
 		*length = length_of(v);
+		/* V100: played (live or finished): what its pass began
+		   with; waiting to start: the settings it will start with */
+		if (chan) *chan = v->channel;
+		if (is_live(tr) || tr->finished) {
+			if (program) *program = tr->prog_on;
+			if (bank) *bank = tr->bank_on;
+		} else {
+			if (program) *program = tr->program;
+			if (bank) *bank = tr->bank;
+		}
 	}
 	pthread_mutex_unlock(&S.lock);
 	*notes = a;
@@ -1484,6 +1626,7 @@ int seq_play(int mode, int *prev)
 					tr->pend = NULL;
 				}
 				tr->finished = 0;	/* plays again */
+				tr->prog_force = 1;	/* V100 */
 				tr->start_point = tr->pass_base = 0;
 				tr->next = 0;
 				tr->ev_count = 0;	/* Phase 7c */

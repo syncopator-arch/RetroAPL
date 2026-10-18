@@ -5,11 +5,15 @@
 	2026) marked "Phase 7c"; Phase 8 (opening a port by device name,
 	the port list; per-note velocity, length and channel, the gate;
 	Oct 15, 2026) marked "Phase 8"; Phase 9 (reading a track's notes
-	back out, for writing MIDI files; Oct 16, 2026) marked "Phase 9".
-	All added without
+	back out, for writing MIDI files; Oct 16, 2026) marked "Phase 9";
+	program changes and bank select (Oct 18, 2026, V100) marked
+	"V100". All added without
 	changing what was there, except that a name not in the "hw:" form
 	(Linux) or not a number (Windows), once SEQ_ERR_PORT_NAME, is now
-	looked up as a device name (Phase 8).
+	looked up as a device name (Phase 8), and that V100 gave
+	seq_get_track_notes() three more outputs and struct
+	seq_track_info two more fields (the sequencer is young enough to
+	refactor; every caller is in this project).
 
 	Lives in sequencer/ at the project root, beside backend/ and
 	frontend/. The only contact surface between the APL interpreter's
@@ -57,7 +61,9 @@
 
 	Same tick (Phase 2). When several things fall on one tick, the
 	order is: every note-off (all tracks), then loop boundaries (swaps,
-	clears, play-once endings), then note-ons, then the beat event. So a
+	clears, play-once endings), then program changes (V100: bank
+	select and program change for tracks starting a pass), then
+	note-ons, then the beat event. So a
 	repeated pitch, or a loop whose last and first notes share a pitch,
 	always gets a fresh note-off then note-on. Within each step, tracks
 	go in ascending order. A note-on is always sent, even if the same
@@ -97,6 +103,11 @@ extern "C" {	/* main.cpp's stopEngine() calls seq_close() */
 #define SEQ_DEFAULT_LOOP     1
 #define SEQ_DEFAULT_GATE     1.0   /* Phase 8: notes sound their whole
                                       step */
+#define SEQ_NONE            (-1)   /* V100: no program, no bank (the
+                                      default): nothing is sent */
+#define SEQ_PROGRAM_MAX     127
+#define SEQ_BANK_MAX        16383  /* controller 0 (MSB) x 128 +
+                                      controller 32 (LSB) */
 /* default channel = track number */
 
 #define SEQ_MAX_BEATS       1e9    /* longest track, beats (Phase 2;
@@ -335,6 +346,11 @@ struct seq_track_info {
 				   a new version, seq_clear() or
 				   seq_close() (agreed after V95). pending
 				   is 0. */
+	int     program;	/* V100: seq_set_program(), 0..127 or
+				   SEQ_NONE: the setting, which applies
+				   from the track's next pass */
+	int     bank;		/* V100: seq_set_bank(), 0..16383 or
+				   SEQ_NONE, likewise */
 };
 
 /* Fills info (room for SEQ_MAX_TRACKS) in ascending track order, all
@@ -456,6 +472,35 @@ int seq_set_velocity(const int *tracks, const int *values, int n, int *prev);
    discards what every track has outstanding. */
 int seq_set_notes(const int *tracks, const int *values, int n, int *prev);
 
+/* V100 (agreed V99, Oct 18, 2026): a track's program and bank, sticky
+   settings like its channel, kept through new versions and seq_clear().
+   Programs 0..127, as sent; banks 0..16383, sent as controller 0 (MSB,
+   bank / 128) and controller 32 (LSB, bank % 128) just before the
+   program change; SEQ_NONE (-1, the default) for either sends nothing
+   (a bank with no program sends nothing either: a bank select takes
+   effect only at the next program change). SEQ_ERR_VALUE otherwise.
+   Sent on the track's channel (the version's; a note's own channel,
+   row 5, gets nothing).
+
+   When. Never at once: at the start of a pass of the track (where its
+   first note, or rest, falls; after the boundary step of the same-tick
+   order and before any note-on), and only if the track has a program
+   and either it differs, with the bank and the version's channel, from
+   what the track last sent, or the pass is
+   - a fresh start: a version starting on a track with nothing playing
+     (never used, cleared, finished), or
+   - a restart (seq_play(SEQ_RESTART)): every track at beat 0.
+   So setting a program and sending a version take effect together, in
+   either order; a change while a track plays with no new version takes
+   effect at the end of its current pass; a new version with the same
+   program and channel sends nothing (some synths cut sounding notes at
+   a program change). Reopening after a lost port sends each playing
+   track's program at once, after the note releases (the synth may have
+   been reset). A muted track's program is sent like any other's. Two
+   tracks on one channel with different programs: the last sent wins. */
+int seq_set_program(const int *tracks, const int *values, int n, int *prev);
+int seq_set_bank(const int *tracks, const int *values, int n, int *prev);
+
 /* Phase 8: the gate, the fraction of each note's step it sounds when it
    has no length of its own: greater than 0, at most 1 (SEQ_ERR_VALUE
    otherwise); default 1, the whole step. The note-off falls at the
@@ -480,6 +525,13 @@ int seq_set_gate(const int *tracks, const double *values, int n,
    *notes receives a malloc'd array (free it; NULL when there are none),
    *n how many, *length the pass's length in ticks (0 if the track has
    no version). Works in STOPPED, PLAYING and PORT_LOST.
+   V100: chan, program and bank (each may be NULL) receive the version's
+   channel (1..16; SEQ_NONE with no version) and the program and bank
+   for it (SEQ_NONE for none): for a version that has played (the
+   playing one, a finished one), those in effect when its current pass
+   began, which is what was heard with it; for one waiting to start,
+   the settings, which will apply when it does. All read under one
+   lock with the notes.
    SEQ_ERR_TRACK, SEQ_ERR_NOT_OPEN, SEQ_ERR_NOMEM. */
 struct seq_note_out {
 	int64_t start;		/* ticks from the start of the pass */
@@ -489,7 +541,8 @@ struct seq_note_out {
 	int     chan;		/* 1..16 */
 };
 int seq_get_track_notes(int track, struct seq_note_out **notes, int32_t *n,
-                        int64_t *length);
+                        int64_t *length, int *chan, int *program,
+                        int *bank);
 
 /* ── Transport and tempo ─────────────────────────────────────────── */
 
@@ -628,6 +681,7 @@ int seq_virtual_run_to_event(int64_t max_ticks);
        8.000 t20160 4000.000ms ON  ch1 60 v100
        8.500 t21420 4250.000ms OFF ch1 60
        9.000 t22680 4500.000ms CC  ch1 123 0
+       9.000 t22680 4500.000ms PC  ch1 40       (V100)
 
    Main-clock beat with 3 decimals, the exact tick, then the clock time
    since open in milliseconds (Phase 2: tick and time added; simulated

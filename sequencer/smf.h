@@ -45,17 +45,20 @@
 
 	Writing (Phase 9, step 2; Oct 16, 2026): smf_write() makes a format
 	1 file from tracks of notes given in ticks (the ⎕MIDIWRITE glue
-	gets them from the sequencer). Track 1 starts with the tempo; there
-	is no separate conductor track, as MuseScore writes it, so the
-	file's track k is the caller's track k. No time signature (players
-	assume 4/4), no program changes, no names, for now. Each track's
+	gets them from the sequencer). Track 1 starts with the tempo and
+	(V100) the key signature, C major; there is no separate conductor
+	track, as MuseScore writes it, so the file's track k is the
+	caller's track k. V100: each track's bank select and program
+	change, if it has a program, at its start. No time signature
+	(players assume 4/4), no names, for now. Each track's
 	end-of-track falls at its length, and the length is also recorded
 	exactly in a marker the reader looks for, so a loop comes back as
 	long as it went in.
 
 	What's skipped: controllers, pitch bend, aftertouch, SysEx and meta
 	events other than tempo, time signature and end of track. Program
-	changes are read only to report the program a voice starts with.
+	changes, and bank select (controllers 0 and 32; V100), are read
+	only to report the program and bank a voice starts with.
 	Not supported (SMF_ERR_FORMAT): SMPTE timing (a negative division).
 */
 
@@ -120,6 +123,11 @@ struct smf_voice_info {
 	int     program;	/* 0..127: the last program change on the
 				   voice's channel in this track at or before
 				   its first note; -1 if none */
+	int     bank;		/* V100: 0..16383, 128 x the last controller
+				   0 (bank MSB) plus the last controller 32
+				   (LSB) on the voice's channel in this track
+				   at or before its first note, a missing
+				   half counting as 0; -1 if neither */
 };
 
 /* Track t (1..ntracks), voice v (1..smf_voices(); 0 asks about a track
@@ -172,11 +180,22 @@ struct smf_wtrack {
 	int64_t length;		/* where its end-of-track goes: at least
 				   the last note-off (0 for an empty
 				   track) */
+	/* V100: written at the track's start, before any note: bank
+	   select (controller 0 = bank / 128, controller 32 = bank % 128)
+	   if bank is 0..16383, then the program change, on channel. -1
+	   for program writes neither (channel isn't looked at then); -1
+	   for bank, only the program. Every field must be set: zeros
+	   would mean program 0 on channel 0, which is SMF_ERR_VALUE. */
+	int     channel;	/* 1..16 */
+	int     program;	/* 0..127, or -1 */
+	int     bank;		/* 0..16383, or -1 */
 };
 
 /* Writes ntracks (1..65535) tracks as a format 1 file with division
    ticks per beat (1..32767) and, at the start of track 1, the tempo
-   (beats per minute; none if tempo <= 0). Within a track, note-offs
+   (beats per minute; none if tempo <= 0) and the key signature C
+   major (FF 59 02 00 00; V100, agreed Oct 18, 2026: MuseScore guessed
+   a key for a file with none). Within a track, note-offs
    on a tick come before note-ons, so a repeated pitch is struck
    again. No running status. *buf receives a malloc'd copy of the file
    (free it), *len its size. SMF_ERR_VALUE if anything is out of

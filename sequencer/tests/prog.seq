@@ -1,0 +1,106 @@
+# V100: programs and banks (seq_set_program(), seq_set_bank()). Sticky
+# per-track settings, -1 (none) by default. Never sent at once: at the
+# start of a pass of the track, after boundaries and before note-ons,
+# if the track has a program and it differs (with the bank and the
+# version's channel) from what the track last sent, or the pass is a
+# fresh start or a restart. Bank first, as controllers 0 and 32.
+open virtual
+state
+# settings and their errors: nothing changes on an error
+prog 1 = 40
+bank 1 = 129
+state
+prog 1 2 = 7 8
+prog 1 = 128
+prog 1 = -2
+bank 1 = 16384
+bank 1 = -2
+prog 17 = 1
+state
+# set before the track, stopped at beat 0: goes out at beat 0 when
+# playback starts, bank first, before the note-on. Track 2's program
+# is set after its version is sent: either order is the same.
+prog 2 = 8
+track 1 60:1 62:1
+track 2 67:2
+prog 2 = 9
+play continue
+runto 1
+log
+# the next passes: nothing new to send
+runto 4
+log
+# a change while track 1 plays, with no new version: at the end of its
+# pass (beat 6); the bank too, alone
+runto 4.5
+prog 1 = 41
+runto 7
+log
+bank 1 = 0
+runto 9
+log
+# a new version with the same program and channel: nothing; with a new
+# channel: sent there
+track 1 60:1 64:1
+runto 11
+log
+track 1:5 60:1 64:1
+runto 13
+log
+# -1: nothing is sent, and the synth keeps what it had; a bank with no
+# program sends nothing either
+prog 2 = -1
+runto 15
+log
+bank 2 = 3
+runto 17
+log
+# a muted track sends its program anyway
+mute 1 = 1
+prog 1 = 42
+runto 19
+log
+mute 1 = 0
+# stop and continue: a pause, nothing resent
+play stop
+play continue
+runto 20
+log
+# a restart sends every track's program again at beat 0
+prog 2 = 10
+play restart
+runto 1
+log
+# clear and send again, unchanged program: a fresh start sends it.
+# (Sent before the boundary at beat 2, a version cancels the clear
+# and is an ordinary swap, sending nothing.)
+clear 1
+runto 2.5
+track 1:5 60:1 64:1
+runto 4
+log
+# a play-once track that finished: a restart plays it again with its
+# program
+prog 3 = 20
+loop 3 = 0
+track 3 72:1
+runto 6
+log
+state
+play restart
+runto 1
+log
+# a lost port: reopening sends each playing track's program at once,
+# after the note releases and All Notes Off; the finished track 3 (not
+# playing) sends nothing until a restart
+runto 2.5
+log
+failwrites on
+runto 3.5
+failwrites off
+open virtual
+logticks
+play continue
+runto 4
+log
+close

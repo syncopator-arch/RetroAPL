@@ -33,8 +33,10 @@ extern short sys_rename();
 extern int globargc;
 extern char **globargv;
 
-extern int32_t get_data();
-extern double get_fdata();
-extern short push_val(short c,short r,int32_t *l);
+/* index and count int32_t since V99 (were short: past 32767 they
+   wrapped negative); keep in step with sys.c, externs.h and monop.c */
+extern int32_t get_data(struct ValEnt *ve, int32_t n);
+extern double get_fdata(struct ValEnt *ve, int32_t n);
+extern short push_val(int32_t c,short r,int32_t *l);
 extern short push_str();
 

@@ -1,0 +1,34 @@
+# V100: what seq_get_track_notes() reports for a MIDI file: the
+# version's channel and the program and bank heard with it (in effect
+# since its pass began), or, for one waiting to start, the settings it
+# will start with. Shown by trackout only when there is a program or
+# bank.
+open virtual
+track 1 60:1 62:1
+trackout 1
+prog 1 = 40
+bank 1 = 128
+# waiting to start: the settings
+trackout 1
+play continue
+runto 1
+trackout 1
+# a new setting waits for the next pass: the file still gets 40
+prog 1 = 41
+trackout 1
+runto 3
+trackout 1
+# a version waiting behind the playing one doesn't change it
+track 1:4 64:1
+trackout 1
+runto 5
+trackout 1
+# a finished play-once track keeps what it played with
+loop 2 = 0
+prog 2 = 5
+track 2 67:1
+runto 8
+prog 2 = 6
+trackout 2
+state
+close
