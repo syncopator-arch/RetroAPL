@@ -1,0 +1,78 @@
+# V101: settings kept with the sequence for MIDI files, which playback
+# never reads: the meter (seq_set_meter(); -1 -1 none, the default) and
+# each track's name (seq_set_name(); "" none). Errors change nothing.
+# Reset by an open from CLOSED; kept through new versions, clear, and a
+# reopen after a lost port.
+meter
+meter 3 4
+name 1 BASS
+names
+open virtual
+meter
+names
+# the meter: a power of 2 from 1 to 32 below, 1..255 above
+meter 3 4
+meter 6 8
+meter 1 1
+meter 255 32
+meter
+meter 0 4
+meter 256 4
+meter 3 0
+meter 3 6
+meter 3 64
+meter -1 4
+meter 3 -1
+meter -2 -2
+meter
+meter -1 -1
+meter
+meter 7 8
+# names: printable ASCII, up to 64 bytes
+name 1 BASS
+name 2 Hi-hat & snare
+name 16 ~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\x5C]^_`{|}
+names
+name 1 DOUBLE BASS
+name 2
+names
+name 0 X
+name 17 X
+name 3 tab\x09here
+name 3 del\x7F
+name 3 high\xC4
+name 3 A name that is exactly sixty-four characters long, as it ends...
+name 4 A name that is exactly sixty-five characters long, as it ends....
+names
+# kept through versions, clear and play; not on the log
+track 1 60:1 62:1
+track 3 67:2
+play continue
+runto 2
+clear 1 3
+runto 4
+play stop
+log
+names
+meter
+# kept through a lost port and its reopen
+track 1 60:1
+play continue
+runto 5
+failwrites on
+runto 6
+failwrites off
+state
+meter
+names
+open virtual
+meter
+names
+# discarded by close, and a fresh open starts with none
+close
+meter
+name 1 X
+open virtual
+meter
+names
+close

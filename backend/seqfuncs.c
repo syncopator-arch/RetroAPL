@@ -70,13 +70,40 @@
 	signature (the library's writer); ⎕MIDIINFO gains column 9, the
 	bank at each voice's start.
 
+	V101 (Oct 19, 2026; agreed with the person the same day): for MIDI
+	files as MuseScore shows them. ⎕SEQMETER (slot 23, MONAD_OPT, like
+	⎕SEQTEMPO) is the time signature ⎕MIDIWRITE writes (¯1 ¯1, the
+	default, none); ⎕SEQNAME (slot 24) sets one track's name, which
+	⎕MIDIWRITE writes as the track's name event, and ⎕SEQNAMES (slot
+	25) lists them. All three are kept by the library with the other
+	settings (seq_set_meter(), seq_set_name()); playback never reads
+	them.
+
+	V102 (Oct 20, 2026; agreed with the person the same day): the
+	unit. )SEQUNIT (commands.c) sets how many units a beat is divided
+	into, saved with the workspace (wspace->sequnit, parse.h); every
+	timing value this file takes or gives is in those units instead
+	of beats: ⎕SEQTRACK's rows 2 and 4 and its result, ⎕SEQSTATE's
+	position, loop lengths and track positions, ⎕SEQRUNTO, ⎕MIDIREAD's
+	rows 2 and 4 and ⎕MIDIINFO's track lengths. Unchanged: ⎕SEQTEMPO
+	(beats a minute), ⎕SEQGATE (a fraction of the step), ⎕SEQBEAT's
+	beat numbers in ⎕EVWAIT, ⎕MIDIINFO's ticks per beat. The library
+	still works in beats and ticks; all conversion is here (seqf_unit(),
+	to_units(), file_units()). Results are computed from ticks, as
+	ticks times the unit divided by ticks per beat, never as beats
+	times the unit: at some units (7, 60, 120, 252) the latter misses
+	whole numbers by a rounding error (29 sevenths of a beat came back
+	as 28.999...), and with no comparison tolerance M[2;]=29 would
+	then fail. At unit 1 every result is computed exactly as before.
+
 	House rules followed here:
 	  - Every function produces a new value: arguments are copied out
 	    of the workspace first (into malloc'd C arrays -- the library
 	    copies them again, so nothing points into the workspace once a
 	    call returns), then popped (stack_pop), then a fresh result is
 	    pushed. No swapdrop().
-	  - SEQTEMPO, SEQPLAY and SEQBEAT are MONAD_OPT: stack_pop(1) only inside
+	  - SEQTEMPO, SEQPLAY, SEQBEAT and (V101) SEQMETER are MONAD_OPT:
+	    stack_pop(1) only inside
 	    "if (re)" (INVARIANTS.md, MONAD_OPT Part 4).
 	  - Fractional results (SEQTEMPO, SEQTRACK's beat, SEQSTATE,
 	    SEQRUNTO) are FCONST_CODE temps, as ⎕ATN builds them; whole
@@ -108,6 +135,7 @@
 			   on both platforms, and the makefile links them */
 
 #include "parse.h"
+#include "mplmem.h"	/* wspace: the unit (V102) */
 #include "funcs.h"
 #include "seq.h"
 #include "smf.h"	/* MIDI files (Phase 9) */
@@ -142,6 +170,9 @@ UCHAR seq_fnames[] = {
 	'M','I','D','I','W','R','I','T','E',0,	/* 20 write a MIDI file (Phase 9) */
 	'S','E','Q','P','R','O','G',0,		/* 21 programs (V100) */
 	'S','E','Q','B','A','N','K',0,		/* 22 banks (V100) */
+	'S','E','Q','M','E','T','E','R',0,	/* 23 the meter, for files (V101) */
+	'S','E','Q','N','A','M','E',0,		/* 24 a track's name (V101) */
+	'S','E','Q','N','A','M','E','S',0,	/* 25 the track names (V101) */
 	0,0,0
 };
 
@@ -169,6 +200,9 @@ UCHAR seq_ftypes[] = {
 	DYAD,		/* 20 'file' MIDIWRITE tracks, 'file' MIDIWRITE ¯1 */
 	DYAD,		/* 21 tracks SEQPROG programs */
 	DYAD,		/* 22 tracks SEQBANK banks */
+	MONAD_OPT,	/* 23 SEQMETER, SEQMETER←top bottom */
+	DYAD,		/* 24 t SEQNAME 'name' */
+	NILAD,		/* 25 SEQNAMES */
 	0
 };
 
@@ -212,6 +246,52 @@ static pthread_mutex_t default_lock = PTHREAD_MUTEX_INITIALIZER;
 #define PUSH_MAX 32767			/* push_val()'s count was a short
 					   until V99; kept: tracks are
 					   1-16, so it never matters */
+
+/* ── The unit (V102) ───────────────────────────────────────────────── */
+
+/* A valid )SEQUNIT: a divisor of the ticks per beat from 1 to 255
+   (a byte in the workspace header), so a whole number of units is a
+   whole number of ticks. Here rather than in commands.c because the
+   tick count is the library's. */
+int
+seqf_unit_ok(long n)
+{
+	return n >= 1 && n <= 255 && SEQ_TICKS_PER_BEAT % n == 0;
+}
+
+/* The unit in force: units per beat, 1 (beats) by default. The header
+   byte holds 0 for 1 (every workspace saved before V102); anything
+   that isn't a valid unit is taken as 1 too. */
+int
+seqf_unit(void)
+{
+	int u = wspace->sequnit;
+
+	return (u >= 2 && seqf_unit_ok(u)) ? u : 1;
+}
+
+/* ticks at tpb ticks a beat, in units: multiplied before dividing, so
+   a whole number of units comes out exactly whole (see V102 above).
+   At unit 1 this is (double)ticks / tpb, as before V102. */
+static double
+to_units(int64_t ticks, int64_t tpb)
+{
+	return (double)ticks * (double)seqf_unit() / (double)tpb;
+}
+
+/* A step or length from smf.c, ticks / div as a double, in units:
+   the ticks are recovered first (exact: the value was computed from
+   a whole number of ticks), then converted as to_units() does. ¯1, a
+   rest's length, stays ¯1. */
+static double
+file_units(double beats, int div)
+{
+	int64_t t;
+
+	if (beats == -1.0) return -1.0;
+	t = (int64_t)(beats * div + (beats < 0.0 ? -0.5 : 0.5));
+	return to_units(t, div);
+}
 
 /* ── Argument helpers ──────────────────────────────────────────────── */
 
@@ -634,7 +714,8 @@ f_close(void)
 
 /* t SEQTRACK M, or t c SEQTRACK M. M: 2 rows (pitches, steps in
    beats), at least one column. Result: the beat at which this version
-   takes over.
+   takes over. V102: steps, lengths and the result are in )SEQUNIT's
+   units; the library is given beats (units / unit).
    Phase 8 (agreed Oct 15, 2026): 3 to 5 rows. Row 3 velocity, row 4
    length in beats, row 5 channel, each per note; ¯1 is the track's
    setting. Whole numbers in rows 3 and 5 (a fraction is a Domain
@@ -647,6 +728,7 @@ f_track(struct ValEnt *le, struct ValEnt *re)
 	int32_t *pitch, *vel = NULL, *chan = NULL;
 	double *dur, *len = NULL;
 	int64_t swap;
+	double unit = (double)seqf_unit();	/* V102 */
 	short e = 0;
 	int r;
 
@@ -686,14 +768,18 @@ f_track(struct ValEnt *le, struct ValEnt *re)
 	{
 		if ((e = whole(re, i, &v)) != 0) goto done;
 		pitch[i] = v;
-		dur[i] = elem(re, cols + i);
+		dur[i] = elem(re, cols + i) / unit;
 		if (rows >= 3) vel[i] = SEQ_UNCHANGED;
 		if (rows >= 4) len[i] = -1.0;
 		if (rows >= 5) chan[i] = SEQ_UNCHANGED;
 		if (v == SEQ_REST) continue;	/* rows 3-5 not looked at */
 		if (rows >= 3 && (e = whole(re, 2 * cols + i, &vel[i])) != 0)
 			goto done;
-		if (rows >= 4) len[i] = elem(re, 3 * cols + i);
+		if (rows >= 4)
+		{
+			len[i] = elem(re, 3 * cols + i);
+			if (len[i] != -1.0) len[i] /= unit;	/* ¯1 stays */
+		}
 		if (rows >= 5 && (e = whole(re, 4 * cols + i, &chan[i])) != 0)
 			goto done;
 	}
@@ -710,7 +796,7 @@ f_track(struct ValEnt *le, struct ValEnt *re)
 		goto done;
 	}
 	stack_pop(2);
-	e = push_float((double)swap / TPB);
+	e = push_float(to_units(swap, SEQ_TICKS_PER_BEAT));
 done:
 	free(pitch);
 	free(dur);
@@ -891,7 +977,8 @@ f_beat(struct ValEnt *re)
    (columns 2 and 7 describe that version; 8 and 9 are 0); 0 in every
    other row. V100: columns 13 and 14 the track's program and bank
    settings (⎕SEQPROG, ⎕SEQBANK; ¯1 none), which apply from its next
-   pass; 0 in the sequencer row. */
+   pass; 0 in the sequencer row. V102: column 3 of the sequencer row
+   and columns 7 and 9 of a track row in )SEQUNIT's units. */
 static short
 f_state(void)
 {
@@ -918,7 +1005,7 @@ f_state(void)
 
 	dp[0] = 0.0;
 	dp[1] = (double)apl_state(state);	/* see apl_state() */
-	dp[2] = (double)tick / TPB;
+	dp[2] = to_units(tick, SEQ_TICKS_PER_BEAT);
 	dp[3] = tempo;
 	dp[4] = (double)n;
 	dp[5] = (double)beats;
@@ -933,9 +1020,9 @@ f_state(void)
 		row[3] = (double)info[i].mute;
 		row[4] = (double)info[i].loop;
 		row[5] = (double)info[i].velocity;
-		row[6] = (double)info[i].length / TPB;
+		row[6] = to_units(info[i].length, SEQ_TICKS_PER_BEAT);
 		row[7] = (double)info[i].pending;
-		row[8] = (double)info[i].position / TPB;
+		row[8] = to_units(info[i].position, SEQ_TICKS_PER_BEAT);
 		row[9] = (double)info[i].report;
 		row[10] = info[i].gate;			/* Phase 8 */
 		row[11] = (double)info[i].finished;	/* V96 */
@@ -947,22 +1034,25 @@ f_state(void)
 
 /* SEQRUNTO beat (test): plays everything before beat on the virtual
    clock, then holds there. Returns the beat it holds at. Domain Error
-   unless the virtual backend is open and playing. */
+   unless the virtual backend is open and playing. V102: the argument
+   and result are in )SEQUNIT's units (multiplied before dividing, so
+   a whole number of units is an exact tick). */
 static short
 f_runto(struct ValEnt *re)
 {
-	double beat;
+	double beat, unit = (double)seqf_unit();
 	int64_t tick;
 	int r;
 
 	if (!is_numeric(re)) return SET_ERR(ERR_DOMAIN);
 	if (re->ve_length != 1) return SET_ERR(ERR_LENGTH);
 	beat = elem(re, 0);
-	if (!(beat >= 0.0 && beat <= SEQ_MAX_BEATS)) return SET_ERR(ERR_DOMAIN);
-	tick = (int64_t)(beat * TPB + 0.5);
+	if (!(beat >= 0.0 && beat / unit <= SEQ_MAX_BEATS))
+		return SET_ERR(ERR_DOMAIN);
+	tick = (int64_t)(beat * TPB / unit + 0.5);
 	if ((r = seq_virtual_run_to(tick)) != SEQ_OK) return seq_apl_err(r);
 	stack_pop(1);
-	return push_float((double)tick / TPB);
+	return push_float(to_units(tick, SEQ_TICKS_PER_BEAT));
 }
 
 /* SEQLOG (test): the log written since the last SEQLOG (or since the
@@ -1294,12 +1384,15 @@ midi_load(char *path, size_t lc, struct smf_file **f)
    whatever ⎕IO is (as track and window numbers are); ⎕MIDIINFO says
    which exist. 'T5000.MID' finds t5000.mid (see above). Domain Error for a track or voice that isn't there (a
    track with no notes has no voices), File Not Found, Bad MIDI File.
-   The file is read again on every call: there is nothing to close. */
+   The file is read again on every call: there is nothing to close.
+   V102: rows 2 and 4 in )SEQUNIT's units, through file_units(), so
+   whole numbers of units come back exactly whole. */
 static short
 f_midiread(struct ValEnt *le, struct ValEnt *re)
 {
 	char path[PATHBUF_SIZE];
 	struct smf_file *f = NULL;
+	struct smf_info info;			/* V102: the division */
 	struct smf_col *cols = NULL;
 	struct ValEnt *ve;
 	double *dp;
@@ -1321,6 +1414,7 @@ f_midiread(struct ValEnt *le, struct ValEnt *re)
 	if (r == MIDI_MISSING) return SET_ERR(ERR_FNOTF);
 	if (r == SMF_ERR_NOMEM) return SET_ERR(ERR_NOMEM);
 	if (r != SMF_OK) return SET_ERR(ERR_MIDIFILE);
+	smf_get_info(f, &info);
 	r = smf_voice_cols(f, (int)t, (int)v, &cols, &n);
 	smf_free(f);
 	if (r == SMF_ERR_NOMEM) return SET_ERR(ERR_NOMEM);
@@ -1341,9 +1435,9 @@ f_midiread(struct ValEnt *le, struct ValEnt *re)
 	for (i = 0; i < n; i++)
 	{
 		dp[i] = (double)cols[i].pitch;
-		dp[n + i] = cols[i].step;
+		dp[n + i] = file_units(cols[i].step, info.division);
 		dp[2 * n + i] = (double)cols[i].vel;
-		dp[3 * n + i] = cols[i].len;
+		dp[3 * n + i] = file_units(cols[i].len, info.division);
 		dp[4 * n + i] = (double)cols[i].chan;
 	}
 	free(cols);
@@ -1367,7 +1461,9 @@ f_midiread(struct ValEnt *le, struct ValEnt *re)
        track, 0, 0, length, ¯1, ¯1, ¯1, ¯1, ¯1
    Tracks in file order, voices in order within each. No such file: a
    0×9 matrix, not an error, so 0=1↑⍴⎕MIDIINFO 'name' tests for one.
-   Bad MIDI File if it exists but can't be read as one. */
+   Bad MIDI File if it exists but can't be read as one. V102: the
+   length (column 4) in )SEQUNIT's units; the ticks per beat (column
+   4 of the file row) is the file's, unchanged. */
 static short
 f_midiinfo(struct ValEnt *re)
 {
@@ -1430,7 +1526,7 @@ f_midiinfo(struct ValEnt *re)
 			row[0] = (double)t;
 			row[1] = (double)v;
 			row[2] = (double)vi.notes;
-			row[3] = (double)vi.length / (double)info.division;
+			row[3] = to_units(vi.length, info.division);
 			row[4] = (double)vi.channel;
 			row[5] = (double)vi.low;
 			row[6] = (double)vi.high;
@@ -1455,7 +1551,9 @@ f_midiinfo(struct ValEnt *re)
    asked for below the highest one are written empty, as is a track
    asked for that has nothing. The tempo, ⎕SEQTEMPO's, goes at the start
    of track 1 (no separate conductor track), with the key signature C
-   major (V100); no time signature (players assume 4/4) or names yet.
+   major (V100) and, V101, ⎕SEQMETER's time signature when it has one
+   (none: players assume 4/4). V101: each track asked for that has a
+   name (⎕SEQNAME) gets it as its first event.
    V100: each written track's bank and program at its start, on the
    version's channel: those in effect for the version written (heard
    with it), or the settings for one waiting to start; nothing for
@@ -1490,6 +1588,8 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 	size_t blen, lc;
 	double tempo;
 	int all, t, top = 0, nw = 0, r, chan, prog, bank;
+	int mnum, mden;				/* V101 */
+	char names[SEQ_MAX_TRACKS][SEQ_NAME_MAX + 1];
 	short e = 0;
 	FILE *fp;
 
@@ -1518,6 +1618,8 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 	for (i = (int32_t)lc; path[i]; i++)
 		if (path[i] >= 'A' && path[i] <= 'Z') path[i] += 32;
 	if ((r = seq_get_tempo(&tempo)) != SEQ_OK) return seq_apl_err(r);
+	if ((r = seq_get_meter(&mnum, &mden)) != SEQ_OK)	/* V101 */
+		return seq_apl_err(r);
 
 	memset(tracks, 0, sizeof tracks);
 	memset(wn, 0, sizeof wn);
@@ -1536,6 +1638,13 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 			e = seq_apl_err(r);
 			goto done;
 		}
+		if ((r = seq_get_name(t, names[t - 1])) != SEQ_OK)	/* V101 */
+		{
+			free(no);
+			e = seq_apl_err(r);
+			goto done;
+		}
+		tracks[t - 1].name = names[t - 1];
 		if (len > 0)
 		{
 			written[nw++] = t;
@@ -1572,7 +1681,8 @@ f_midiwrite(struct ValEnt *le, struct ValEnt *re)
 	}
 	if (top < 1) top = 1;			/* ¯1 with nothing: one empty track */
 
-	r = smf_write(tracks, top, SEQ_TICKS_PER_BEAT, tempo, &buf, &blen);
+	r = smf_write(tracks, top, SEQ_TICKS_PER_BEAT, tempo, mnum, mden,
+	              &buf, &blen);	/* V101: mnum ¯1, none */
 	if (r == SMF_ERR_NOMEM) { e = SET_ERR(ERR_NOMEM); goto done; }
 	if (r != SMF_OK) { e = SET_ERR(ERR_DOMAIN); goto done; }	/* a
 					   track too long for the file */
@@ -1592,6 +1702,163 @@ done:
 	for (t = 0; t < SEQ_MAX_TRACKS; t++) free(wn[t]);
 	free(buf);
 	return e;
+}
+
+/* ── For MIDI files: the meter and track names (V101) ──────────────── */
+
+/* SEQMETER (MONAD_OPT, V101): reports the time signature ⎕MIDIWRITE
+   writes, top and bottom (¯1 ¯1: none, the default from ⎕SEQOPEN on);
+   with an argument sets it and returns the previous one. The argument
+   is two numbers: the top 1-255 and the bottom a power of 2 from 1 to
+   32 (the library's rule), or ¯1 ¯1 for none, which is also what
+   ⎕MIDIINFO's file row has for a file with none, so its columns 6
+   and 7 pass straight across (as ⎕SEQTEMPO←¯1 takes its tempo).
+   Anything else in range or form is a Domain Error, any other length
+   a Length Error, a matrix a Rank Error. Sequencer Not Open when
+   closed, as ⎕SEQTEMPO. A setting for files only: playback has no
+   bars. */
+static short
+f_meter(struct ValEnt *re)
+{
+	int num, den, v[2];
+	int32_t a, b;
+	int r;
+	short e;
+
+	if ((r = seq_get_meter(&num, &den)) != SEQ_OK) return seq_apl_err(r);
+	if (re)
+	{
+		if (!is_numeric(re)) return SET_ERR(ERR_DOMAIN);
+		if (re->ve_rank > 1) return SET_ERR(ERR_RANK);
+		if (re->ve_length != 2) return SET_ERR(ERR_LENGTH);
+		if ((e = whole(re, 0, &a)) != 0) return e;
+		if ((e = whole(re, 1, &b)) != 0) return e;
+		if ((r = seq_set_meter((int)a, (int)b, &num, &den)) != SEQ_OK)
+			return seq_apl_err(r);
+		stack_pop(1);
+	}
+	v[0] = num;
+	v[1] = den;
+	return push_ints(v, 2, 0);
+}
+
+/* A name as a character vector, from the library's nul-terminated
+   copy (V101). */
+static short
+push_name(const char *name)
+{
+	struct ValEnt *ve;
+	int32_t n = (int32_t)strlen(name);
+
+	ve = make_temp(QUOT_CODE, 1, (long)n);
+	if (!ve) return SET_ERR(ERR_WSFULL);
+	ve->ve_rho[0] = n;
+	memcpy(DATA_AD(ve), name, (size_t)n);
+	return 0;
+}
+
+/* The characters a track name may hold (V101): letters, digits, the
+   space and - (what the person wants in a name), and a few more that
+   come back exactly as typed: . , ( ) ' & + _ . The rest of printable
+   ASCII is left out on purpose: in the workspace a character's byte
+   isn't always the character it shows as. A typed # is shown as ⎕
+   (the interpreter's own translation puts the two on one code, so a
+   ⎕ would reach the file as #), and a typed | arrives as the stile,
+   byte 0xCD (kapl_unicode.c's input alias). Seen in seq_meta's first
+   run (V101); a list of what's known to be safe is simpler than
+   mapping each case. */
+static int
+name_char_ok(unsigned char c)
+{
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+	    || (c >= '0' && c <= '9') || (c != 0 && strchr(" -.,()'&+_", c));
+}
+
+/* t SEQNAME 'name' (V101): sets one track's name, which ⎕MIDIWRITE
+   writes as the track's name event (MuseScore shows it beside the
+   instrument's name). The result is the previous name, a character
+   vector (empty if none). One track per call (the person, V101): the
+   left argument is a single track, scalar or one-element vector (any
+   other length a Length Error); the track outside 1-16 a Domain
+   Error. The right argument is a character scalar or vector; '' (or
+   any empty vector) clears the name. Trailing blanks are dropped, so
+   a row of ⎕SEQNAMES goes back as it came; leading ones are kept.
+   Only the characters name_char_ok() allows (the person, V101:
+   letters, digits, space and - are what's needed; a few more are
+   fine): anything else, an APL symbol included, is a Domain Error,
+   which leaves the question of APL glyphs in a file's text alone. At
+   most
+   SEQ_NAME_MAX (64) characters after the trim, else a Length Error.
+   Kept through new versions and ⎕SEQCLEAR, like the program;
+   discarded by ⎕SEQCLOSE. Sequencer Not Open when closed. */
+static short
+f_name(struct ValEnt *le, struct ValEnt *re)
+{
+	char name[SEQ_NAME_MAX + 1], prev[SEQ_NAME_MAX + 1];
+	const unsigned char *cp;
+	int *tracks;
+	int32_t n, len, i;
+	int t, r;
+	short e;
+
+	if ((e = get_list(le, &tracks, &n)) != 0) return e;
+	if (n != 1)
+	{
+		free(tracks);
+		return SET_ERR(ERR_LENGTH);
+	}
+	t = tracks[0];
+	free(tracks);
+	if (re->ve_length == 0 && re->ve_rank == 1)
+		len = 0;		/* '' or ⍳0: no name */
+	else
+	{
+		if (!is_char(re)) return SET_ERR(ERR_DOMAIN);
+		if (re->ve_rank > 1) return SET_ERR(ERR_RANK);
+		cp = (const unsigned char *)DATA_AD(re);
+		len = re->ve_length;
+		while (len > 0 && cp[len - 1] == ' ') len--;
+		for (i = 0; i < len; i++)
+			if (!name_char_ok(cp[i])) return SET_ERR(ERR_DOMAIN);
+		if (len > SEQ_NAME_MAX) return SET_ERR(ERR_LENGTH);
+		memcpy(name, cp, (size_t)len);
+	}
+	name[len] = '\0';
+	if ((r = seq_set_name(t, name, prev)) != SEQ_OK) return seq_apl_err(r);
+	stack_pop(2);
+	return push_name(prev);
+}
+
+/* SEQNAMES (NILAD, V101): every track's name, a 16-row character
+   matrix padded with blanks, row t for track t (from the first row,
+   whatever ⎕IO is), as wide as the longest name: 16 0 if none has
+   one. All 16 rather than the tracks in use, since a name can be set
+   before a track has anything. Sequencer Not Open when closed. */
+static short
+f_names(void)
+{
+	char names[SEQ_MAX_TRACKS][SEQ_NAME_MAX + 1];
+	struct ValEnt *ve;
+	char *cp;
+	int32_t t, l, w = 0;
+	int r;
+
+	for (t = 0; t < SEQ_MAX_TRACKS; t++)
+	{
+		if ((r = seq_get_name(t + 1, names[t])) != SEQ_OK)
+			return seq_apl_err(r);
+		l = (int32_t)strlen(names[t]);
+		if (l > w) w = l;
+	}
+	ve = make_temp(QUOT_CODE, 2, (long)SEQ_MAX_TRACKS * w);
+	if (!ve) return SET_ERR(ERR_WSFULL);
+	ve->ve_rho[0] = w;
+	ve->ve_rho[1] = SEQ_MAX_TRACKS;
+	cp = DATA_AD(ve);
+	memset(cp, ' ', (size_t)SEQ_MAX_TRACKS * w);
+	for (t = 0; t < SEQ_MAX_TRACKS; t++)
+		memcpy(cp + (size_t)t * w, names[t], strlen(names[t]));
+	return 0;
 }
 
 /* ── Dispatch ──────────────────────────────────────────────────────── */
@@ -1649,6 +1916,12 @@ struct ValEnt *le,*re;
 			return(list_set(seq_set_program,le,re));
 		case 22:	/* SEQBANK (V100) */
 			return(list_set(seq_set_bank,le,re));
+		case 23:	/* SEQMETER (V101) */
+			return(f_meter(re));
+		case 24:	/* SEQNAME (V101) */
+			return(f_name(le,re));
+		case 25:	/* SEQNAMES (V101) */
+			return(f_names());
 		case CLEANUP_FUNC:
 			return(0);
 	}

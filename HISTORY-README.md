@@ -44,7 +44,7 @@ The base symbols worked well with the 2741 because of overstrikes. You made an o
 
 So the first computer I ever saw was this System/360. A year later they upgraded to a System/370, which was kind of a surprise because it got smaller. You'd think a newer, faster system would be bigger, but they were learning how to make things smaller. It was faster and it supported the same APL terminals.
 
-I learned APL, took some classes in it and learned to love it. There were a lot of hackers in those classes who loved APL too. At some point they found a couple of bugs in the system and were able to dump some of the binary code of the APL program. They did some reverse engineering and learned a lot about how APL worked inside: how workspaces were structured and how things were done. I learned a lot there too. It came back to me over time and helped when I decided to develop my own.
+I learned APL, took some classes in it and learned to love it.  There I also learned a lot about how APL worked inside: how workspaces were structured and how things were done. I remembered much of what I learned there which helped when I decided to develop my own.
 
 ## After school
 

@@ -1,0 +1,9 @@
+⍝ V101: ⎕SEQMETER under -q new: only the ← form sets it
+⎕SEQOPEN 'TEST'
+⎕SEQMETER←3 4
+⎕SEQMETER
+⎕SEQMETER 6 8
+⎕SEQMETER+1
+⎕SEQMETER ,6 8
+⎕SEQMETER
+⎕SEQCLOSE

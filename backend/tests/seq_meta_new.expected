@@ -1,0 +1,19 @@
+Clear WS
+     ⍝ V101: ⎕SEQMETER under -q new: only the ← form sets it
+     ⎕SEQOPEN 'TEST'
+1
+     ⎕SEQMETER←3 4
+     ⎕SEQMETER
+3 4
+     ⎕SEQMETER 6 8
+     ^
+Syntax Error
+     ⎕SEQMETER+1
+4 5
+     ⎕SEQMETER ,6 8
+3 4 6 8
+     ⎕SEQMETER
+3 4
+     ⎕SEQCLOSE
+
+     

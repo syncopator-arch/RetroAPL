@@ -38,6 +38,12 @@
 	  bank T ... = B ...        V100: bank 0-16383, -1 none
 	  play stop | continue | restart
 	  tempo [BPM]               bare: report
+	  meter [N D]               V101: the meter for MIDI files, -1 -1
+	                            none; bare: report
+	  name T [WORDS ...]        V101: track T's name, the words
+	                            rejoined with one space (none: no
+	                            name); \xHH is the byte HH
+	  names                     V101: each track that has a name
 	  runto X                   X in beats (8, 4/3) or ticks (t20160)
 	  beatwait                  arm a beat wait, run to just past that
 	                            beat (virtual), show the event
@@ -153,6 +159,41 @@ static void flush_events(void)
 	fwrite(ev_text, 1, ev_len, out);
 	ev_len = 0;
 	pthread_mutex_unlock(&ev_lock);
+}
+
+/* V101: words w[0..nw-1] rejoined with one space into buf (size n),
+   \xHH as the byte HH. 0 if malformed or too long for buf. */
+static int join_words(char **w, int nw, char *buf, size_t n)
+{
+	size_t k = 0;
+	int i;
+	const char *c;
+
+	for (i = 0; i < nw; i++) {
+		if (i > 0) {
+			if (k + 1 >= n)
+				return 0;
+			buf[k++] = ' ';
+		}
+		for (c = w[i]; *c; c++) {
+			int b = (unsigned char)*c;
+
+			if (c[0] == '\\' && c[1] == 'x') {
+				char hex[3] = { c[2], c[2] ? c[3] : 0, 0 };
+				char *end;
+
+				b = (int)strtol(hex, &end, 16);
+				if (!hex[0] || !hex[1] || *end || b == 0)
+					return 0;
+				c += 3;
+			}
+			if (k + 1 >= n)
+				return 0;
+			buf[k++] = (char)b;
+		}
+	}
+	buf[k] = '\0';
+	return 1;
 }
 
 /* ── Formatting ───────────────────────────────────────────────────── */
@@ -688,6 +729,38 @@ static void do_line(char *line)
 				goto bad;
 			if (!report(seq_set_tempo(x, &p)))
 				fprintf(out, "  prev: %g\n", p);
+		}
+	} else if (strcmp(cmd, "meter") == 0) {	/* V101 */
+		int num, den, pn, pd;
+
+		if (nw == 1) {
+			if (!report(seq_get_meter(&num, &den)))
+				fprintf(out, "  meter: %d %d\n", num, den);
+		} else {
+			if (nw != 3 || !parse_int(w[1], &num)
+			    || !parse_int(w[2], &den))
+				goto bad;
+			if (!report(seq_set_meter(num, den, &pn, &pd)))
+				fprintf(out, "  prev: %d %d\n", pn, pd);
+		}
+	} else if (strcmp(cmd, "name") == 0) {	/* V101 */
+		char nm[256], pv[SEQ_NAME_MAX + 1];
+		int t;
+
+		if (nw < 2 || !parse_int(w[1], &t)
+		    || !join_words(w + 2, nw - 2, nm, sizeof nm))
+			goto bad;
+		if (!report(seq_set_name(t, nm, pv)))
+			fprintf(out, "  prev: '%s'\n", pv);
+	} else if (strcmp(cmd, "names") == 0) {	/* V101 */
+		char nm[SEQ_NAME_MAX + 1];
+		int t;
+
+		for (t = 1; t <= SEQ_MAX_TRACKS; t++) {
+			if (report(seq_get_name(t, nm)))
+				break;
+			if (nm[0])
+				fprintf(out, "  %d: '%s'\n", t, nm);
 		}
 	} else if (strcmp(cmd, "runto") == 0) {
 		int64_t t;

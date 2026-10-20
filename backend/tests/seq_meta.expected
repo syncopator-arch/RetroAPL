@@ -1,0 +1,303 @@
+Clear WS
+     ⍝ V101: ⎕SEQMETER (MONAD_OPT), ⎕SEQNAME, ⎕SEQNAMES; ⎕MIDIWRITE writes them
+     ⍝ closed: Sequencer Not Open
+     ⎕SEQMETER
+     ^
+Sequencer Not Open
+     ⎕SEQNAMES
+     ^
+Sequencer Not Open
+     1 ⎕SEQNAME 'BASS'
+     ^
+Sequencer Not Open
+     ⎕SEQOPEN 'TEST'
+1
+     ⍝ the meter: ¯1 ¯1 (none) by default; the result is the previous one
+     ⎕SEQMETER
+¯1 ¯1
+     ⎕SEQMETER←3 4
+     ⎕SEQMETER
+3 4
+     X←⎕SEQMETER←6 8
+     X
+3 4
+     ⎕SEQMETER 12 8
+6 8
+     ⍝ the MONAD_OPT shapes: niladic on either side of +, then followed by
+     ⍝ something that resolves a value at once
+     ⎕SEQMETER+1
+13 9
+     1+⎕SEQMETER
+13 9
+     ⎕SEQMETER ,3 4
+12 8
+     ⎕SEQMETER ⎕SEQMETER
+3 4
+     ⎕SEQMETER
+3 4
+     ⍝ errors change nothing
+     ⎕SEQMETER←
+     ^
+Syntax Error
+     ⎕SEQMETER←3
+     ^
+Length Error
+     ⎕SEQMETER←3 4 4
+     ^
+Length Error
+     ⎕SEQMETER←3 6
+     ^
+Domain Error
+     ⎕SEQMETER←3 64
+     ^
+Domain Error
+     ⎕SEQMETER←0 4
+     ^
+Domain Error
+     ⎕SEQMETER←256 4
+     ^
+Domain Error
+     ⎕SEQMETER←¯1 4
+     ^
+Domain Error
+     ⎕SEQMETER←3.5 4
+     ^
+Domain Error
+     ⎕SEQMETER←'AB'
+     ^
+Domain Error
+     ⎕SEQMETER←2 1⍴3 4
+     ^
+Rank Error
+     ⎕SEQMETER
+3 4
+     ⎕SEQMETER←¯1 ¯1
+     ⎕SEQMETER
+¯1 ¯1
+     ⍝ names: one track per call; the result is the previous name
+     ⎕SEQNAMES
+
+     ⍴⎕SEQNAMES
+16 0
+     1 ⎕SEQNAME 'BASS'
+
+     2 ⎕SEQNAME 'PIANO   '
+
+     16 ⎕SEQNAME '  LEAD'
+
+     ⎕SEQNAMES
+BASS  
+PIANO 
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+  LEAD
+     ⍴⎕SEQNAMES
+16 6
+     1 ⎕SEQNAME 'DOUBLE BASS'
+BASS
+     ⍴1 ⎕SEQNAME 'BASS'
+11
+     N←⎕SEQNAMES
+     N[⎕IO+1;]
+PIANO 
+     ⍴2 ⎕SEQNAME ''
+5
+     16 ⎕SEQNAME '   '
+  LEAD
+     (,3) ⎕SEQNAME 'A'
+
+     3 ⎕SEQNAME ⍳0
+A
+     ⎕SEQNAMES
+BASS
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+     ⍝ letters, digits, space, - and . , ( ) ' & + _ only
+     4 ⎕SEQNAME 'Bass ',⎕LCASE 'GUITAR'
+
+     7 ⎕SEQNAME 'Drums 1-2 (Kit A), Perc. & Fx + Lead_B''s'
+
+     N←⎕SEQNAMES
+     N[⎕IO+3 6;]
+Bass guitar                             
+Drums 1-2 (Kit A), Perc. & Fx + Lead_B's
+     4 ⎕SEQNAME ''
+Bass guitar
+     7 ⎕SEQNAME ''
+Drums 1-2 (Kit A), Perc. & Fx + Lead_B's
+     ⍝ everything else is a Domain Error, one character per line
+     1 ⎕SEQNAME 'A#'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A⎕'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A|'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A¯'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A/'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A\'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A{'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A<'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A:'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A!'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A"'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A*'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A$'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A~'
+     ^
+Domain Error
+     ⍝ errors change nothing
+     1 2 ⎕SEQNAME 'X'
+     ^
+Length Error
+     (⍳0) ⎕SEQNAME 'X'
+     ^
+Length Error
+     0 ⎕SEQNAME 'X'
+     ^
+Domain Error
+     17 ⎕SEQNAME 'X'
+     ^
+Domain Error
+     1.5 ⎕SEQNAME 'X'
+     ^
+Domain Error
+     'A' ⎕SEQNAME 'X'
+     ^
+Domain Error
+     1 ⎕SEQNAME 5
+     ^
+Domain Error
+     1 ⎕SEQNAME 2 2⍴'ABCD'
+     ^
+Rank Error
+     1 ⎕SEQNAME 'A⍴B'
+     ^
+Domain Error
+     1 ⎕SEQNAME 'A←B'
+     ^
+Domain Error
+     1 ⎕SEQNAME 65⍴'A'
+     ^
+Length Error
+     ⍴6 ⎕SEQNAME 64⍴'A'
+0
+     ⍴6 ⎕SEQNAME (64⍴'B'),'   '
+64
+     N←⎕SEQNAMES
+     ⍴N
+16 64
+     N[⎕IO+0 5;⍳10]
+BASS      
+BBBBBBBBBB
+     ⍝ ⎕MIDIWRITE: the meter in track 1, which ⎕MIDIINFO reads back;
+     ⍝ names aren't read back yet (⎕MIDIINFO is numeric)
+     6 ⎕SEQNAME ''
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+     5 ⎕SEQNAME ''
+
+     4 ⎕SEQNAME ''
+
+     ⎕SEQMETER←3 4
+     1 ⎕SEQTRACK 2 3⍴60 62 64 1 1 1
+0
+     2 ⎕SEQTRACK 2 2⍴48 55 1.5 1.5
+0
+     'META.MID' ⎕MIDIWRITE ¯1
+1 2
+     (⎕MIDIINFO 'META.MID')[⎕IO;]
+0 1 2 2520 120 3 4 0 0
+     ⎕SEQMETER←¯1 ¯1
+     'META2.MID' ⎕MIDIWRITE 1
+1
+     (⎕MIDIINFO 'META2.MID')[⎕IO;]
+0 1 1 2520 120 ¯1 ¯1 0 0
+     ⍝ a file's meter passes straight across, as ⎕SEQTEMPO's ¯1 does
+     ⎕SEQMETER←(⎕MIDIINFO 'META.MID')[⎕IO;6 7]
+     ⎕SEQMETER←(⎕MIDIINFO 'META2.MID')[⎕IO;6 7]
+     ⎕SEQMETER
+¯1 ¯1
+     ⍝ kept through ⎕SEQCLEAR and play; gone with ⎕SEQCLOSE
+     ⎕SEQMETER←6 8
+     ⎕SEQCLEAR 1 2
+1 2
+     ⎕SEQPLAY←1
+     ⎕SEQRUNTO 4
+4
+     ⎕SEQPLAY←0
+     ⎕SEQMETER
+6 8
+     ⎕SEQNAMES
+BASS
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+     ⎕SEQCLOSE
+
+     ⎕SEQOPEN 'TEST'
+1
+     ⎕SEQMETER
+¯1 ¯1
+     ⍴⎕SEQNAMES
+16 0
+     ⎕SEQCLOSE
+
+     

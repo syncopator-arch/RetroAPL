@@ -56,6 +56,11 @@
 	the pass is forced (a fresh start, a restart). Reopening after a
 	lost port sends each live track's program at once.
 
+	For MIDI files (V101, Oct 19, 2026): the meter (time signature)
+	and each track's name are kept here with the other settings, for
+	the caller writing a file to read back (seq_get_meter(),
+	seq_get_name()); playback never reads them.
+
 	Floating point: positions and deadlines are computed in double.
 	Built with -ffp-contract=off so x86-64 and aarch64 round the same
 	way, which keeps the test logs identical on both.
@@ -110,6 +115,8 @@ struct track {
 				   no length of their own */
 	int     program;	/* V100: 0..127, SEQ_NONE */
 	int     bank;		/* V100: 0..16383, SEQ_NONE */
+	char    name[SEQ_NAME_MAX + 1];	/* V101: for MIDI files; ""
+					   none */
 
 	/* V100: the program and bank in effect since cur's current pass
 	   began (what was heard with it; ⎕MIDIWRITE writes them), what
@@ -159,6 +166,8 @@ static struct {
 					   (Phase 3) */
 
 	double          tempo;
+	int             meter_num;	/* V101: for MIDI files; SEQ_NONE */
+	int             meter_den;	/*   both, none */
 	int64_t         done;		/* events before this tick played */
 	double          stop_pos;	/* position while not PLAYING */
 	int64_t         anchor_ns;	/* while PLAYING */
@@ -971,6 +980,7 @@ int seq_open(const struct seq_config *cfg)
 			S.notify = cfg->notify;
 			S.ctx = cfg->ctx;
 			S.tempo = SEQ_DEFAULT_TEMPO;
+			S.meter_num = S.meter_den = SEQ_NONE;	/* V101 */
 			S.done = 0;
 			S.stop_pos = 0;
 			S.anchor_ns = 0;
@@ -1676,6 +1686,86 @@ int seq_get_tempo(double *bpm)
 		r = SEQ_ERR_NOT_OPEN;
 	else
 		*bpm = S.tempo;
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+/* ── For MIDI files (V101) ────────────────────────────────────────── */
+
+int seq_set_meter(int num, int den, int *prev_num, int *prev_den)
+{
+	int r = SEQ_OK;
+
+	if (!(num == SEQ_NONE && den == SEQ_NONE)
+	    && (num < 1 || num > SEQ_METER_NUM_MAX || den < 1
+	        || den > SEQ_METER_DEN_MAX || (den & (den - 1)) != 0))
+		return SEQ_ERR_VALUE;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		r = SEQ_ERR_NOT_OPEN;
+	} else {
+		if (prev_num)
+			*prev_num = S.meter_num;
+		if (prev_den)
+			*prev_den = S.meter_den;
+		S.meter_num = num;
+		S.meter_den = den;
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_get_meter(int *num, int *den)
+{
+	int r = SEQ_OK;
+
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		r = SEQ_ERR_NOT_OPEN;
+	} else {
+		*num = S.meter_num;
+		*den = S.meter_den;
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_set_name(int track, const char *name, char *prev)
+{
+	size_t i, n;
+	int r = SEQ_OK;
+
+	if (track < 1 || track > SEQ_MAX_TRACKS)
+		return SEQ_ERR_TRACK;
+	n = strlen(name);
+	if (n > SEQ_NAME_MAX)
+		return SEQ_ERR_VALUE;
+	for (i = 0; i < n; i++)
+		if ((unsigned char)name[i] < 32 || (unsigned char)name[i] > 126)
+			return SEQ_ERR_VALUE;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open()) {
+		r = SEQ_ERR_NOT_OPEN;
+	} else {
+		if (prev)
+			memcpy(prev, S.tr[track].name, SEQ_NAME_MAX + 1);
+		memcpy(S.tr[track].name, name, n + 1);
+	}
+	pthread_mutex_unlock(&S.lock);
+	return r;
+}
+
+int seq_get_name(int track, char *name)
+{
+	int r = SEQ_OK;
+
+	if (track < 1 || track > SEQ_MAX_TRACKS)
+		return SEQ_ERR_TRACK;
+	pthread_mutex_lock(&S.lock);
+	if (!is_open())
+		r = SEQ_ERR_NOT_OPEN;
+	else
+		memcpy(name, S.tr[track].name, SEQ_NAME_MAX + 1);
 	pthread_mutex_unlock(&S.lock);
 	return r;
 }

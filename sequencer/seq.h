@@ -7,7 +7,8 @@
 	Oct 15, 2026) marked "Phase 8"; Phase 9 (reading a track's notes
 	back out, for writing MIDI files; Oct 16, 2026) marked "Phase 9";
 	program changes and bank select (Oct 18, 2026, V100) marked
-	"V100". All added without
+	"V100"; the meter and track names for MIDI files (Oct 19, 2026,
+	V101) marked "V101". All added without
 	changing what was there, except that a name not in the "hw:" form
 	(Linux) or not a number (Windows), once SEQ_ERR_PORT_NAME, is now
 	looked up as a device name (Phase 8), and that V100 gave
@@ -108,6 +109,9 @@ extern "C" {	/* main.cpp's stopEngine() calls seq_close() */
 #define SEQ_PROGRAM_MAX     127
 #define SEQ_BANK_MAX        16383  /* controller 0 (MSB) x 128 +
                                       controller 32 (LSB) */
+#define SEQ_METER_NUM_MAX   255    /* V101: a meter's top number */
+#define SEQ_METER_DEN_MAX   32     /* V101: its bottom, a power of 2 */
+#define SEQ_NAME_MAX        64     /* V101: a track name's bytes */
 /* default channel = track number */
 
 #define SEQ_MAX_BEATS       1e9    /* longest track, beats (Phase 2;
@@ -567,6 +571,31 @@ int seq_play(int mode, int *prev);
    PORT_LOST. */
 int seq_set_tempo(double bpm, double *prev);
 int seq_get_tempo(double *bpm);
+
+/* ── For MIDI files (V101, Oct 19, 2026) ─────────────────────────────
+   Settings playback never reads; kept here with the sequence so that
+   the caller writing a file (the glue's ⎕MIDIWRITE) finds them where
+   it finds the tempo and the tracks. Like the other settings, reset by
+   seq_open() from CLOSED and kept through a reopen after PORT_LOST;
+   work in STOPPED, PLAYING and PORT_LOST.
+
+   The meter (time signature): num over den, num 1..SEQ_METER_NUM_MAX
+   and den a power of 2 from 1 to SEQ_METER_DEN_MAX, or both SEQ_NONE
+   for none (the default). SEQ_ERR_VALUE for anything else (one of the
+   two SEQ_NONE alone included). prev_num, prev_den (may be NULL)
+   receive the previous setting. */
+int seq_set_meter(int num, int den, int *prev_num, int *prev_den);
+int seq_get_meter(int *num, int *den);
+
+/* A track's name: up to SEQ_NAME_MAX bytes, each 32..126 (printable
+   ASCII), "" for none (the default). A sticky setting like the
+   track's channel, kept through new versions and seq_clear().
+   SEQ_ERR_TRACK for a track outside 1..SEQ_MAX_TRACKS, SEQ_ERR_VALUE
+   for a byte outside 32..126 or a name too long (nothing changed).
+   prev (may be NULL) and name receive a copy, nul-terminated, and
+   need SEQ_NAME_MAX + 1 bytes. */
+int seq_set_name(int track, const char *name, char *prev);
+int seq_get_name(int track, char *name);
 
 /* ── Beat wait ───────────────────────────────────────────────────────
    Arms a one-shot wait for the next main-clock beat and returns at

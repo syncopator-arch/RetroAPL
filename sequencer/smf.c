@@ -732,7 +732,7 @@ static int cmp_wev(const void *pa, const void *pb)
 }
 
 static int write_track(struct wbuf *w, const struct smf_wtrack *t,
-                       int first, double tempo)
+                       int first, double tempo, int ts_num, int ts_den)
 {
 	struct wev *ev = NULL;
 	size_t at;
@@ -773,6 +773,14 @@ static int write_track(struct wbuf *w, const struct smf_wtrack *t,
 	put(w, "MTrk", 4);
 	at = w->len;
 	put_be(w, 0, 4);		/* the length, filled in below */
+	if (t->name && t->name[0]) {	/* V101: the track's name, first */
+		size_t nl = strlen(t->name);
+
+		put_vlq(w, 0);
+		put1(w, 0xFF); put1(w, 0x03);
+		put_vlq(w, (int64_t)nl);
+		put(w, t->name, nl);
+	}
 	if (first && tempo > 0) {
 		double us = floor(60000000.0 / tempo + 0.5);
 
@@ -781,6 +789,17 @@ static int write_track(struct wbuf *w, const struct smf_wtrack *t,
 		put_vlq(w, 0);
 		put1(w, 0xFF); put1(w, 0x51); put1(w, 3);
 		put_be(w, (uint32_t)us, 3);
+	}
+	if (first && ts_num > 0) {	/* V101: the time signature */
+		int dd = 0;
+
+		while ((1 << dd) < ts_den)
+			dd++;
+		put_vlq(w, 0);
+		put1(w, 0xFF); put1(w, 0x58); put1(w, 4);
+		put1(w, ts_num); put1(w, dd);
+		put1(w, 24);		/* MIDI clocks per click: a quarter */
+		put1(w, 8);		/* 32nds per quarter */
 	}
 	if (first) {			/* V100: C major, as MuseScore writes
 					   music with no key */
@@ -840,7 +859,8 @@ static int write_track(struct wbuf *w, const struct smf_wtrack *t,
 
 int
 smf_write(const struct smf_wtrack *tracks, int ntracks, int division,
-          double tempo, unsigned char **buf, size_t *len)
+          double tempo, int ts_num, int ts_den,
+          unsigned char **buf, size_t *len)
 {
 	struct wbuf w = { NULL, 0, 0, 0 };
 	int t, r;
@@ -849,13 +869,17 @@ smf_write(const struct smf_wtrack *tracks, int ntracks, int division,
 	*len = 0;
 	if (ntracks < 1 || ntracks > 65535 || division < 1 || division > 32767)
 		return SMF_ERR_VALUE;
+	if (ts_num > 0 && (ts_num > 255 || ts_den < 1 || ts_den > 32
+	                   || (ts_den & (ts_den - 1)) != 0))
+		return SMF_ERR_VALUE;		/* V101 */
 	put(&w, "MThd", 4);
 	put_be(&w, 6, 4);
 	put_be(&w, 1, 2);			/* format 1 */
 	put_be(&w, (uint32_t)ntracks, 2);
 	put_be(&w, (uint32_t)division, 2);
 	for (t = 0; t < ntracks; t++)
-		if ((r = write_track(&w, &tracks[t], t == 0, tempo)) != SMF_OK) {
+		if ((r = write_track(&w, &tracks[t], t == 0, tempo,
+		                     ts_num, ts_den)) != SMF_OK) {
 			free(w.p);
 			return r;
 		}

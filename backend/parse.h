@@ -625,7 +625,19 @@ struct WorkSpace {
 				   -- struct size unchanged (SYMT sits at
 				   wspace + sizeof(struct WorkSpace), so it must stay
 				   unchanged), no WS_FORMAT_VERSION bump. */
-	UCHAR    flags_spare[3];	/* zeroed, unused -- room for 3 more byte flags.
+	UCHAR    sequnit;		/* )SEQUNIT setting (V102): the sequencer's steps
+				   and lengths are counted in 1/sequnit of a beat.
+				   0 means 1, beats -- what every .ws saved before
+				   this field existed reads here, since flags_spare[]
+				   was zeroed -- and init_ws() sets 0 for new/cleared
+				   workspaces. Otherwise a divisor of
+				   SEQ_TICKS_PER_BEAT (2520) from 2 to 255, so a whole
+				   number of units is a whole number of ticks.
+				   Read through seqf_unit() (seqfuncs.c), which takes
+				   anything else as 1. Carved from flags_spare[0]:
+				   a byte, so no bswap_ws() entry; struct size
+				   unchanged, no WS_FORMAT_VERSION bump. */
+	UCHAR    flags_spare[2];	/* zeroed, unused -- room for 2 more byte flags.
 				   Zero must mean "original behavior" for any flag
 				   put here, for the same compatibility reason; the
 				   default for NEW workspaces is init_ws()'s call. */

@@ -10,8 +10,8 @@ otherwise.
 
 ## Settable functions: `⎕IO←n` and `⎕IO n`
 
-`⎕INTDIV`, `⎕RL`, `⎕WI`, `⎕IO`, `⎕DIG`, `⎕SEQTEMPO`, `⎕SEQPLAY` and `⎕SEQBEAT`
-report a setting when used alone and change it when given a value. The value can be given two
+`⎕INTDIV`, `⎕RL`, `⎕WI`, `⎕IO`, `⎕DIG`, `⎕SEQTEMPO`, `⎕SEQPLAY`, `⎕SEQBEAT`
+and `⎕SEQMETER` report a setting when used alone and change it when given a value. The value can be given two
 ways:
 
 - `⎕IO←0`, the assignment form, as for an APL system variable.
@@ -776,7 +776,24 @@ must be greater than `0` and may be fractional (`0.5`, `4÷3`); thirds,
 fifths and sevenths of a beat are kept exact, so tracks never drift
 apart. A beat is whatever `⎕SEQTEMPO` makes it: at `140` a step of
 `0.5` lasts about 214 ms, and the same matrix plays faster or slower
-as the tempo changes. Rows 3–5 are described under `⎕SEQTRACK`.
+as the tempo changes. All five rows are described under `⎕SEQTRACK`,
+with a table of note values as steps.
+
+**Units (`)SEQUNIT`).** Steps and lengths can be counted in units
+smaller than a beat, so that the values in everyday use are whole
+numbers. `)SEQUNIT 24` divides each beat into 24: counting quarter
+notes, a sixteenth is `6`, a thirty-second `3` and an eighth-note
+triplet `8`. Under a unit, everything in this section given in beats
+is in units instead: the steps and lengths of a track (rows 2 and 4),
+`⎕SEQTRACK`'s result, `⎕SEQSTATE`'s current position, loop lengths
+and track positions, `⎕MIDIREAD`'s steps and lengths, `⎕MIDIINFO`'s
+track lengths, and `⎕SEQRUNTO`. `⎕SEQTEMPO` is still beats per
+minute, `⎕SEQGATE` still a fraction of the step, and the beat numbers
+`⎕EVWAIT` reports still count beats. The unit is saved with the
+workspace, since the numbers in its track matrices depend on it, and a
+new workspace starts at `1`, beats (see `)SEQUNIT` in the System
+Command Reference). MIDI files keep exact timing rather than units, so
+a file written at one unit reads back correctly at any other.
 
 Tracks are numbered `1`–`16` and channels `1`–`16`, whatever `⎕IO` is.
 A track's channel starts as its own number (so track 10 plays on the
@@ -925,7 +942,7 @@ finished play-once track again plays it again from the next beat; a
 restart (`⎕SEQPLAY←2`) plays it again from beat 0 with the rest.
 
 Returns the beat at which the version takes over, counting from the
-start of playback. That's as things stand when it returns: a restart
+start of playback (in `)SEQUNIT`'s units, if set). That's as things stand when it returns: a restart
 (`⎕SEQPLAY←2`), a `⎕SEQCLEAR` of the track or a newer version can
 change it. A tempo change doesn't.
 
@@ -941,8 +958,65 @@ and keeps it for later versions sent without one.
 6
 ```
 
-Rows 3–5 give each note its own setting; `¯1` in any of them means the
-track's setting for that note. For a rest they aren't looked at, so
+**Rows 1 and 2, the notes.** Each column is one note, in the order
+they play.
+
+- **Row 1, pitch**: a MIDI note number `0`–`127`. `60` is middle C,
+  and each step of 1 is a semitone, so `72` is the C an octave above
+  and `48` the one below. `¯1` is a rest: it sends nothing and takes
+  up its step. `0` is a real note (the lowest C), not a rest.
+- **Row 2, step**, in beats (or `)SEQUNIT`'s units): the time from this note's start to the
+  next note's start; for the last column, to the end of the loop. The
+  step is where the note sits in time. Without row 4 it is also how
+  long the note sounds (times the track's gate, `⎕SEQGATE`, `1` by
+  default), since a track sounds one note at a time: a note stops
+  where the next note, or rest, begins. Every step must be at least
+  1/2520 of a beat, one of the sequencer's ticks (at `)SEQUNIT 24`,
+  1/105 of a unit).
+
+The track's loop is as long as its steps add up to, `+/M[2;]` beats,
+and that is where a new version takes over. Tracks of different
+lengths drift in and out of step with each other and come back
+together where their lengths meet (a 3-beat and a 4-beat track every
+12 beats).
+
+A beat is whatever note value you count in. Counting quarter notes,
+in beats and at `)SEQUNIT 24`:
+
+| Note | Step | At `)SEQUNIT 24` |
+| --- | --- | --- |
+| whole, half, quarter | `4`, `2`, `1` | `96`, `48`, `24` |
+| eighth, sixteenth, thirty-second | `0.5`, `0.25`, `0.125` | `12`, `6`, `3` |
+| dotted quarter, dotted eighth | `1.5`, `0.75` | `36`, `18` |
+| eighth-note triplet, quarter-note triplet | `÷3`, `2÷3` | `8`, `16` |
+
+Steps are added up exactly, so a loop of triplets is exactly as long
+as its steps say and never drifts against the other tracks: thirds,
+fifths, sevenths and ninths of a beat are exact, and any other
+fraction is rounded only to the nearest 1/2520 of a beat, without the
+rounding adding up along the loop. The same pitch twice in a row is
+played twice: the first note stops just as the second starts.
+
+`⍴` fills a matrix row by row, so the pitches come first, then the
+steps:
+
+```
+⍝ eight quarter notes: a 2-bar loop in 4/4
+M←2 8⍴60 62 64 60 60 62 64 60, 8⍴1
+⍝ dotted eighth, sixteenth, quarter, then a quarter rest: 3 beats
+M←2 4⍴67 69 71 ¯1, 0.75 0.25 1 1
+⍝ triplets against eighths: two tracks, both 2 beats long
+1 ⎕SEQTRACK 2 6⍴60 64 67 72 67 64, 6⍴÷3
+2 ⎕SEQTRACK 2 4⍴36 43 48 43, 4⍴0.5
+```
+
+A step lasts as long as the tempo says: at `⎕SEQTEMPO←90` a beat is
+2/3 of a second. A long note is a long step; a short, detached note
+is a short length in row 4 or a gate below `1` (`⎕SEQGATE`), with
+the step left as it is.
+
+**Rows 3–5.** They give each note its own setting; `¯1` in any of them
+means the track's setting for that note. For a rest they aren't looked at, so
 anything there is accepted.
 
 - **Row 3, velocity** `1`–`127`. It is scaled by the track's velocity
@@ -950,7 +1024,7 @@ anything there is accepted.
   track's, divided by `100`, rounded and kept within `1`–`127`. At the
   default track velocity of `100` it plays as written; a lower track
   velocity turns the whole track down while keeping its accents.
-- **Row 4, length** in beats: how long the note sounds, from at least
+- **Row 4, length** in beats (or `)SEQUNIT`'s units): how long the note sounds, from at least
   1/2520 of a beat up. A length longer than the step is shortened to
   the step, so the note runs into the next one, as every note does
   without row 4. `¯1` sounds the track's gate (`⎕SEQGATE`) times the
@@ -1119,6 +1193,41 @@ I←⎕MIDIINFO 'song.mid'
 1 ⎕SEQBANK I[2;9]
 ```
 
+`track ⎕SEQNAME 'name'`
+
+Names a track, for MIDI files: `⎕MIDIWRITE` writes it into the file
+as the track's name, which other programs show for the track. Playback
+doesn't use it. One track per call, its name as text.
+`''` takes the name away. Trailing blanks are dropped (so a row of
+`⎕SEQNAMES` can be given back as it is); leading ones are kept. Returns
+the previous name, empty if there was none. A track's name is kept
+like its program: through new versions and `⎕SEQCLEAR`, gone at
+`⎕SEQCLOSE`.
+
+A name may hold letters (either case), digits, the space, `-`, and
+`. , ( ) ' & + _`. Anything else is a `Domain Error`: APL symbols,
+because there is no telling how another program would show them, and
+the rest of the punctuation, because some of it isn't stored as the
+character it shows as (a typed `#` displays as `⎕`). Up to 64
+characters.
+
+```
+      1 ⎕SEQNAME 'DOUBLE BASS'     ⍝ track 1 was called BASS
+BASS
+```
+
+`Length Error` if `track` isn't a single number or the name is longer
+than 64 characters. `Domain Error` if the track isn't `1`–`16`, the
+name isn't text, or it holds any other character. `Rank
+Error` if the name is a matrix.
+
+`⎕SEQNAMES`
+
+Every track's name, a 16-row character matrix, row 1 for track 1 and
+so on, padded with blanks to the longest name. With no names it is
+16×0. All 16 tracks are listed, not just those in use, since a name
+can be set before a track has anything to play.
+
 `tracks ⎕SEQNOTES flags`
 
 Sets whether tracks report their notes to `⎕EVWAIT ¯1` (`1`) or not
@@ -1189,6 +1298,47 @@ when the port is opened again after it was lost. `Domain Error` if `n`
 isn't `0` or `1`. `Length Error` if it isn't a single number.
 `Sequencer Not Open` when closed, even when just reporting.
 
+`⎕SEQMETER`
+
+`⎕SEQMETER←top bottom` or `⎕SEQMETER top bottom`
+
+The time signature `⎕MIDIWRITE` writes, so a notation program shows
+the music in bars of the right size: `⎕SEQMETER←3 4` for 3/4,
+`⎕SEQMETER←6 8` for 6/8. The top number is `1`–`255`, the bottom
+`1`, `2`, `4`, `8`, `16` or `32`. `¯1 ¯1`, the default from every
+`⎕SEQOPEN` on, is none: no time signature is written, and programs
+then assume 4/4. Used alone, reports the setting; setting returns the
+*prior* value (see Settable functions at the top). Kept when the port
+is opened again after it was lost; gone at `⎕SEQCLOSE`.
+
+It is for files only. Playback has no bars: tracks loop at their own
+lengths whatever the meter, and `⎕SEQTEMPO` still counts beats, which
+the file takes as quarter notes. So in 6/8 a bar is 3 beats, and six
+eighth notes at a dotted quarter of 60 a minute are steps of `0.5` at
+`⎕SEQTEMPO←90`. A loop whose length isn't a whole number of bars ends
+part-way through a bar in the file.
+
+The note value the steps count in matters too. A file stores each step
+as a fraction of a quarter note, so a pulse of `÷3` is written as
+eighth-note triplets, and triplets don't fill bars such as 7/8 (3½
+quarter notes): a notation program then pads each bar with rests and
+plays it that way. Count such a pulse as a plain note value and change
+the tempo to match, so it sounds the same: steps of `÷3` at
+`⎕SEQTEMPO←140` are the same speed as sixteenths (`0.25`, or `6` at
+`)SEQUNIT 24`) at `105`, three quarters of the tempo. Seven of them
+then make a bar of 7/16, fourteen a bar of 7/8.
+
+`⎕MIDIINFO`'s file row gives a file's time signature in columns 6 and
+7, `¯1 ¯1` if it has none, so it passes straight across:
+
+```
+⎕SEQMETER←(⎕MIDIINFO 'song.mid')[⎕IO;⎕IO+5 6]
+```
+
+`Domain Error` for any other numbers, or text. `Length Error` if it
+isn't two numbers. `Rank Error` for a matrix. `Sequencer Not Open`
+when closed, even when just reporting.
+
 `⎕SEQSTATE`
 
 Reports everything about the sequencer as a matrix, never giving an
@@ -1204,13 +1354,13 @@ the sequencer row is there.
 | --- | --- | --- |
 | 1 | `0` | track number |
 | 2 | state: `2` playing, `1` stopped, `0` closed, `¯1` port lost (greater than `0` means open) | notes in the playing version, or the finished one (`0` if only a waiting one) |
-| 3 | current beat | the track's channel (with only a waiting version, the one it will start on); notes with a channel of their own (row 5) aren't shown here |
+| 3 | current beat (in `)SEQUNIT`'s units, if set) | the track's channel (with only a waiting version, the one it will start on); notes with a channel of their own (row 5) aren't shown here |
 | 4 | tempo | mute (`0`/`1`) |
 | 5 | number of track rows | loop (`0`/`1`) |
 | 6 | beats reported (`⎕SEQBEAT`, `0`/`1`) | velocity |
-| 7 | how late the last notes were reported, in milliseconds (see `⎕EVWAIT`) | loop length in beats |
+| 7 | how late the last notes were reported, in milliseconds (see `⎕EVWAIT`) | loop length in beats (or `)SEQUNIT`'s units) |
 | 8 | `0` | new version waiting (`0`/`1`) |
-| 9 | `0` | position within the playing version's current loop, in beats (`0` when finished) |
+| 9 | `0` | position within the playing version's current loop, in beats or `)SEQUNIT`'s units (`0` when finished) |
 | 10 | `0` | notes reported (`⎕SEQNOTES`, `0`/`1`) |
 | 11 | `0` | gate (`⎕SEQGATE`) |
 | 12 | `0` | finished: `1` for a play-once track that has played through. It keeps its notes, silent, until a restart plays it again, a new version, `⎕SEQCLEAR` or `⎕SEQCLOSE`. Its loop length and notes are in columns 7 and 2; column 8 is `0` |
@@ -1417,8 +1567,9 @@ run past the recorded length.
 `'file' ⎕MIDIREAD track,voice`
 
 One voice of one track of the file (voice 1 if none is given), as a
-5-row matrix in `⎕SEQTRACK`'s form: pitches, steps (beats), velocities,
-lengths (beats) and channels. Send it as it is:
+5-row matrix in `⎕SEQTRACK`'s form: pitches, steps (beats, or
+`)SEQUNIT`'s units), velocities, lengths (likewise) and channels. Send
+it as it is:
 
 ```
       1 ⎕SEQTRACK 'song.mid' ⎕MIDIREAD 2
@@ -1465,7 +1616,7 @@ voices in order within each:
 | 1 | the track number, from 1 |
 | 2 | the voice number within the track, from 1; `0` for a track with no notes |
 | 3 | how many notes the voice has (rests not counted) |
-| 4 | the track's length in beats (the same on every voice row of a track): what the voice's steps add up to, so its voices loop together |
+| 4 | the track's length in beats, or `)SEQUNIT`'s units (the same on every voice row of a track): what the voice's steps add up to, so its voices loop together |
 | 5 | the channel the voice plays on, `1`–`16` (a voice is always one channel); `¯1` for a track with no notes |
 | 6, 7 | the voice's lowest and highest pitch; `¯1` for a track with no notes |
 | 8 | the program (instrument, `0`–`127` as sent) on that channel when the voice starts; `¯1` if the file sets none |
@@ -1539,9 +1690,12 @@ send the track a longer matrix first (`M,M,M,M` repeats it).
 Sequencer track 3 is the file's track 3: tracks below the highest one
 written that weren't asked for, or have nothing, are written empty, so
 `⎕MIDIREAD` finds each track under its own number. The tempo,
-`⎕SEQTEMPO`'s, goes at the start of track 1, with the key signature C
-major (the file has no key of its own; C major is what other programs
-write for music with no key, and stops MuseScore guessing one). Each
+`⎕SEQTEMPO`'s, goes at the start of track 1, with the time signature,
+`⎕SEQMETER`'s (none if it is `¯1 ¯1`: programs then assume 4/4), and
+the key signature C major (the file has no key of its own; C major is
+what other programs write for music with no key, and stops them
+guessing one). Each track listed that has a name (`⎕SEQNAME`) gets it
+as the track's name. Each
 track's bank and program (`⎕SEQBANK`, `⎕SEQPROG`) go at its start, on
 its channel: the ones heard with the version written, so a program
 set while the track plays, still waiting for the end of the pass, isn't
@@ -1550,9 +1704,7 @@ start with. A track with no program gets none in the file. Each track ends at it
 loop length, which is also recorded exactly for `⎕MIDIREAD` (in a
 "sequencer-specific" event that other programs skip). The file keeps
 the sequencer's 2520 ticks per beat, so the timing is exact, triplets
-included. Not written: a time signature
-(programs assume 4/4), track names, and tempo changes made while
-playing.
+included. Not written: tempo changes made while playing.
 
 The file is written with its name in lower case, so `'SONG.MID'`
 writes `song.mid`, the way other programs expect (MuseScore's file
@@ -1588,6 +1740,7 @@ open, `⎕SEQRUNTO` and `⎕SEQLOG` give `Domain Error`.
 `⎕SEQRUNTO` instantly plays everything before `beat` and holds there,
 so a version sent while held exactly on a loop boundary takes over at
 that boundary. Returns the beat it holds at (to the nearest 1/2520).
+Under `)SEQUNIT`, `beat` and the result are in its units.
 A beat at or before the current one does nothing. `Domain Error` if
 the sequencer isn't playing (it would never get there) or `beat` is
 negative.
@@ -1596,7 +1749,8 @@ negative.
 as a character matrix, one line per MIDI message, and empties it, so
 each call shows only what's new:
 beat, exact tick, simulated time since open, message
-(`8.000 t20160 4000.000ms ON  ch1 60 v100`). Nothing new gives a 0×0
+(`8.000 t20160 4000.000ms ON  ch1 60 v100`). The log is the
+sequencer's own, so it counts beats and ticks whatever `)SEQUNIT` is. Nothing new gives a 0×0
 matrix. It still works after `⎕SEQCLOSE`, so the closing note-offs
 can be read.
 

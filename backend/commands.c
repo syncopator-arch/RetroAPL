@@ -103,7 +103,7 @@ UCHAR cmd_table[] = {
 	'H','I','S','T',0,	/* 35 - )hist -- not implemented */
 	'C','A','S','E',0,	/* 36 - )case -- removed V81 */
 	'V','E','R',0,		/* 37 - )version -- removed V81 */
-	'T','E','X','T',0,	/* 38 - )text */
+	'T','E','X','T',0,	/* 38 - )text -- removed V102 */
 	'D','R','O','P',0,	/* 39 - )drop */
 	'R','E','S',0,		/* 40 - )resize */
 	'D','I','G',0,		/* 41 - )digits */
@@ -121,6 +121,10 @@ UCHAR cmd_table[] = {
 	'M','I','D','I',0,	/* 47 - )midi -- MEM is the only other M
 				   entry and isn't a prefix of it; typed in
 				   full (no short form), so )MIDIS works too */
+	'S','E','Q','U','N','I','T',0,	/* 48 - )sequnit (V102) -- none of
+				   the S entries above (SAVE, SYM, SYS, SIV,
+				   SI, STA, STOP, SCR, STEP) is a prefix of
+				   it; typed in full, no short form */
 	'@',0,	/* end of table -- do_command() and the command list stop here */
 	0	/* empty name: table_flip() (set_case) stops here; without it,
 		   it read, and could case-flip, the byte past the table */
@@ -1126,29 +1130,6 @@ int filtering = 0;
 }
 
 short
-do_text_dump()
-{
-int tfdsave;
-
-	tfdsave = term_fd;
-	text_dump_flag = 1;
-
-	/* redirect output to file */
-	term_fd = open("text_dump.txt",O_CREAT|O_TRUNC|O_WRONLY,0666);
-
-	do_list(SYM_FUN, (char *)0);
-	do_list(SYM_VAR, (char *)0);
-
-	close(term_fd);
-	term_fd = tfdsave;
-	text_dump_flag = 0;
-
-	Cmessage(MSG_SAVED);
-	NL();
-	return(0);
-}
-
-short
 do_vars(pattern)
 char *pattern;
 {
@@ -1961,6 +1942,76 @@ short upd;
 }
 
 /*
+	)SEQUNIT [n] (V102, agreed with the person Oct 20, 2026)
+
+	Reports or sets how many units a beat is divided into for the
+	sequencer's timing values: ⎕SEQTRACK's steps and lengths (rows 2
+	and 4) and result, ⎕SEQSTATE's positions and loop lengths,
+	⎕SEQRUNTO, ⎕MIDIREAD's steps and lengths and ⎕MIDIINFO's track
+	lengths. 1, the default, is beats. ⎕SEQTEMPO stays in beats a
+	minute and ⎕SEQGATE a fraction of the step; ⎕SEQBEAT's beat
+	numbers are beats. The conversions are all in seqfuncs.c
+	(seqf_unit()); the library still works in beats and ticks.
+
+	Saved with the workspace, as wspace->sequnit (0 meaning 1; see
+	struct WorkSpace in parse.h), because a workspace's track
+	matrices mean nothing without their unit. A command only, no
+	quad function (agreed): it's set once for a workspace, not
+	switched by programs.
+
+	n must be one whole number, a divisor of 2520 (the sequencer's
+	ticks per beat) from 1 to 255, so a whole number of units is
+	always a whole number of ticks; anything else -- 16, a fraction,
+	a negative, a name, a second number -- is a Domain Error and
+	changes nothing (agreed: not rounded or clamped to a good value,
+	which would quietly change all the timing; unlike )DIGITS'
+	clamp and )INTDIV's Syntax Error). The check is seqf_unit_ok()'s,
+	in seqfuncs.c with the library's tick count. Display follows
+	do_digits(): "Is n" with no argument, "Was n" before setting.
+
+	The token is read by hand rather than by get_vstr(), as
+	do_digits() does: a typed ¯ arrives as '-' and get_vstr() would
+	reject it without an error.
+*/
+extern int seqf_unit(void);		/* seqfuncs.c */
+extern int seqf_unit_ok(long n);	/* seqfuncs.c */
+
+short
+do_sequnit()
+{
+UCHAR *cp;
+long n;
+int digits;
+
+	cp = COMMANDP;
+	while (*cp == ' ') cp++;
+	if (!*cp)
+	{
+		Cmessage(MSG_IS);
+		print_num((long)seqf_unit());
+		CNL();
+		return(0);
+	}
+	n = 0;
+	digits = 0;
+	while (*cp >= '0' && *cp <= '9')
+	{
+		if (n < 100000L) n = n * 10 + (*cp - '0');	/* no overflow;
+							   too big anyway */
+		cp++;
+		digits++;
+	}
+	while (*cp == ' ') cp++;
+	if (!digits || *cp || !seqf_unit_ok(n)) return(SET_ERR(ERR_DOMAIN));
+	COMMANDP = cp;
+	Cmessage(MSG_WAS);
+	print_num((long)seqf_unit());
+	CNL();
+	wspace->sequnit = (UCHAR)(n == 1 ? 0 : n);
+	return(0);
+}
+
+/*
 	)STEP -- how ->0 continues a stopped function; a session setting
 	(step_mode in exec.c, not saved with the workspace):
 	  LINE  stop again at the start of the next line, stepping into
@@ -2138,6 +2189,7 @@ REG short i;
 				   new/cleared workspaces (classic APL behavior).
 				   Workspaces saved before )INTDIV existed carry 0
 				   in this byte and still load as ON. */
+	wspace->sequnit = 0;	/* )SEQUNIT 1: steps in beats (V102) */
 	set_case(0);	/* see load_ws() */
 
 	for (i=0;i<SYMTSIZE;i++) 
@@ -3912,8 +3964,6 @@ long l;
 			if (!print_stack(0)) PRINT("No left parm");
 			NL();
 			return(0);
-		case 38:
-			return(do_text_dump());
 		case 39:    /* DROP */
         	return(do_drop());
 		case 40:    /* RESIZE */
@@ -3934,6 +3984,8 @@ long l;
 			return(do_fsearch(COMMANDP));
 		case 47:	/* MIDI */
 			return(do_midi(COMMANDP));
+		case 48:	/* SEQUNIT (V102) */
+			return(do_sequnit());
 	}
 	return(SET_ERR(ERR_COMMAND));
 }

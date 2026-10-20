@@ -12,9 +12,12 @@ ignored. The short form is given with each entry — `)CL` is enough for
 command: `)CLOSE` is taken as `)CLEAR`. Commands with no short form
 listed have to be typed in full.
 
-System commands are meant to be typed at the prompt. Putting one on a
-line inside a function isn't supported yet — some do nothing there,
-and some could damage the workspace.
+System commands run only when typed at the prompt. Anywhere else —
+on a line inside a function, in `⍎` or `⎕X` text, or typed as `⎕`
+input while a function is waiting for it — a command gives
+`Incorrect Command` and isn't run, `)OFF` included. With a function
+suspended, commands typed at the prompt work as usual, so `)SI`,
+`)STOP`, `)STEP`, `)LEFT` and the rest are there for debugging it.
 
 Workspaces live in `$APLHOME/ws/` as `name.ws`, and function source
 files in `$APLHOME/fns/` as `name.fn`.
@@ -38,7 +41,7 @@ is used.
 
 Discards everything in the active workspace and starts a new, empty
 one named `Clear WS`, then displays that name. Index origin goes back
-to `1`, `)INTDIV` to `OFF`, and any boot function is removed; the
+to `1`, `)INTDIV` to `OFF`, `)SEQUNIT` to `1`, and any boot function is removed; the
 current `)WIDTH` and `)DIGITS` settings carry over. With `size`, the
 new workspace is also resized to that many bytes. Short form `)CL`.
 
@@ -49,7 +52,7 @@ new workspace is also resized to that many bytes. Short form `)CL`.
 Replaces the active workspace with the saved workspace `name`, then
 displays when it was saved. With no name, loads `continue`. The
 workspace comes back at the size it was saved at, along with its own
-index origin, `)WIDTH`, `)DIGITS`, `)INTDIV` and boot function
+index origin, `)WIDTH`, `)DIGITS`, `)INTDIV`, `)SEQUNIT` and boot function
 setting. Loading doesn't run the boot function — that only
 happens when the interpreter starts up. If the file isn't found, is
 damaged, or won't fit, the active workspace is left as it was — except
@@ -242,6 +245,28 @@ is a syntax error. Saved with the workspace. New and cleared
 workspaces start `OFF`; workspaces saved before this setting existed
 load as `ON`.
 
+`)SEQUNIT`
+
+`)SEQUNIT n`
+
+Displays or sets how many units each beat is divided into for the
+MIDI sequencer's timing: a track's steps and lengths (`⎕SEQTRACK`),
+the positions and loop lengths `⎕SEQSTATE` reports, `⎕SEQRUNTO`, and
+the steps, lengths and track lengths of MIDI files (`⎕MIDIREAD`,
+`⎕MIDIINFO`). `1`, the default, counts in beats. At `)SEQUNIT 24`,
+counting quarter notes, a sixteenth is `6`, a thirty-second `3` and an
+eighth-note triplet `8`, so the usual values are whole numbers. The
+tempo stays in beats per minute. `n` must divide 2520 (the sequencer's
+ticks per beat) and be at most 255, so a whole number of units is
+always exact: `1`–`10`, `12`, `14`, `15`, `18`, `20`, `21`, `24`, `28`,
+`30`, `35`, `36`, `40`, `42`, `45`, `56`, `60`, `63`, `70`, `72`, `84`,
+`90`, `105`, `120`, `126`, `140`, `168`, `180`, `210` or `252`. Anything
+else, `16` included, is a Domain Error and changes nothing. Setting it
+displays the previous value. Saved with the workspace, since the
+numbers in a workspace's track matrices depend on it; new and cleared
+workspaces, and workspaces saved before this setting existed, start at
+`1`. Typed in full; no short form.
+
 `)BASE`
 
 `)BASE hex`
@@ -363,16 +388,22 @@ with the workspace, and starts `OFF`.
 
 `)LEFT`
 
+While a function is stopped, displays the left operand of the next
+operation on the stopped line: the value computed most recently. With
+`)STEP OP`, stopping after `push var: N` in `N-1` gives `N`'s value.
+At the start of a line, before anything on it has run, there's nothing
+to display, and a message says so. After an error, it shows the left
+operand of the operation that failed — `3` for `3÷0`. `)RIGHT` shows
+the other operand. Short form `)LE`.
+
 `)RIGHT`
 
-While a function is stopped, display the operands waiting on the
-stopped line: `)LEFT` the value computed most recently, `)RIGHT` the
-one before it — the left and right operands of the next operation.
-With `)STEP OP`, stopping after `push var: N` in `N-1` gives `N`'s
-value for `)LEFT` and `1` for `)RIGHT`. At the start of a line, before
-anything on it has run, there's nothing to display, and a message says
-so. After an error, they show the operands of the operation that
-failed — for `3÷0`, `3` and `0`. Short forms `)LE` and `)RI`.
+While a function is stopped, displays the right operand of the next
+operation on the stopped line: the value computed before the one
+`)LEFT` shows. With `)STEP OP`, stopping after `push var: N` in `N-1`
+gives `1`. At the start of a line there's nothing to display, and a
+message says so. After an error, it shows the right operand of the
+operation that failed — `0` for `3÷0`. Short form `)RI`.
 
 ---
 
@@ -469,11 +500,6 @@ form `)STA`.
 
 Writes a full internal dump of the workspace to `debug.log` in
 `$APLHOME`, and displays that file's path.
-
-`)TEXT`
-
-Writes the names of all functions and variables to `text_dump.txt`
-in the current directory, each function name prefixed with `)enter`.
 
 `)GARB`
 

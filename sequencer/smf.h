@@ -49,8 +49,10 @@
 	(V100) the key signature, C major; there is no separate conductor
 	track, as MuseScore writes it, so the file's track k is the
 	caller's track k. V100: each track's bank select and program
-	change, if it has a program, at its start. No time signature
-	(players assume 4/4), no names, for now. Each track's
+	change, if it has a program, at its start. V101: the time
+	signature in track 1, when the caller gives one (none: players
+	assume 4/4), and each track's name, when it has one, as its
+	first event. Each track's
 	end-of-track falls at its length, and the length is also recorded
 	exactly in a marker the reader looks for, so a loop comes back as
 	long as it went in.
@@ -189,13 +191,22 @@ struct smf_wtrack {
 	int     channel;	/* 1..16 */
 	int     program;	/* 0..127, or -1 */
 	int     bank;		/* 0..16383, or -1 */
+	/* V101: written as the track's name (FF 03), its first event;
+	   NULL or "" for none (so zeros mean no name). Written as the
+	   bytes given; the caller keeps them to what it wants in a file
+	   (the sequencer's names are printable ASCII). */
+	const char *name;
 };
 
 /* Writes ntracks (1..65535) tracks as a format 1 file with division
    ticks per beat (1..32767) and, at the start of track 1, the tempo
-   (beats per minute; none if tempo <= 0) and the key signature C
-   major (FF 59 02 00 00; V100, agreed Oct 18, 2026: MuseScore guessed
-   a key for a file with none). Within a track, note-offs
+   (beats per minute; none if tempo <= 0), the time signature (V101,
+   Oct 19, 2026: ts_num over ts_den, FF 58 04 nn dd 18 08; none if
+   ts_num <= 0, else ts_num 1..255 and ts_den a power of 2 from 1 to
+   32; MuseScore assumes 4/4 without one and reads only nn and dd)
+   and the key signature C major (FF 59 02 00 00; V100, agreed Oct 18,
+   2026: MuseScore guessed a key for a file with none), in that order,
+   after the track's name if it has one. Within a track, note-offs
    on a tick come before note-ons, so a repeated pitch is struck
    again. No running status. *buf receives a malloc'd copy of the file
    (free it), *len its size. SMF_ERR_VALUE if anything is out of
@@ -205,7 +216,8 @@ struct smf_wtrack {
    doesn't fit the file's 24 bits and is written as the slowest it
    can hold. */
 int smf_write(const struct smf_wtrack *tracks, int ntracks, int division,
-              double tempo, unsigned char **buf, size_t *len);
+              double tempo, int ts_num, int ts_den,
+              unsigned char **buf, size_t *len);
 
 /* Short English text for an error code, for the test driver. */
 const char *smf_strerror(int err);

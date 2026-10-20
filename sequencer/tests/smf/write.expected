@@ -125,3 +125,162 @@ track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
       60 1              90 1              1
       64 2              80 2              1
 edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## time signature 3/4
+92 bytes
+    4d 54 68 64 00 00 00 06 00 01 00 01 09 d8 4d 54
+    72 6b 00 00 00 46 00 ff 51 03 07 a1 20 00 ff 58
+    04 03 02 18 08 00 ff 59 02 00 00 00 ff 7f 0e 7d
+    52 41 50 4c 01 00 00 00 00 00 00 27 60 00 90 3c
+    64 93 58 80 3c 40 00 90 3c 5a 93 58 80 3c 40 00
+    90 40 50 a7 30 80 40 40 00 ff 2f 00
+file: format 1, 1 track, 2520 ticks per beat, tempo 120, time signature 3/4
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program none
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## time signature 6/8, no tempo
+85 bytes
+    4d 54 68 64 00 00 00 06 00 01 00 01 09 d8 4d 54
+    72 6b 00 00 00 3f 00 ff 58 04 06 03 18 08 00 ff
+    59 02 00 00 00 ff 7f 0e 7d 52 41 50 4c 01 00 00
+    00 00 00 00 27 60 00 90 3c 64 93 58 80 3c 40 00
+    90 3c 5a 93 58 80 3c 40 00 90 40 50 a7 30 80 40
+    40 00 ff 2f 00
+file: format 1, 1 track, 2520 ticks per beat, tempo none, time signature 6/8
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program none
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## time signature 1/1
+92 bytes
+file: format 1, 1 track, 2520 ticks per beat, tempo 120, time signature 1/1
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program none
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## time signature 255/32
+92 bytes
+file: format 1, 1 track, 2520 ticks per beat, tempo 120, time signature 255/32
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program none
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## time signature none (-1 -1)
+84 bytes
+file: format 1, 1 track, 2520 ticks per beat, tempo 120, time signature none
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program none
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## time signature 3/6
+write error: a value the file can't hold
+## time signature 3/64
+write error: a value the file can't hold
+## time signature 256/4
+write error: a value the file can't hold
+## time signature 3/0
+write error: a value the file can't hold
+## track 1 named PIANO, 3/4
+101 bytes
+    4d 54 68 64 00 00 00 06 00 01 00 01 09 d8 4d 54
+    72 6b 00 00 00 4f 00 ff 03 05 50 49 41 4e 4f 00
+    ff 51 03 07 a1 20 00 ff 58 04 03 02 18 08 00 ff
+    59 02 00 00 00 ff 7f 0e 7d 52 41 50 4c 01 00 00
+    00 00 00 00 27 60 00 90 3c 64 93 58 80 3c 40 00
+    90 3c 5a 93 58 80 3c 40 00 90 40 50 a7 30 80 40
+    40 00 ff 2f 00
+file: format 1, 1 track, 2520 ticks per beat, tempo 120, time signature 3/4
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program none
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## track 1 named PIANO, 3/4, program 40
+104 bytes
+    4d 54 68 64 00 00 00 06 00 01 00 01 09 d8 4d 54
+    72 6b 00 00 00 52 00 ff 03 05 50 49 41 4e 4f 00
+    ff 51 03 07 a1 20 00 ff 58 04 03 02 18 08 00 ff
+    59 02 00 00 00 ff 7f 0e 7d 52 41 50 4c 01 00 00
+    00 00 00 00 27 60 00 c0 28 00 90 3c 64 93 58 80
+    3c 40 00 90 3c 5a 93 58 80 3c 40 00 90 40 50 a7
+    30 80 40 40 00 ff 2f 00
+file: format 1, 1 track, 2520 ticks per beat, tempo 120, time signature 3/4
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program 40
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+edges: voices(0) -1, voices(2) -1, cols(1,2) 3, info(1,2) 3
+## names on tracks 1, 3, 5 (2 empty with "", 4 none)
+412 bytes
+    4d 54 68 64 00 00 00 06 00 01 00 05 09 d8 4d 54
+    72 6b 00 00 00 47 00 ff 03 05 50 49 41 4e 4f 00
+    ff 51 03 07 a1 20 00 ff 59 02 00 00 00 ff 7f 0e
+    7d 52 41 50 4c 01 00 00 00 00 00 00 27 60 00 90
+    3c 64 93 58 80 3c 40 00 90 3c 5a 93 58 80 3c 40
+    00 90 40 50 a7 30 80 40 40 00 ff 2f 00 4d 54 72
+    6b 00 00 00 04 00 ff 2f 00 4d 54 72 6b 00 00 00
+    5c 00 ff 03 0e 48 69 2d 68 61 74 20 26 20 73 6e
+    61 72 65 00 ff 7f 0e 7d 52 41 50 4c 01 00 00 00
+    00 00 00 2c 4c 00 b9 00 7f 00 b9 20 7f 00 c9 00
+    93 58 99 2a 64 83 24 89 2a 40 83 24 99 2a 46 83
+    24 89 2a 40 83 24 99 2a 46 83 24 89 2a 40 96 7c
+    99 26 7f 93 58 89 26 40 89 6c ff 2f 00 4d 54 72
+    6b 00 00 00 3f 00 ff 7f 0e 7d 52 41 50 4c 01 00
+    00 00 00 00 00 22 74 00 b1 00 00 00 b1 20 00 00
+    c1 7f 00 91 32 64 89 6c 81 32 40 89 6c 91 34 64
+    89 6c 81 34 40 89 6c 91 35 64 89 6c 81 35 40 93
+    58 ff 2f 00 4d 54 72 6b 00 00 00 80 00 ff 03 40
+    41 20 6e 61 6d 65 20 74 68 61 74 20 69 73 20 65
+    78 61 63 74 6c 79 20 73 69 78 74 79 2d 66 6f 75
+    72 20 63 68 61 72 61 63 74 65 72 73 20 6c 6f 6e
+    67 2c 20 61 73 20 69 74 20 65 6e 64 73 2e 2e 2e
+    00 ff 7f 0e 7d 52 41 50 4c 01 00 00 00 00 00 00
+    2c 4c 00 92 3c 64 89 6c 82 3c 40 00 92 3e 64 89
+    6c 82 3e 40 a7 30 92 40 64 89 6c 82 40 40 00 92
+    41 64 89 6c 82 41 40 89 6c ff 2f 00
+file: format 1, 5 tracks, 2520 ticks per beat, tempo 120, time signature none
+track 1: end 10080, grid 2520, length 10080 (4 beats, exact), 1 voice
+  voice 1: 3 notes, channel 1, pitches 60..64, program none
+      60 1             100 1              1
+      60 1              90 1              1
+      64 2              80 2              1
+track 2: end 0, grid 2520, length 0 (0 beats), 0 voices
+track 3: end 11340, grid 840, length 11340 (4.5 beats, exact), 1 voice
+  voice 1: 4 notes, channel 10, pitches 38..42, program 0, bank 16383
+      -1 1              -1 -1            -1
+      42 0.3333333333  100 0.1666666667  10
+      42 0.3333333333   70 0.1666666667  10
+      42 1.333333333    70 0.1666666667  10
+      38 1.5           127 1             10
+track 4: end 8820, grid 2520, length 8820 (3.5 beats, exact), 1 voice
+  voice 1: 3 notes, channel 2, pitches 50..53, program 127, bank 0
+      50 1             100 0.5            2
+      52 1             100 0.5            2
+      53 1.5           100 0.5            2
+track 5: end 11340, grid 1260, length 11340 (4.5 beats, exact), 1 voice
+  voice 1: 4 notes, channel 3, pitches 60..65, program none
+      60 0.5           100 0.5            3
+      62 2.5           100 0.5            3
+      64 0.5           100 0.5            3
+      65 1             100 0.5            3
+edges: voices(0) -1, voices(6) -1, cols(1,2) 3, info(1,2) 3
+## an empty track named BASS
+40 bytes
+    4d 54 68 64 00 00 00 06 00 01 00 01 09 d8 4d 54
+    72 6b 00 00 00 12 00 ff 03 04 42 41 53 53 00 ff
+    59 02 00 00 00 ff 2f 00
+file: format 1, 1 track, 2520 ticks per beat, tempo none, time signature none
+track 1: end 0, grid 2520, length 0 (0 beats), 0 voices
+edges: voices(0) -1, voices(2) -1, cols(1,1) 3, info(1,1) 3

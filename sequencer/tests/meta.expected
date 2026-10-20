@@ -1,0 +1,153 @@
+# V101: settings kept with the sequence for MIDI files, which playback
+# never reads: the meter (seq_set_meter(); -1 -1 none, the default) and
+# each track's name (seq_set_name(); "" none). Errors change nothing.
+# Reset by an open from CLOSED; kept through new versions, clear, and a
+# reopen after a lost port.
+meter
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+meter 3 4
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+name 1 BASS
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+names
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+open virtual
+meter
+  meter: -1 -1
+names
+# the meter: a power of 2 from 1 to 32 below, 1..255 above
+meter 3 4
+  prev: -1 -1
+meter 6 8
+  prev: 3 4
+meter 1 1
+  prev: 6 8
+meter 255 32
+  prev: 1 1
+meter
+  meter: 255 32
+meter 0 4
+  error: SEQ_ERR_VALUE (value out of range)
+meter 256 4
+  error: SEQ_ERR_VALUE (value out of range)
+meter 3 0
+  error: SEQ_ERR_VALUE (value out of range)
+meter 3 6
+  error: SEQ_ERR_VALUE (value out of range)
+meter 3 64
+  error: SEQ_ERR_VALUE (value out of range)
+meter -1 4
+  error: SEQ_ERR_VALUE (value out of range)
+meter 3 -1
+  error: SEQ_ERR_VALUE (value out of range)
+meter -2 -2
+  error: SEQ_ERR_VALUE (value out of range)
+meter
+  meter: 255 32
+meter -1 -1
+  prev: 255 32
+meter
+  meter: -1 -1
+meter 7 8
+  prev: -1 -1
+# names: printable ASCII, up to 64 bytes
+name 1 BASS
+  prev: ''
+name 2 Hi-hat & snare
+  prev: ''
+name 16 ~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\x5C]^_`{|}
+  prev: ''
+names
+  1: 'BASS'
+  2: 'Hi-hat & snare'
+  16: '~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}'
+name 1 DOUBLE BASS
+  prev: 'BASS'
+name 2
+  prev: 'Hi-hat & snare'
+names
+  1: 'DOUBLE BASS'
+  16: '~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}'
+name 0 X
+  error: SEQ_ERR_TRACK (track number out of range)
+name 17 X
+  error: SEQ_ERR_TRACK (track number out of range)
+name 3 tab\x09here
+  error: SEQ_ERR_VALUE (value out of range)
+name 3 del\x7F
+  error: SEQ_ERR_VALUE (value out of range)
+name 3 high\xC4
+  error: SEQ_ERR_VALUE (value out of range)
+name 3 A name that is exactly sixty-four characters long, as it ends...
+  prev: ''
+name 4 A name that is exactly sixty-five characters long, as it ends....
+  error: SEQ_ERR_VALUE (value out of range)
+names
+  1: 'DOUBLE BASS'
+  3: 'A name that is exactly sixty-four characters long, as it ends...'
+  16: '~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}'
+# kept through versions, clear and play; not on the log
+track 1 60:1 62:1
+  takes over at beat 0.000 (t0)
+track 3 67:2
+  takes over at beat 0.000 (t0)
+play continue
+  was playing: 0
+runto 2
+clear 1 3
+  held: 1 1
+runto 4
+play stop
+  was playing: 1
+log
+  0.000 t0 0.000ms ON  ch1 60 v100
+  0.000 t0 0.000ms ON  ch3 67 v100
+  1.000 t2520 500.000ms OFF ch1 60
+  1.000 t2520 500.000ms ON  ch1 62 v100
+  2.000 t5040 1000.000ms OFF ch1 62
+  2.000 t5040 1000.000ms OFF ch3 67
+names
+  1: 'DOUBLE BASS'
+  3: 'A name that is exactly sixty-four characters long, as it ends...'
+  16: '~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}'
+meter
+  meter: 7 8
+# kept through a lost port and its reopen
+track 1 60:1
+  takes over at beat 4.000 (t10080)
+play continue
+  was playing: 0
+runto 5
+failwrites on
+runto 6
+  error: SEQ_ERR_IO (MIDI port lost)
+failwrites off
+state
+  seq: PORT_LOST beat 5.000 (t12600) tempo 120 tracks 1
+  track 1: notes 1 ch 1 mute 0 loop 1 vel 100 length 1.000 (t2520) pending 0 position 0.000 (t0)
+meter
+  meter: 7 8
+names
+  1: 'DOUBLE BASS'
+  3: 'A name that is exactly sixty-four characters long, as it ends...'
+  16: '~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}'
+open virtual
+meter
+  meter: 7 8
+names
+  1: 'DOUBLE BASS'
+  3: 'A name that is exactly sixty-four characters long, as it ends...'
+  16: '~ 0123456789 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}'
+# discarded by close, and a fresh open starts with none
+close
+  closed: 1
+meter
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+name 1 X
+  error: SEQ_ERR_NOT_OPEN (sequencer not open)
+open virtual
+meter
+  meter: -1 -1
+names
+close
+  closed: (none)

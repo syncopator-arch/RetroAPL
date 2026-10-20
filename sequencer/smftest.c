@@ -179,15 +179,15 @@ hexdump(FILE *out, const unsigned char *b, size_t n)
 }
 
 static void
-write_case(FILE *out, const char *what, const struct smf_wtrack *t, int nt,
-           double tempo, int hex)
+write_case_ts(FILE *out, const char *what, const struct smf_wtrack *t,
+              int nt, double tempo, int ts_num, int ts_den, int hex)
 {
 	unsigned char *buf;
 	size_t len;
 	int r;
 
 	fprintf(out, "## %s\n", what);
-	r = smf_write(t, nt, 2520, tempo, &buf, &len);
+	r = smf_write(t, nt, 2520, tempo, ts_num, ts_den, &buf, &len);
 	if (r != SMF_OK)
 	{
 		fprintf(out, "write error: %s\n", smf_strerror(r));
@@ -197,6 +197,14 @@ write_case(FILE *out, const char *what, const struct smf_wtrack *t, int nt,
 	if (hex) hexdump(out, buf, len);
 	dump_buf(out, buf, len);
 	free(buf);
+}
+
+/* the cases before V101: no time signature */
+static void
+write_case(FILE *out, const char *what, const struct smf_wtrack *t, int nt,
+           double tempo, int hex)
+{
+	write_case_ts(out, what, t, nt, tempo, 0, 0, hex);
 }
 
 #define B 2520			/* a beat */
@@ -229,10 +237,11 @@ dump_write(FILE *out)
 	struct smf_wtrack t[5];
 	int i;
 
-	/* V100: no programs unless a case gives them */
+	/* V100: no programs unless a case gives them; V101: no names */
 	for (i = 0; i < 5; i++) {
 		t[i].channel = 1;
 		t[i].program = t[i].bank = -1;
+		t[i].name = NULL;
 	}
 
 	t[0].notes = a; t[0].n = 3; t[0].length = 4 * B;
@@ -276,6 +285,37 @@ dump_write(FILE *out)
 	t[0].program = -1;
 	write_case(out, "bank 16384 with no program (not looked at)", t, 1,
 	           120.0, 0);
+
+	/* V101: the time signature (track 1, after the tempo, before the
+	   key) and track names (each track's first event); the reader
+	   reports the time signature, the names show in the bytes */
+	t[0].bank = -1;
+	write_case_ts(out, "time signature 3/4", t, 1, 120.0, 3, 4, 1);
+	write_case_ts(out, "time signature 6/8, no tempo", t, 1, 0.0, 6, 8, 1);
+	write_case_ts(out, "time signature 1/1", t, 1, 120.0, 1, 1, 0);
+	write_case_ts(out, "time signature 255/32", t, 1, 120.0, 255, 32, 0);
+	write_case_ts(out, "time signature none (-1 -1)", t, 1, 120.0, -1, -1,
+	              0);
+	write_case_ts(out, "time signature 3/6", t, 1, 120.0, 3, 6, 0);
+	write_case_ts(out, "time signature 3/64", t, 1, 120.0, 3, 64, 0);
+	write_case_ts(out, "time signature 256/4", t, 1, 120.0, 256, 4, 0);
+	write_case_ts(out, "time signature 3/0", t, 1, 120.0, 3, 0, 0);
+	t[0].name = "PIANO";
+	write_case_ts(out, "track 1 named PIANO, 3/4", t, 1, 120.0, 3, 4, 1);
+	t[0].program = 40;
+	write_case_ts(out, "track 1 named PIANO, 3/4, program 40", t, 1, 120.0,
+	              3, 4, 1);
+	t[0].program = -1;
+	t[1].name = "";				/* "": no name */
+	t[2].name = "Hi-hat & snare";
+	t[4].name = "A name that is exactly sixty-four characters long, as it ends...";
+	write_case_ts(out, "names on tracks 1, 3, 5 (2 empty with \"\", 4 "
+	              "none)", t, 5, 120.0, 0, 0, 1);
+	t[2].name = NULL;
+	t[4].name = NULL;
+	t[0].name = "BASS";
+	t[0].notes = NULL; t[0].n = 0; t[0].length = 0;
+	write_case_ts(out, "an empty track named BASS", t, 1, 0.0, 0, 0, 1);
 }
 
 static int
