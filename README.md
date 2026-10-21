@@ -175,14 +175,16 @@ not the sequencer library, which the front end also needs. A plain
 
 ### Windows details
 
-The build uses the MinGW compiler and CMake that come with Qt, which
-the scripts find under `C:\Qt` by themselves. With Qt somewhere else,
-or with more than one Qt 6 version installed, set these before running
-`build.bat`:
+The build uses the MinGW compiler and CMake that come with Qt. The
+scripts find them under `C:\Qt` by themselves, and add them to `PATH`
+for the length of the build only. With Qt somewhere else, or with more
+than one Qt 6 version installed (the last one in name order is used,
+so 6.9 is picked over 6.10), set these before running `build.bat`:
 
 ```bat
 set QT_PREFIX=C:\Qt\6.11.1\mingw_64
 set MINGW_ROOT=C:\Qt\Tools\mingw1310_64
+set CMAKE_BIN=C:\Qt\Tools\CMake_64\bin
 ```
 
 `build.bat` runs two scripts in `frontend\`:
@@ -193,6 +195,12 @@ set MINGW_ROOT=C:\Qt\Tools\mingw1310_64
   plugins in `frontend\deploy\`. Then it checks that every DLL they
   need is either there or part of Windows, and names any that is
   missing.
+
+Both start by calling `winenv.bat`, also in `frontend\`. It finds the
+Qt kit, the MinGW compiler and CMake (or uses the settings above),
+puts them on `PATH`, and prints which ones it chose. It stops with a
+message naming what's missing if it can't find one. It isn't meant to
+be run on its own.
 
 `setup-aplhome.bat` copies `frontend\deploy\` into `%APLHOME%\bin`.
 
