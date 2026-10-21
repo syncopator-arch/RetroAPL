@@ -15,7 +15,7 @@
 #       missing and replaced if this repository has a different
 #       version, so re-running setup after an update (and rebuild)
 #       brings them up to date.
-#   User files -- ws/, fns/, images/.
+#   User files -- ws/, fns/, images/, midi/.
 #       Starting examples only. Copied if missing, never replaced,
 #       so your own workspaces and functions are never overwritten.
 #
@@ -42,7 +42,7 @@ TARGET="$(cd "$TARGET" && pwd)"     # full path, for the menu entry and APLHOME 
 
 echo "Setting up \$APLHOME in: $TARGET"
 mkdir -p "$TARGET/bin" "$TARGET/fonts" "$TARGET/resources" \
-         "$TARGET/ws" "$TARGET/fns" "$TARGET/images"
+         "$TARGET/ws" "$TARGET/fns" "$TARGET/images" "$TARGET/midi"
 
 added=0; updated=0; kept=0
 
@@ -87,7 +87,7 @@ if [ -f "$BINARY" ]; then
 fi
 
 # --- user files ------------------------------------------------------------
-for dir in ws fns images; do
+for dir in ws fns images midi; do
     for f in "$SRC/$dir"/*; do
         [ -f "$f" ] && install_user_file "$f" "$TARGET/$dir/$(basename "$f")"
     done
@@ -119,7 +119,7 @@ if [ "$have_binary" = 1 ]; then
 else
     echo ""
     echo "The program hasn't been built yet (no $BINARY)."
-    echo "Run frontend/build.sh, then run this script again to install it"
+    echo "Run ./build.sh, then run this script again to install it"
     echo "in $TARGET/bin and add it to your applications menu."
 fi
 

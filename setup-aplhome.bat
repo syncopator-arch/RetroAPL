@@ -1,16 +1,20 @@
 @echo off
 rem setup-aplhome.bat
 rem
-rem Create or update an APLHOME folder from this repository.
+rem Create or update an APLHOME folder from this repository, and -- if
+rem the program has been built and deployed (build.bat) -- install it in
+rem APLHOME\bin and add RetroAPL to the Start menu.
 rem
 rem Usage: setup-aplhome.bat [target-folder]
 rem   target-folder  Defaults to %APLHOME% if set, else C:\aplhome.
 rem
 rem Two kinds of files are handled differently:
-rem   Program files -- fonts\kapl.ttf, help.dat, resources\*.md.
+rem   Program files -- bin\ (APLTerminal.exe and its DLLs, from
+rem       frontend\deploy\), fonts\kapl.ttf, help.dat, resources\*.md.
 rem       Copied if missing, replaced if this repository's copy differs,
-rem       so re-running setup after an update brings them up to date.
-rem   User files -- ws\, fns\, images\.
+rem       so re-running setup after an update (and rebuild) brings them
+rem       up to date.
+rem   User files -- ws\, fns\, images\, midi\.
 rem       Starting examples only. Copied if missing, never replaced.
 rem
 rem If APLHOME isn't set yet, it is set for your account (setx).
@@ -36,7 +40,7 @@ if not exist "%SRC%\" goto :no_src
 if not exist "%REPO%\fonts\kapl.ttf" goto :no_font
 
 echo Setting up APLHOME in: %TARGET%
-for %%D in (bin fonts resources ws fns images) do if not exist "%TARGET%\%%D\" mkdir "%TARGET%\%%D"
+for %%D in (bin fonts resources ws fns images midi) do if not exist "%TARGET%\%%D\" mkdir "%TARGET%\%%D"
 
 rem robocopy options: quiet output, list only the files it copies.
 set "RC=/NJH /NJS /NDL /NP /NS /NC"
@@ -53,11 +57,37 @@ if exist "%SRC%\resources\" robocopy "%SRC%\resources" "%TARGET%\resources" *.* 
 if errorlevel 8 goto :copy_failed
 
 rem --- user files ------------------------------------------------------------
-for %%D in (ws fns images) do if exist "%SRC%\%%D\" robocopy "%SRC%\%%D" "%TARGET%\%%D" *.* %RC% %KEEP%
+for %%D in (ws fns images midi) do if exist "%SRC%\%%D\" robocopy "%SRC%\%%D" "%TARGET%\%%D" *.* %RC% %KEEP%
 if errorlevel 8 goto :copy_failed
 
 echo.
 echo Done. Existing workspaces, functions and images were left as they were.
+
+rem --- the program and the Start menu --------------------------------------
+rem frontend\deploy\ is made by windeploy.bat (build.bat runs it): the
+rem program, the Qt and MinGW DLLs and the Qt plugin folders.
+set "DEPLOY=%REPO%\frontend\deploy"
+if not exist "%DEPLOY%\APLTerminal.exe" goto :no_program
+robocopy "%DEPLOY%" "%TARGET%\bin" *.* /E %RC%
+if errorlevel 8 goto :copy_failed
+
+echo.
+powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Programs')+'\RetroAPL.lnk'); $s.TargetPath='%TARGET%\bin\APLTerminal.exe'; $s.WorkingDirectory='%TARGET%'; $s.Description='RetroAPL'; $s.Save()"
+if errorlevel 1 (
+    echo RetroAPL is installed in %TARGET%\bin. ^(The Start menu entry
+    echo couldn't be made; run %TARGET%\bin\APLTerminal.exe directly.^)
+) else (
+    echo RetroAPL is installed in %TARGET%\bin and in your Start menu.
+)
+goto :aplhome
+
+:no_program
+echo.
+echo The program hasn't been built yet (no %DEPLOY%\APLTerminal.exe).
+echo Run build.bat, then run this script again to install it in
+echo %TARGET%\bin and add it to your Start menu.
+
+:aplhome
 
 rem --- APLHOME ---------------------------------------------------------------
 if not defined APLHOME goto :set_aplhome

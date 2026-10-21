@@ -20,14 +20,16 @@ find_package(Qt6 REQUIRED COMPONENTS
 
 # ── Backend integration ───────────────────────────────────────────────
 # Backend source tree is a sibling directory of this frontend tree.
-# libapl.a must be built first with: cd ../backend && make libapl.a
+# libapl.a must be built first: build.sh / build.bat in the repository
+# root build everything in order, or run `make` in ../backend.
 set(BACKEND_DIR "${CMAKE_SOURCE_DIR}/../backend")
 
 # Make sure the static lib exists before we try to link it
 if(NOT EXISTS "${BACKEND_DIR}/libapl.a")
-    message(WARNING
+    message(FATAL_ERROR
         "libapl.a not found in ${BACKEND_DIR} -- "
-        "run 'make libapl.a' in the backend directory before building the frontend.")
+        "build with build.sh (Linux) or build.bat (Windows) in the "
+        "repository root, or run 'make' in the backend directory first.")
 endif()
 
 # Headers: platform.h, externs.h, globals.h, depend.h, etc.
@@ -40,10 +42,11 @@ include_directories("${BACKEND_DIR}")
 # reaches it through seqf_close() in libapl.a.
 set(SEQUENCER_DIR "${CMAKE_SOURCE_DIR}/../sequencer")
 if(NOT EXISTS "${SEQUENCER_DIR}/libseq.a")
-    message(WARNING
+    message(FATAL_ERROR
         "libseq.a not found in ${SEQUENCER_DIR} -- "
-        "run 'make' in the backend directory (or 'make libseq.a' in the "
-        "sequencer directory) before building the frontend.")
+        "build with build.sh (Linux) or build.bat (Windows) in the "
+        "repository root, or run 'make libseq.a' in the sequencer "
+        "directory first. (The backend's 'make libapl.a' doesn't build it.)")
 endif()
 
 # The sequencer's playback thread uses POSIX threads on both platforms
@@ -120,28 +123,32 @@ endif()
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
 )
-install(FILES kapl.ttf
+install(FILES "${CMAKE_SOURCE_DIR}/../fonts/kapl.ttf"
     DESTINATION share/${PROJECT_NAME}/fonts
 )
+# Note: the program loads the font only from $APLHOME/fonts/kapl.ttf,
+# so this install isn't how RetroAPL is normally set up: use
+# setup-aplhome.sh / setup-aplhome.bat in the repository root instead.
 
 # =============================================================================
 # Build instructions
 # =============================================================================
 #
-# 1. Build the backend static library and the sequencer library first:
-#      cd ../backend
-#      make libapl.a
+# The usual way: build.sh (Linux) or build.bat (Windows) in the
+# repository root, which build all three parts in order. By hand:
+#
+# 1. The sequencer library, then the interpreter:
 #      make -C ../sequencer libseq.a
-#    (a plain `make` in the backend does both, and builds apl_cli)
+#      make -C ../backend
+#    (the backend's default target builds libapl.a and apl_cli, and
+#    runs the sequencer's make itself; `make libapl.a` alone doesn't)
 #
-# 2. Build the frontend:
-#      cd ../frontend
-#      mkdir build && cd build
-#      cmake ..
-#      make
+# 2. The front end:
+#      cmake -S . -B build
+#      cmake --build build
 #
-# 3. Run from the frontend directory (so kapl.ttf and FNS/ are found):
-#      cd ..
-#      ./build/APLTerminal
+# 3. Set up $APLHOME (font, help files, workspaces) and install the
+#    program there: ../setup-aplhome.sh. The program reads everything,
+#    the font included, from $APLHOME, not from this directory.
 #
 # =============================================================================
