@@ -270,15 +270,25 @@ ws_off_t fnum_off;
             lv = dup_val(VLEFT);        /* make a temp dup */
             if (!lv) { ERROR_CODE = SET_ERR(ERR_WSFULL); goto bfn_exit; }
         }
-        /* anchor lv via tmp_ve -- safe: dup_sval always clears tmp_ve before
-           returning, and tmp_me is unused, so no conflict */
-        wspace->tmp_ve = WS_OFF(lv);
-        lv->ve_reference = WS_OFF(&wspace->tmp_ve);
+        /* anchor lv via tmp_me, NOT tmp_ve: the right argument's
+           dup_val() below goes through dup_sval(), which uses tmp_ve
+           as its own anchor -- MakeEnt() writes the new copy's offset
+           over it and dup_sval() then zeroes it. With lv anchored there
+           (until V103), a GC inside that MakeEnt() (every allocation,
+           with )GARB on) moved lv, the anchor was then lost, and lv
+           was never re-derived: M got a stale pointer into the right
+           argument's copy, and ⍴M read B's data as a header and ran
+           off the end of LSCRATCH. Seen as (12+7 4 0) F B -- a left
+           temp with garbage below it, a right argument that needs
+           copying. Only fn.c uses tmp_me, so nothing in dup_val()
+           can touch it. */
+        wspace->tmp_me = WS_OFF(lv);
+        lv->ve_reference = WS_OFF(&wspace->tmp_me);
 		debug_check_ref("fn.c/lv_floatv", (struct MemEnt*)lv, lv->ve_reference); /* %%% DBG */
-        VLEFT = &wspace->tmp_ve;
+        VLEFT = &wspace->tmp_me;
         stack_pop(1);
         rf = (struct Func0Ent *)WS_PTR(SYMT[fnum].value);
-        lv = (struct ValEnt *)WS_PTR(wspace->tmp_ve);  /* re-derive after pop */
+        lv = (struct ValEnt *)WS_PTR(wspace->tmp_me);  /* re-derive after pop */
     } else {
         VLEFT = (ws_off_t *)0;
         lv    = (struct ValEnt *)0;
@@ -298,17 +308,19 @@ ws_off_t fnum_off;
             rv = dup_val(VRIGHT);       /* make a temp dup */
             if (!rv) { ERROR_CODE = SET_ERR(ERR_WSFULL); goto bfn_exit; }
         }
-        /* anchor rv via tmp_me */
-        wspace->tmp_me = WS_OFF(rv);
-        rv->ve_reference = WS_OFF(&wspace->tmp_me);
+        /* anchor rv via tmp_ve -- safe here: dup_val() is done, and
+           dup_sval() left tmp_ve zero; nothing below allocates */
+        wspace->tmp_ve = WS_OFF(rv);
+        rv->ve_reference = WS_OFF(&wspace->tmp_ve);
 		debug_check_ref("fn.c/rv_floatv", (struct MemEnt*)rv, rv->ve_reference); /* %%% DBG */
-        VRIGHT = &wspace->tmp_me;
+        VRIGHT = &wspace->tmp_ve;
         stack_pop(1);
         rf = (struct Func0Ent *)WS_PTR(SYMT[fnum].value);
-        rv = (struct ValEnt *)WS_PTR(wspace->tmp_me);  /* re-derive after pop */
-        /* re-derive lv too if we have one -- rv's dup_val may have compacted pool */
-        if (wspace->tmp_ve)
-            lv = (struct ValEnt *)WS_PTR(wspace->tmp_ve);
+        rv = (struct ValEnt *)WS_PTR(wspace->tmp_ve);  /* re-derive after pop */
+        /* re-derive lv too if we have one -- rv's dup_val may have
+           compacted the pool, and GarbCollect() kept tmp_me current */
+        if (wspace->tmp_me)
+            lv = (struct ValEnt *)WS_PTR(wspace->tmp_me);
     }
 
     j  = global_save(rf->f0e_result);

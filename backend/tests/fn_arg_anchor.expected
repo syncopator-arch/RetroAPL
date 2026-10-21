@@ -1,0 +1,28 @@
+Clear WS
+     ⍝ begin_fn() anchors: a left temp with garbage below it, a right argument that must be copied (V103)
+     B←43 43 43 43 43 41 43 41 43 41 43 41 41 37 41 37 41 37 41 37 37 35 37 35 37 35 37 35
+     )ENTER LFTTMP
+     )ENTER RGTTMP
+     )LIST LFTTMP
+     ∇ Z←M LFTTMP B
+[1]  Z←M
+     )LIST RGTTMP
+     ∇ Z←M RGTTMP B
+[1]  Z←B
+     (12+7 4 0) LFTTMP B
+19 16 12
+     (12+7 4 0) RGTTMP B
+43 43 43 43 43 41 43 41 43 41 43 41 41 37 41 37 41 37 41 37 37 35 37 35 37 35 37 
+35
+     M←12+7 4 0
+     M LFTTMP B
+19 16 12
+     M RGTTMP B
+43 43 43 43 43 41 43 41 43 41 43 41 41 37 41 37 41 37 41 37 37 35 37 35 37 35 37 
+35
+     (12+7 4 0) LFTTMP 1 2 3
+19 16 12
+     B
+43 43 43 43 43 41 43 41 43 41 43 41 41 37 41 37 41 37 41 37 37 35 37 35 37 35 37 
+35
+     
