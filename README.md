@@ -267,6 +267,25 @@ has a section each on the sequencer and on MIDI files.
   sudo usermod -aG audio $USER
   ```
 
+## FAQ
+
+**Why is there no `)COPY`?**
+In RetroAPL, functions are kept as source files of their own in
+`$APLHOME/fns/`, outside any workspace, and `)ENTER` brings one into
+whatever workspace you're in. So the usual reason for `)COPY`, taking a
+function from another workspace, doesn't come up. Copying variables may
+be added some day. But a workspace isn't the best long-term home for
+data anyway: keep anything important outside it, in files written with
+the file functions (`⎕FWRITE` and the rest), or through other programs
+run with `⎕EXEC`.
+
+**Why overstrikes?**
+RetroAPL runs on a screen, not a typewriter, so overstriking isn't a
+hardware necessity the way it was on the 2741. It stays because it's
+the easier way to type APL. Most composite symbols are built from
+symbols already on the keyboard, so there are fewer key positions to
+memorize, and you never have to pick glyphs with the mouse.
+
 ## Troubleshooting
 
 - **The APL characters don't show, or there's a message about the
@@ -318,7 +337,8 @@ setup-aplhome.*       Create or update an $APLHOME folder
 package-*             Scripts for packaging source and installs
 backend/              The interpreter (C): libapl.a and apl_cli
   tests/              Regression tests: .apl inputs and .expected transcripts
-sequencer/            The MIDI sequencer library (C): libseq.a, and its tests
+sequencer/            The MIDI sequencer library (C): libseq.a
+  tests/              Its tests: .seq scripts, MIDI files, and .expected logs
 frontend/             The Qt6 front end (C++), and the scripts that build it
 aplhome/              Starting contents for $APLHOME (help pages, default workspace)
 fonts/                kapl.ttf, the APL font
