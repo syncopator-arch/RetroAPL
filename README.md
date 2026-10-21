@@ -52,11 +52,16 @@ Windows from the same source.
 ### The language
 
 RetroAPL implements most of classic APL\360, plus a few later additions
-such as system ("quad") functions and `⎕STRUCT`, a simple container
-whose cells each hold their own value. Some primitives behave
-differently from the book, and a few aren't implemented, among them
-bracket axis (`⍪`, `⌿` and `⍀` cover the first axis) and domino (`⌹`).
-APL2's nested arrays aren't supported.
+such as system ("quad") functions. Some primitives behave differently
+from the book, and a few aren't implemented, among them bracket axis
+(`⍪`, `⌿` and `⍀` cover the first axis) and domino (`⌹`).
+
+`⎕STRUCT` is an experimental container in the style of APL2's nested
+arrays, and was inspired by them. Each of its cells holds a value of its
+own (text, a vector, a matrix), which can be indexed and assigned into.
+Nested arrays themselves aren't supported, so the primitives that go
+with them, such as enclose and disclose, aren't implemented. (`⊂` and
+`⊃` are bitwise shift functions in RetroAPL.)
 
 The details are in three reference files. They are the same pages the
 Help menu shows:
@@ -91,7 +96,7 @@ more than RetroAPL implements, but nearly all of it applies as written.
 ### Linux (Ubuntu 22.04 or later)
 
 ```bash
-sudo apt install git build-essential cmake qt6-base-dev qt6-base-dev-tools
+sudo apt install git build-essential cmake qt6-base-dev qt6-base-dev-tools libxkbcommon-dev
 git clone https://github.com/syncopator-arch/RetroAPL.git
 cd RetroAPL
 ./build.sh            # builds everything
@@ -271,6 +276,11 @@ has a section each on the sequencer and on MIDI files.
 - **Linux, the front end fails to link with "No rule to make target
   ../sequencer/libseq.a"** (or `libapl.a`). Build with `./build.sh`, or
   build the libraries first as shown in [Linux details](#linux-details).
+- **Linux, CMake prints "Could NOT find XKB".** This is harmless: Qt
+  looks for the optional `libxkbcommon` development headers, which
+  RetroAPL's build doesn't need, and the build carries on. Installing `libxkbcommon-dev`, which is
+  in the [Quick start](#linux-ubuntu-2204-or-later) list, makes the
+  message go away.
 - **Linux, CMake can't find Qt6, or complains about OpenGL.** Install
   the packages in [Quick start](#linux-ubuntu-2204-or-later). If the
   complaint is about OpenGL, also install `libgl1-mesa-dev`.
