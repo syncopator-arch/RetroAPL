@@ -24,7 +24,7 @@ Windows from the same source.
 - **Graphics.** Open any number of graphics windows and draw lines,
   polygons, filled shapes, points, text and images in them, and read
   mouse clicks back into APL (`⎕WOPEN`, `⎕PEN`, `⎕POLY`, `⎕FPOLY`,
-  `⎕WTEXT`, `⎕WILOAD`, `⎕WCLICK` and more).
+  `⎕WTEXT`, `⎕WILOAD`, `⎕WCLICK` and more). Also '⎕FDIALOG' file selector.
 - **File I/O** from APL (`⎕FOPEN`, `⎕FREAD`, `⎕FWRITE`, `⎕FDIR`, …),
   and running other programs (`⎕EXEC`, `⎕WEXEC`).
 - **Debugging**: `)TRACE`, `)STOP`, `)STEP` and the state indicator
@@ -42,7 +42,7 @@ Windows from the same source.
   the squad glyph and a rudimentary nested array functionality.
 - **`apl_cli`**, a command-line version of the interpreter that reads and
   writes UTF-8, used for the regression tests.
-- **MIDI Sequencer.** Uses quad functions to communicate with MIDI
+- **MIDI Sequencer.** Uses quad functions to communicate with a MIDI
   sequencer background process.  Multiple tracks of loops or one shots.
   Send it sequences of notes and control playback via APL expressions.
 - **MIDI File I/O.** Uses quad functions to read & write sequences to/from MIDI format files.
@@ -67,6 +67,10 @@ the same files the Help menu shows.
 
 ## Building
 
+Note that the codebase is divided into three sections, the GUI
+"frontend", the APL execution engine "backend" and the MIDI sequencer
+library.
+
 ### Linux (Ubuntu 22.04 or later)
 
 Install the compiler, CMake and Qt6:
@@ -85,8 +89,8 @@ cd frontend
 The program is built as `frontend/build/APLTerminal`. `./build.sh clean`
 removes all build output, front end and interpreter both.
 
-The interpreter can also be built and tested on its own; see
-[Tests](#tests).
+The backend interpreter and sequencer library can also be built and tested on their own; see
+[Tests](#tests).  Building them separately (each have their own makefiles) may be more reliable as that is how most of the development has been done, and the backend and sequencer library have all the regression tests that can be run via "make check" from their main directories.
 
 ### Windows
 
