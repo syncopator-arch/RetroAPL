@@ -1,0 +1,45 @@
+Clear WS
+     ⍝ ⎕FDIALOG's folder prefix. apl_cli's stand-in prints what the dialog would get (folder in lower case), then cancels: empty result.
+     ⍴'PICK' ⎕FDIALOG '*.MID'
+[FDIALOG title=PICK dir= filter=*.MID]
+0
+     ⍴'' ⎕FDIALOG 'MIDI/*.MID'
+[FDIALOG title= dir=$APLHOME/midi filter=*.MID]
+0
+     ⍴'' ⎕FDIALOG (⎕LCASE 'MIDI'),'/*.MID'
+[FDIALOG title= dir=$APLHOME/midi filter=*.MID]
+0
+     ⍴'' ⎕FDIALOG 'MIDI/'
+[FDIALOG title= dir=$APLHOME/midi filter=]
+0
+     ⍴'' ⎕FDIALOG 'MIDI//*.MID'
+[FDIALOG title= dir=$APLHOME/midi filter=*.MID]
+0
+     ⍴'' ⎕FDIALOG 'MIDI\*.MID'
+[FDIALOG title= dir=$APLHOME/midi filter=*.MID]
+0
+     ⍴'' ⎕FDIALOG 'MIDI/MIDI FILES (*.MID)'
+[FDIALOG title= dir=$APLHOME/midi filter=MIDI FILES (*.MID)]
+0
+     ⍴'' ⎕FDIALOG 'MIDI/*.MID;;*.TXT'
+[FDIALOG title= dir=$APLHOME/midi filter=*.MID;;*.TXT]
+0
+     ⍴'' ⎕FDIALOG 'MIDI FILES (MIDI/*.MID)'
+[FDIALOG title= dir= filter=MIDI FILES (MIDI/*.MID)]
+0
+     ⍴'' ⎕FDIALOG 'NOSUCH/*.MID'
+[FDIALOG title= dir= filter=*.MID]
+0
+     ⍴'' ⎕FDIALOG 'IMAGES/*.PNG'
+[FDIALOG title= dir=$APLHOME/images filter=*.PNG]
+0
+     ⍴'' ⎕FDIALOG '/*.MID'
+[FDIALOG title= dir=/ filter=*.MID]
+0
+     ⍴'' ⎕FDIALOG ''
+[FDIALOG title= dir= filter=]
+0
+     '' ⎕FDIALOG 5
+     ^
+Domain Error
+     

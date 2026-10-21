@@ -1,0 +1,15 @@
+⍝ ⎕FDIALOG's folder prefix. apl_cli's stand-in prints what the dialog would get (folder in lower case), then cancels: empty result.
+⍴'PICK' ⎕FDIALOG '*.MID'
+⍴'' ⎕FDIALOG 'MIDI/*.MID'
+⍴'' ⎕FDIALOG (⎕LCASE 'MIDI'),'/*.MID'
+⍴'' ⎕FDIALOG 'MIDI/'
+⍴'' ⎕FDIALOG 'MIDI//*.MID'
+⍴'' ⎕FDIALOG 'MIDI\*.MID'
+⍴'' ⎕FDIALOG 'MIDI/MIDI FILES (*.MID)'
+⍴'' ⎕FDIALOG 'MIDI/*.MID;;*.TXT'
+⍴'' ⎕FDIALOG 'MIDI FILES (MIDI/*.MID)'
+⍴'' ⎕FDIALOG 'NOSUCH/*.MID'
+⍴'' ⎕FDIALOG 'IMAGES/*.PNG'
+⍴'' ⎕FDIALOG '/*.MID'
+⍴'' ⎕FDIALOG ''
+'' ⎕FDIALOG 5

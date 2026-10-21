@@ -12,6 +12,7 @@
 
 #include <stdlib.h>	/* realloc() -- see gscratch_ensure() below */
 #include <ctype.h>	/* isalpha() -- see is_absolute_path() below */
+#include <sys/stat.h>	/* stat() -- see fdialog_folder() below */
 
 short ev_wait_apl();	/* evwait.c: WCLICK and EVWAIT's one wait (Phase 7b) */
 
@@ -129,6 +130,116 @@ struct ValEnt *ve;
 {
 	if (ve->ve_rank && !ve->ve_rho[0]) return(0);	/* empty: any type */
 	return((ve->ve_vtype | VARIABLE_BIT) != QUOT_CODE);
+}
+
+/* Nonzero if path names an existing folder. */
+static int
+is_folder(path)
+char *path;
+{
+	struct stat st;
+
+	return(stat(path,&st) == 0 && S_ISDIR(st.st_mode));
+}
+
+/* FDIALOG's (case 20) folder prefix, agreed Oct 21, 2026. Qt reads the
+   whole filter as file-name patterns, so a filter like 'MIDI/SONG*.MID'
+   matched nothing (no file name contains a '/') and the dialog opened
+   wherever Qt chose. Now a filter may start with a folder:
+
+     'MIDI/SONG*.MID'           folder MIDI, filter SONG*.MID
+     'MIDI/'                    folder MIDI, no filter
+     'MIDI/MIDI files (*.MID)'  folder MIDI, filter MIDI files (*.MID)
+
+   The folder is everything up to the last '/' or '\' (both, on every
+   platform) before the first '*', '?', '(' or ';' -- a folder name
+   can't hold a wildcard, and a separator inside a labelled group
+   ("MIDI files (MIDI/SONG*.MID)") or a later ";;" group isn't a prefix.
+   A filter with no separator there is left exactly as before.
+
+   Where the folder is: an absolute path (is_absolute_path()) as given;
+   anything else under $APLHOME, the same rule ⎕WILOAD and ⎕MIDIREAD
+   use for their own subfolders (get_aplhome_dir() with an empty
+   subfolder -- which, like every caller, creates $APLHOME itself if
+   it's missing, but never the folder named here, which is only looked
+   for). Letter case: tried as typed first, then with A-Z made lower
+   case, the same retry seqfuncs.c's midi_load() makes and for the same
+   reason (the keyboard types capitals; folder names on Linux are
+   usually lower case): the whole folder for one under $APLHOME, only
+   the last component of an absolute one. A folder found neither way
+   is dropped silently and the dialog opens where Qt chooses, with the
+   rest of the filter still applied -- agreed, not an error.
+
+   filter is rewritten in place to the part after the folder. dir
+   receives the folder found, or an empty string if there was no
+   prefix or it wasn't found. Trailing separators are dropped from the
+   folder (Windows' stat() is known to reject "dir\" -- from memory, not
+   checked here), except for a root ("/", "C:/"). */
+static void
+fdialog_folder(filter,dir,dirsize)
+char *filter;
+char *dir;
+size_t dirsize;
+{
+	char *cp, *sep = 0;
+	size_t n, used, lc, i;
+	int changed;
+
+	dir[0] = '\0';
+	for (cp = filter; *cp; cp++)
+	{
+		if (*cp == '*' || *cp == '?' || *cp == '(' || *cp == ';')
+			break;
+		if (*cp == '/' || *cp == '\\') sep = cp;
+	}
+	if (!sep) return;
+
+	/* the folder as typed, separators at its end dropped */
+	n = (size_t)(sep - filter) + 1;
+	while (n > 1 && (filter[n-1] == '/' || filter[n-1] == '\\')
+	       && !(n == 3 && filter[1] == ':'))
+		n--;
+
+	if (is_absolute_path(filter))
+	{
+		used = 0;
+		if (n + 1 > dirsize) n = 0;	/* too long: not found */
+	}
+	else
+	{
+		get_aplhome_dir(dir,dirsize,"");	/* "$APLHOME//" */
+		used = strlen(dir);
+		while (used > 1 && (dir[used-1] == '/' || dir[used-1] == '\\'))
+			used--;
+		dir[used++] = '/';
+		if (used + n + 1 > dirsize) n = 0;	/* too long */
+	}
+	if (n)
+	{
+		memcpy(dir + used, filter, n);
+		dir[used + n] = '\0';
+	}
+	else
+		dir[0] = '\0';
+
+	/* the filter is what follows the separator */
+	memmove(filter, sep + 1, strlen(sep + 1) + 1);
+	if (!dir[0] || is_folder(dir)) return;
+
+	/* lower-case retry: under $APLHOME the whole folder as typed, for
+	   an absolute path only its last component */
+	lc = used;
+	if (!used)
+		for (lc = strlen(dir); lc > 0; lc--)
+			if (dir[lc-1] == '/' || dir[lc-1] == '\\') break;
+	changed = 0;
+	for (i = lc; dir[i]; i++)
+		if (dir[i] >= 'A' && dir[i] <= 'Z')
+		{
+			dir[i] += 32;
+			changed = 1;
+		}
+	if (!changed || !is_folder(dir)) dir[0] = '\0';
 }
 
 UCHAR graph_fnames[] = {
@@ -252,7 +363,9 @@ char pathbuf[1024];	/* WILOAD's resolved (possibly $APLHOME/images/-
 			   constant (e.g. LINE_SIZE), since that's sized
 			   for a different purpose and its exact value
 			   isn't being relied on here; 1024 is just a
-			   generous, unremarkable path-length ceiling. */
+			   generous, unremarkable path-length ceiling.
+			   FDIALOG (case 20) also uses it, for the folder
+			   fdialog_folder() resolves from its filter. */
 char titlebuf[256];	/* FDIALOG's (case 20) le-side title string.
 			   Same can't-share-LSCRATCH-with-the-result reason
 			   as patbuf below -- FDIALOG's result (the chosen
@@ -1431,10 +1544,15 @@ long j;	/* loop var for every loop over an argument's elements: POLY/
 			   le = title (may be empty -- Qt supplies its own
 			   default, same "title may be empty" convention
 			   WOPEN already establishes for its own title arg).
-			   re = filter, passed through verbatim in Qt's own
-			   native filter-string syntax -- not translated or
-			   validated at this layer; empty means no
-			   restriction. Neither argument has a length
+			   re = filter, in Qt's own native filter-string
+			   syntax, optionally starting with a folder to open
+			   in ('MIDI/SONG*.MID'; added Oct 21, 2026): that prefix
+			   is split off and resolved by fdialog_folder()
+			   (see its comment for the rule), and the rest goes
+			   to Qt untranslated and unvalidated, as the whole
+			   filter always did; empty means no restriction. A
+			   filter with no folder prefix behaves exactly as
+			   before. Neither argument has a length
 			   requirement, unlike most other DYADs in this file
 			   -- there's no fixed shape to enforce on either
 			   side, just two character strings, so no
@@ -1486,8 +1604,12 @@ long j;	/* loop var for every loop over an argument's elements: POLY/
 			if (e) memcpy(filterbuf,DATA_AD(re),e);
 			filterbuf[e] = '\0';
 
+			/* folder prefix, if any, into pathbuf (empty: Qt
+			   chooses where to open); filterbuf keeps the rest */
+			fdialog_folder(filterbuf,pathbuf,sizeof(pathbuf));
+
 			cp = (char *)LSCRATCH;
-			gw_file_dialog(titlebuf,filterbuf,cp,LINE_SIZE);
+			gw_file_dialog(titlebuf,pathbuf,filterbuf,cp,LINE_SIZE);
 			stack_pop(2);
 			return(push_str(cp));
 		case 21:	/* WFONT -- per-window text face and size for

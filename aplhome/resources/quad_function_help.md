@@ -645,9 +645,23 @@ the list above) is the one failure here that *does* raise an error:
 
 Opens a modal "open existing file" dialog. `title` may be empty.
 `filter` is Qt's native filter syntax (e.g. `'Images (*.png *.jpg)'`);
-empty means no restriction, and matching is case-insensitive
-(`'*.JPG'` also matches lowercase files). Single file, open-existing
+empty means no restriction, and with the default dialog matching is
+case-insensitive (`'*.JPG'` also matches lowercase files). The native
+OS picker (see below) may match case exactly: there, give both,
+`'*.JPG *.jpg'`. Single file, open-existing
 only — no save mode, directory picker, or multi-select.
+
+`filter` may start with a folder to open in: `'MIDI/*.MID'` opens in
+`$APLHOME/midi` showing `*.MID` files, and `'MIDI/'` alone opens there
+with no restriction. The folder is everything up to the last `/` or `\`
+before the first `*`, `?`, `(` or `;`, so `'MIDI/MIDI files (*.MID)'`
+works too. A folder that isn't a full path (starting with `/` or a
+drive letter) is under `$APLHOME`. It is looked for as typed, then in
+lower case (the last folder name only, for a full path), so `MIDI`
+finds `midi`. A folder that doesn't exist isn't an error: the dialog
+opens where it otherwise would, with the rest of the filter applied.
+Without a folder, Qt chooses where to open, usually the last folder
+used.
 
 Returns the chosen file's full path, or an empty string on
 Cancel/Escape — not an error. Uses Qt's own dialog by default (movable,

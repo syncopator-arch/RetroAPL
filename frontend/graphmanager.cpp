@@ -802,7 +802,8 @@ static QString aplHomeDir()
     return QString(".");
 }
 
-QString GraphManager::fileDialog(const QString &title, const QString &filter)
+QString GraphManager::fileDialog(const QString &title, const QString &dir,
+                                 const QString &filter)
 {
     // Parented to m_focusTarget when set (see this method's header
     // comment) -- same QPointer open()/openImage() already reclaim
@@ -813,6 +814,14 @@ QString GraphManager::fileDialog(const QString &title, const QString &filter)
     dlg.setFileMode(QFileDialog::ExistingFile);
     dlg.setAcceptMode(QFileDialog::AcceptOpen);
     if (!filter.isEmpty()) dlg.setNameFilter(filter);
+
+    // Starting folder from FDIALOG's filter prefix ('MIDI/*.MID'), see
+    // fdialog_folder() in grfuncs.c; empty leaves it to Qt, as before.
+    // Qt's own dialog (the default) opens there -- checked headless with
+    // the same calls as here. The native picker may not: main.cpp's
+    // PDF-save dialog found GNOME's substituting its own remembered
+    // folder for the one an app passes (see the comment below).
+    if (!dir.isEmpty()) dlg.setDirectory(dir);
 
     // DontUseNativeDialog: opts out of the platform's own file-chooser
     // plugin (GTK's, via xdg-desktop-portal, under GNOME) in favor of

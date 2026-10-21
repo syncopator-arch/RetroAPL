@@ -478,6 +478,16 @@ long gw_save_image(long handle, const char *filename, long overwrite);
  * through verbatim in Qt's own native filter-string syntax (e.g.
  * "Images (*.png *.jpg);;All Files (*)") -- not translated or
  * validated at this layer; an empty filter means "no restriction."
+ *
+ * dir (added Oct 21, 2026) is the folder the dialog opens in, or an
+ * empty string to leave that to Qt, as every call did before. grfuncs.c
+ * splits it off the front of the APL-level filter ('MIDI/SONG*.MID') and
+ * has already resolved it against $APLHOME and checked that it exists
+ * (fdialog_folder()), so this layer and GraphManager::fileDialog() just
+ * pass it on. Added as a parameter rather than a second function:
+ * grfuncs.c is the only caller (and cli_graphics.c the only other
+ * implementation), both updated in the same change -- the same
+ * reasoning gw_open()'s visible parameter used.
  * Single-file, open-existing-file mode only -- no save mode, no
  * directory picker, no multi-select in this version; a save mode, if
  * it ever happens, is expected to be its own function rather than an
@@ -512,7 +522,8 @@ long gw_save_image(long handle, const char *filename, long overwrite);
  * distinguished. No separate return value here (unlike gw_size()'s 1/0
  * success flag) -- an empty buf IS the complete signal, since a real
  * accepted path can never be empty. */
-void gw_file_dialog(const char *title, const char *filter, char *buf, long bufsize);
+void gw_file_dialog(const char *title, const char *dir, const char *filter,
+                    char *buf, long bufsize);
 
 #ifdef __cplusplus
 }

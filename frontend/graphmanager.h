@@ -446,7 +446,13 @@ public slots:
     // case and WCLICK's empty-vector case. No separate success flag: a
     // real accepted path can never be empty, so the empty string alone
     // is the complete signal.
-    QString fileDialog(const QString &title, const QString &filter);
+    //
+    // dir: the folder to open in, already resolved and checked to exist
+    // by grfuncs.c (split off the front of FDIALOG's filter, Oct 21,
+    // 2026), or empty to leave the starting folder to Qt, which is what
+    // every call did before dir existed.
+    QString fileDialog(const QString &title, const QString &dir,
+                       const QString &filter);
 
 private slots:
     // Connected to every GraphWindow's clicked() signal at open() time.

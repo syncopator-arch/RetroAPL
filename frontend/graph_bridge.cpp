@@ -549,18 +549,21 @@ long gw_save_image(long handle, const char *filename, long overwrite)
 // GRAPHICS_NOTES.md). Byte-copy tail is identical to gw_tagof()'s own
 // -- both write a possibly-empty QString result into a caller buffer
 // with the same truncate-to-bufsize convention.
-void gw_file_dialog(const char *title, const char *filter, char *buf, long bufsize)
+void gw_file_dialog(const char *title, const char *dir, const char *filter,
+                    char *buf, long bufsize)
 {
     if (!buf || bufsize <= 0) return;
     buf[0] = '\0';
     if (!g_graphManager) return;
 
     QString qtitle = title ? QString::fromLatin1(title) : QString();
+    // Same fromLatin1 as the file paths gw_load_image() etc. convert.
+    QString qdir = dir ? QString::fromLatin1(dir) : QString();
     QString qfilter = filter ? QString::fromLatin1(filter) : QString();
 
     QString path;
     QMetaObject::invokeMethod(g_graphManager, [&]() {
-        path = g_graphManager->fileDialog(qtitle, qfilter);
+        path = g_graphManager->fileDialog(qtitle, qdir, qfilter);
     }, Qt::BlockingQueuedConnection);
 
     QByteArray bytes = path.toLatin1();

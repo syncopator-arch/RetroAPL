@@ -13,7 +13,8 @@
 	What is not: nothing is drawn. ⎕WPIXEL reads every point inside a
 	window as white (0xFFFFFF), whatever was drawn; ⎕WTEXTW is 8
 	pixels a character; images never load (⎕WILOAD's "can't load"),
-	can't be saved, and ⎕FDIALOG is always cancelled. The desktop is
+	can't be saved, and ⎕FDIALOG is always cancelled (after printing
+	what it was given -- see gw_file_dialog()). The desktop is
 	1920x1080. A test that depends on any of these is testing this
 	file, not the interpreter.
 
@@ -25,6 +26,7 @@
 */
 
 #include <stdio.h>
+#include <stdlib.h>	/* getenv() -- gw_file_dialog() */
 #include <string.h>
 #include <stdint.h>
 
@@ -351,9 +353,40 @@ gw_save_image(long handle, const char *filename, long overwrite)
 	return find(handle) ? -1 : -2;
 }
 
+/* ⎕FDIALOG is still always cancelled, but first prints one line showing
+   what the dialog would have been given (Oct 21, 2026), so a test can
+   check how grfuncs.c split and resolved the filter's folder prefix:
+
+	[FDIALOG title=<title> dir=<folder> filter=<filter>]
+
+   A folder under the test's scratch $APLHOME is shown as $APLHOME/...
+   so the line reads the same wherever the tests run, and the folder is
+   shown in lower case: on Windows the as-typed MIDI/ is found on the
+   first try, on Linux only by the lower-case retry, and the transcripts
+   should still match (a folder not found at all shows as dir= on
+   both). Printed with printf() and flushed, since nothing else in this
+   file writes output. */
 void
-gw_file_dialog(const char *title, const char *filter, char *buf, long bufsize)
+gw_file_dialog(const char *title, const char *dir, const char *filter,
+	       char *buf, long bufsize)
 {
-	(void)title; (void)filter;
+	const char *home = getenv("APLHOME");
+	size_t hl = home ? strlen(home) : 0;
+	const char *rest;
+
+	if (!title) title = "";
+	if (!dir) dir = "";
+	if (!filter) filter = "";
+	printf("[FDIALOG title=%s dir=", title);
+	rest = dir;
+	if (hl && strncmp(dir, home, hl) == 0)
+	{
+		printf("$APLHOME");
+		rest = dir + hl;
+	}
+	for (; *rest; rest++)
+		putchar(*rest >= 'A' && *rest <= 'Z' ? *rest + 32 : *rest);
+	printf(" filter=%s]\n", filter);
+	fflush(stdout);
 	if (bufsize > 0) buf[0] = 0;
 }
