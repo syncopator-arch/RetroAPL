@@ -1,150 +1,234 @@
 # RetroAPL
 
 RetroAPL is an APL interpreter with the look and feel of the classic
-IBM 2741 APL terminal: the APL typeball font, and overstruck characters
-built by typing one symbol, backspacing and typing another on top of it.
-For the story behind RetroAPL, see [HISTORY-README.md](HISTORY-README.md).
+IBM 2741 APL terminal. It has the APL typeball font, and you build
+overstruck characters by typing one symbol, backspacing and typing
+another on top of it. For the story behind RetroAPL, see
+[HISTORY-README.md](HISTORY-README.md).
 
-This codebase began more than 30 years ago as a personal project on DOS 
+This codebase began more than 30 years ago as a personal project on DOS
 and Windows, with a C interpreter and a Delphi front end. It has since
 been ported to 64-bit Linux with a new Qt6 front end, and it builds on
 Windows from the same source.
 
-<!-- TODO: screenshot of the terminal and a graphics window -->
+![The RetroAPL terminal listing a k-means clustering function](docs/images/retroapl-terminal.png)
+
+> **There are no prebuilt downloads yet.** You build RetroAPL from
+> source. On Linux and Windows a single script does the whole build,
+> and a second one installs it; see [Quick start](#quick-start).
 
 ## Features
 
 - **Classic APL at a 2741-style terminal.** Two keyboard layouts
   (the original 2741 keymap, and an altered one adjusted for modern
-  keyboards) and backspace overstrike composition.
+  keyboards), and backspace overstrike composition.
 - **Workspaces and function files.** Save and load workspaces, and
   keep functions as separate files.
 - **A full-screen function editor**, opened from the File menu or with
   `)EDIT`.
-- **Graphics.** Open any number of graphics windows and draw lines,
-  polygons, filled shapes, points, text and images in them, and read
-  mouse clicks back into APL (`⎕WOPEN`, `⎕PEN`, `⎕POLY`, `⎕FPOLY`,
-  `⎕WTEXT`, `⎕WILOAD`, `⎕WCLICK` and more). Also '⎕FDIALOG' file selector.
-- **File I/O** from APL (`⎕FOPEN`, `⎕FREAD`, `⎕FWRITE`, `⎕FDIR`, …),
-  and running other programs (`⎕EXEC`, `⎕WEXEC`).
 - **Debugging**: `)TRACE`, `)STOP`, `)STEP` and the state indicator
   (`)SI`, `)SIV`).
-- **Built-in reference.** The Help menu opens browsable references for
-  every system command and quad function.
+- **Graphics.** Open any number of graphics windows, draw in them
+  (lines, polygons, text, images), read pixels and mouse clicks back
+  into APL, and save the result as an image file.
+- **Files and programs.** Read and write files from APL, pick one with a
+  file dialog, and run other programs.
+- **A MIDI sequencer.** It plays up to 16 tracks of loops or one-shot
+  sequences in the background while APL keeps working. You send it
+  notes and control playback from APL. A program can wait on the music's
+  beats and notes as well as on mouse clicks, for example to keep
+  graphics in time with the music.
+- **MIDI files.** Read Standard MIDI Files into arrays the sequencer can
+  play, and write the sequencer's tracks back out.
 - **Unicode copy and paste.** Copying APL text produces real Unicode APL
   symbols, and pasting Unicode APL converts back, so code moves easily
   between RetroAPL and documents, email or other APLs.
 - **Printing** of the session or a function, to a printer or PDF.
-- **Supports most classic APL\360 glyphs and syntax.** With two notable exceptions,
-  domino and bracket dimension syntax-- the latter mitigated by the fact it 
-  supports the first dimension variations of dyadic / \ and , (⌿ ⍀ ⍪)
-- **A few later APL features have been added, including quad functions,
-  the squad glyph and a rudimentary nested array functionality.
-- **`apl_cli`**, a command-line version of the interpreter that reads and
-  writes UTF-8, used for the regression tests.
-- **MIDI Sequencer.** Uses quad functions to communicate with a MIDI
-  sequencer background process.  Multiple tracks of loops or one shots.
-  Send it sequences of notes and control playback via APL expressions.
-- **MIDI File I/O.** Uses quad functions to read & write sequences to/from MIDI format files.
-  
+- **Built-in reference.** The Help menu opens browsable references for
+  the primitives, every system command and every quad function.
+- **`apl_cli`**, a command-line version of the interpreter that reads
+  and writes UTF-8, used for the regression tests.
 
-The list of primitives supported by RetroAPL is here: [`aplhome/resources/primitive_help.md`](aplhome/resources/primitive_help.md)
-The full list of system commands and quad functions, with what each one
-does, is in
-[`aplhome/resources/system_command_help.md`](aplhome/resources/system_command_help.md)
-and
-[`aplhome/resources/quad_function_help.md`](aplhome/resources/quad_function_help.md),
-the same files the Help menu shows.
+### The language
+
+RetroAPL implements most of classic APL\360, plus a few later additions
+such as system ("quad") functions and `⎕STRUCT`, a simple container
+whose cells each hold their own value. Some primitives behave
+differently from the book, and a few aren't implemented, among them
+bracket axis (`⍪`, `⌿` and `⍀` cover the first axis) and domino (`⌹`).
+APL2's nested arrays aren't supported.
+
+The details are in three reference files. They are the same pages the
+Help menu shows:
+
+- [Primitive functions](aplhome/resources/primitive_help.md), including
+  the [differences from the book](aplhome/resources/primitive_help.md#differences-from-the-book)
+  and [what isn't implemented](aplhome/resources/primitive_help.md#not-implemented)
+- [System commands](aplhome/resources/system_command_help.md) (`)LOAD`,
+  `)SAVE`, `)EDIT`, ...)
+- [Quad functions](aplhome/resources/quad_function_help.md): system,
+  file, graphics, sequencer and MIDI file functions
+
+### Learning APL
+
+The reference files above describe RetroAPL, not the language. To learn
+APL itself, use Gilman and Rose, *APL: An Interactive Approach*. The
+third edition (John Wiley & Sons, 1984) is the easiest edition to find,
+and it's the one the reference files call "the book." It covers a little
+more than RetroAPL implements, but nearly all of it applies as written.
 
 ## Platforms
 
 | Platform          | Status                                  |
 |-------------------|-----------------------------------------|
-| Linux aarch64     | Main development platform               |
-| Windows           | Builds and runs                         |
+| Linux aarch64     | Main development platform (Ubuntu 22.04) |
+| Windows 10        | Builds and runs                         |
 | Linux x86-64      | Untested                                |
 | macOS             | Untested; help from a Mac owner welcome |
 
-## Building
-
-Note that the codebase is divided into three sections, the GUI
-"frontend", the APL execution engine "backend" and the MIDI sequencer
-library.
+## Quick start
 
 ### Linux (Ubuntu 22.04 or later)
 
-Install the compiler, CMake and Qt6:
-
 ```bash
-sudo apt install build-essential cmake qt6-base-dev qt6-base-dev-tools
+sudo apt install git build-essential cmake qt6-base-dev qt6-base-dev-tools
+git clone https://github.com/syncopator-arch/RetroAPL.git
+cd RetroAPL
+./build.sh            # builds everything
+./setup-aplhome.sh    # installs it in ~/aplhome and your applications menu
 ```
 
-Build everything (the interpreter library, then the Qt front end):
-
-```bash
-cd frontend
-./build.sh
-```
-
-The program is built as `frontend/build/APLTerminal`. `./build.sh clean`
-removes all build output, front end and interpreter both.
-
-The backend interpreter and sequencer library can also be built and tested on their own; see
-[Tests](#tests).  It may be necessary to build the two libraries (backend and sequencer) separately via their own makefiles as the front end make currently doesn't automatically invoke the backend make, though the backend build does attempt to build the sequencer library as well.
+Then start **RetroAPL** from your applications menu.
 
 ### Windows
 
-You need Qt6 for Windows (the Qt online installer puts it in `C:\Qt`).
+1. Install Qt 6 with the
+   [Qt online installer](https://www.qt.io/download-qt-installer)
+   (it asks you to sign in with a free Qt account). Choose a custom
+   installation, and in the component list select:
+   - under a Qt 6 version, **MinGW 64-bit**;
+   - under **Build Tools** (called *Developer and Designer Tools* in
+     older installers), the **MinGW** compiler of the same version, and
+     **CMake**.
 
-From a fresh copy of the source, run `frontend\winbuild.bat`. It builds
-both the interpreter and the front end. `windeploy.bat` then gathers
-the Qt libraries next to the program.
+   Keep the default install folder, `C:\Qt`. The build scripts look for
+   Qt and MinGW there.
+2. Get the source. Either install [Git for Windows](https://git-scm.com/download/win)
+   and run `git clone https://github.com/syncopator-arch/RetroAPL.git`,
+   or on the GitHub page click **Code → Download ZIP** and unzip it.
+3. In a Command Prompt, in the RetroAPL folder:
 
-<!-- VERIFY: which compiler (MinGW from the Qt installer, or Visual
-     Studio?), and what winenv.bat is for. -->
+   ```bat
+   build.bat
+   setup-aplhome.bat
+   ```
+
+Then start **RetroAPL** from the Start menu.
+
+## Building
+
+The source is in three parts, which are built in this order:
+
+| Folder       | What it is                                  | Builds                          |
+|--------------|---------------------------------------------|---------------------------------|
+| `sequencer/` | The MIDI sequencer library (C)              | `libseq.a`                      |
+| `backend/`   | The interpreter (C)                         | `libapl.a`, and `apl_cli`       |
+| `frontend/`  | The Qt6 GUI (C++), linked with both libraries | `APLTerminal`                 |
+
+`build.sh` (Linux) and `build.bat` (Windows), in the repository root,
+build all three in order. Both take the same commands:
+
+| Command        | What it does                                                   |
+|----------------|----------------------------------------------------------------|
+| *(none)*       | Build everything.                                              |
+| `clean`        | Remove all build output, from all three parts.                 |
+| `check`        | Build the libraries and run their regression tests ([Tests](#tests)). |
+| `run`          | Linux only: run the program just built.                        |
+
+**After updating the source** (`git pull`), run `clean` and then build
+again. The backend makefile doesn't yet track header files, so without
+a clean build, old object files can get linked against the new code.
+
+### Linux details
+
+The program is built as `frontend/build/APLTerminal`. `build.sh` is a
+short wrapper around `frontend/build.sh`, so either one works.
+
+To build by hand instead:
+
+```bash
+make -C sequencer libseq.a
+make -C backend                 # libapl.a and apl_cli
+cmake -S frontend -B frontend/build
+cmake --build frontend/build
+```
+
+`make libapl.a` in the backend builds the interpreter library alone,
+not the sequencer library, which the front end also needs. A plain
+`make` builds both.
+
+### Windows details
+
+The build uses the MinGW compiler and CMake that come with Qt, which
+the scripts find under `C:\Qt` by themselves. With Qt somewhere else,
+or with more than one Qt 6 version installed, set these before running
+`build.bat`:
+
+```bat
+set QT_PREFIX=C:\Qt\6.11.1\mingw_64
+set MINGW_ROOT=C:\Qt\Tools\mingw1310_64
+```
+
+`build.bat` runs two scripts in `frontend\`:
+
+- `winbuild.bat` builds the three parts. The program is
+  `frontend\build\APLTerminal.exe`.
+- `windeploy.bat` gathers the program, the Qt and MinGW DLLs and Qt's
+  plugins in `frontend\deploy\`. Then it checks that every DLL they
+  need is either there or part of Windows, and names any that is
+  missing.
+
+`setup-aplhome.bat` copies `frontend\deploy\` into `%APLHOME%\bin`.
 
 ## Setting up `$APLHOME`
 
 RetroAPL keeps everything in one folder, named by the `APLHOME`
-environment variable: the program itself (in `bin`), the font, help
-files, workspaces, functions and images. A setup script creates it
-from this repository.
+environment variable: the program itself (in `bin`), the font, the help
+pages, and your workspaces, functions, images and MIDI files. A setup
+script creates the folder from this repository:
 
-On Linux (the default folder is `~/aplhome`), after building:
+| Platform | Script               | Default folder |
+|----------|----------------------|----------------|
+| Linux    | `./setup-aplhome.sh` | `~/aplhome`    |
+| Windows  | `setup-aplhome.bat`  | `C:\aplhome`   |
 
-```bash
-./setup-aplhome.sh
-```
+Either script takes a different folder as an argument. Each copies in
+the program, if it has been built, and adds RetroAPL to your
+applications menu (Linux) or Start menu (Windows).
 
-This also copies the program into `$APLHOME/bin` and adds RetroAPL to
-your applications menu. To run it from a terminal too, add the
-`export APLHOME=...` line the script shows to your `~/.bashrc`.
+- **On Windows**, the script also sets `APLHOME` for your account if it
+  isn't set yet.
+- **On Linux**, the menu entry sets `APLHOME` itself. To run RetroAPL
+  from a terminal as well, add the `export APLHOME=...` line the script
+  prints to your `~/.bashrc`.
 
-On Windows (the default folder is `C:\aplhome`):
-
-```bat
-setup-aplhome.bat
-```
-
-It also sets `APLHOME` for your account if it isn't set yet.
-
-Either script takes a different folder as an argument, and is safe to
-run again after updating or rebuilding: it refreshes the program, font
-and help files, but never replaces your own workspaces, functions or
-images.
+Run the script again after each rebuild. It's safe to run again: it
+updates the program, font and help pages, but never replaces your own
+workspaces, functions, images or MIDI files.
 
 What goes where:
 
-| Path                         | What it is                                                    |
-|------------------------------|---------------------------------------------------------------|
-| `bin/`                       | The program (and on Windows, the Qt libraries).               |
-| `fonts/kapl.ttf`             | The APL font. **Required**; this is the only place it's loaded from. |
-| `resources/*.md`             | The reference pages shown by the Help menu.                   |
-| `help.dat`                   | Help text used by the interpreter.                            |
-| `ws/`                        | Workspaces (`name.ws`). `mpl.ws` loads at startup.            |
-| `fns/`                       | Function files (`name.fn`).                                   |
-| `images/`                    | Images; the default folder for the graphics image functions.  |
-| `settings.ini`               | Your settings. Created automatically; don't copy someone else's. |
+| Path               | What it is                                                    |
+|--------------------|---------------------------------------------------------------|
+| `bin/`             | The program (and on Windows, its DLLs).                       |
+| `fonts/kapl.ttf`   | The APL font. **Required**; this is the only place it's loaded from. |
+| `resources/*.md`   | The reference pages shown by the Help menu.                   |
+| `ws/`              | Workspaces (`name.ws`). `mpl.ws` loads at startup.            |
+| `fns/`             | Function files (`name.fn`).                                   |
+| `images/`          | Images; the default folder for the graphics image functions.  |
+| `midi/`            | MIDI files; the default folder for the MIDI file functions.   |
+| `settings.ini`     | Your settings. Created automatically; don't copy someone else's. |
+| `crash.log`        | Written if the interpreter hits a fatal internal error.       |
 
 ## Typing APL
 
@@ -152,24 +236,66 @@ What goes where:
 
 *Photo: [Oscar.nierstrasz](https://commons.wikimedia.org/wiki/File:IBM_2741_Communications_Terminal.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)*
 
-APL symbols are typed with the 2741 keyboard layout; choose between the
+APL symbols are typed with the 2741 keyboard layout. Choose between the
 original and altered layouts under **Settings**. Composite symbols are
 made the way they were on the 2741: type one symbol, press
-**Backspace** once (the cursor moves back), then type
-the second symbol over it. For example, `○` then Backspace then `|`
-gives `⌽`.
+**Backspace** once (the cursor moves back), then type the second symbol
+over it. For example, `○` then Backspace then `|` gives `⌽`.
 
-<!-- VERIFY: overstrike example, and whether a keyboard chart should
-     go here. -->
+## MIDI
+
+The sequencer plays through a MIDI output port. Choose the port under
+**Settings**; `⎕SEQOPEN ''` then opens it. `⎕SEQPORTS` lists the ports
+from APL. The [quad function reference](aplhome/resources/quad_function_help.md)
+has a section each on the sequencer and on MIDI files.
+
+- **Windows:** any MIDI output device works, including the built-in
+  *Microsoft GS Wavetable Synth*, which needs no extra hardware.
+- **Linux:** RetroAPL uses ALSA raw MIDI (`/dev/snd/midi*`), so a USB
+  MIDI interface or a synthesizer with USB MIDI works. Software
+  synthesizers that offer only ALSA *sequencer* ports, such as FluidSynth
+  or TiMidity, can't be reached directly. If no ports are listed, or
+  `⎕SEQOPEN` returns `¯2` (no permission), add yourself to the `audio`
+  group, then log out and back in:
+
+  ```bash
+  sudo usermod -aG audio $USER
+  ```
+
+## Troubleshooting
+
+- **The APL characters don't show, or there's a message about the
+  font.** RetroAPL loads its font only from `$APLHOME/fonts/kapl.ttf`.
+  Run the setup script, and if you start the program from a terminal,
+  make sure `APLHOME` is set there.
+- **Linux, the front end fails to link with "No rule to make target
+  ../sequencer/libseq.a"** (or `libapl.a`). Build with `./build.sh`, or
+  build the libraries first as shown in [Linux details](#linux-details).
+- **Linux, CMake can't find Qt6, or complains about OpenGL.** Install
+  the packages in [Quick start](#linux-ubuntu-2204-or-later). If the
+  complaint is about OpenGL, also install `libgl1-mesa-dev`.
+- **Windows, `build.bat` says it can't find MinGW or Qt.** Install the
+  components listed in [Quick start](#windows), or point the scripts
+  at your installation (see [Windows details](#windows-details)).
+- **Windows, the program says a DLL is missing when it starts.** Run
+  `build.bat` again, or just `frontend\windeploy.bat`, and look at the
+  missing-DLL check at the end. Copy any DLL it names into
+  `frontend\deploy\`, run `setup-aplhome.bat`, and please open an issue
+  so the script can be fixed.
+- **Strange crashes or link errors after updating the source.** Run a
+  clean build (`./build.sh clean` or `build.bat clean`, then build
+  again).
 
 ## Tests
 
-The interpreter's regression tests run through `apl_cli`:
+The interpreter's regression tests run through `apl_cli`, and the
+sequencer library has its own. `./build.sh check` (or `build.bat
+check`) runs both. They can also be run by hand:
 
 ```bash
-cd backend
-make check        # the tests
-make check_san    # the same tests under AddressSanitizer + UBSan
+make -C sequencer check   # the sequencer library's tests
+make -C backend check     # the interpreter's tests
+make -C backend check_san # the same, under AddressSanitizer + UBSan (Linux)
 ```
 
 There are no automated tests for the Qt front end yet.
@@ -177,13 +303,16 @@ There are no automated tests for the Qt front end yet.
 ## Repository layout
 
 ```
-backend/     The interpreter (C): builds libapl.a and apl_cli
-  tests/     Regression tests: .apl inputs and .expected transcripts
-frontend/    The Qt6 front end (C++) and Windows build scripts
-fonts/       kapl.ttf, the APL font
-aplhome/     Starting contents for $APLHOME (help files, default workspace)
-setup-*      Create or update an $APLHOME folder
-package-*    Scripts for packaging source and installs
+build.sh, build.bat   Build everything (Linux, Windows)
+setup-aplhome.*       Create or update an $APLHOME folder
+package-*             Scripts for packaging source and installs
+backend/              The interpreter (C): libapl.a and apl_cli
+  tests/              Regression tests: .apl inputs and .expected transcripts
+sequencer/            The MIDI sequencer library (C): libseq.a, and its tests
+frontend/             The Qt6 front end (C++), and the scripts that build it
+aplhome/              Starting contents for $APLHOME (help pages, default workspace)
+fonts/                kapl.ttf, the APL font
+docs/images/          Images used by this README
 ```
 
 ## Font
