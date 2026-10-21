@@ -469,7 +469,7 @@ place:
 - Monadic `⌈` and `⌊` of a whole number change its storage size.
 - `⍕` and `⍎` are monadic only, and `⍕` expects numbers.
 - There's no bracket axis.
-- `∆` and `⍙` can't be used in names.
+- Names can't use the underscored letters, or `∆` and `⍙`.
 
 ---
 
