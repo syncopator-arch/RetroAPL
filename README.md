@@ -90,7 +90,7 @@ The program is built as `frontend/build/APLTerminal`. `./build.sh clean`
 removes all build output, front end and interpreter both.
 
 The backend interpreter and sequencer library can also be built and tested on their own; see
-[Tests](#tests).  Building them separately (each have their own makefiles) may be more reliable as that is how most of the development has been done, and the backend and sequencer library have all the regression tests that can be run via "make check" from their main directories.
+[Tests](#tests).  It may be necessary to build the two libraries (backend and sequencer) separately via their own makefiles as the front end make currently doesn't automatically invoke the backend make, though the backend build does attempt to build the sequencer library as well.
 
 ### Windows
 
