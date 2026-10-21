@@ -335,7 +335,6 @@ There are no automated tests for the Qt front end yet.
 ```
 build.sh, build.bat   Build everything (Linux, Windows)
 setup-aplhome.*       Create or update an $APLHOME folder
-package-*             Scripts for packaging source and installs
 backend/              The interpreter (C): libapl.a and apl_cli
   tests/              Regression tests: .apl inputs and .expected transcripts
 sequencer/            The MIDI sequencer library (C): libseq.a
