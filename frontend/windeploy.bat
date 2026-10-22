@@ -1,6 +1,4 @@
 @echo off
-rem SPDX-License-Identifier: GPL-3.0-or-later
-rem Copyright (C) Keith Doyle
 setlocal enabledelayedexpansion
 
 rem windeploy.bat
@@ -77,8 +75,11 @@ echo ==^> Checking for missing DLLs...
 rem objdump is run by name: winenv.bat put MinGW's bin first on PATH.
 rem (Naming it by its full, quoted path here would need cmd's
 rem double-quoting trick, which is easy to get wrong.)
+rem findstr keeps only the "DLL Name:" lines: objdump -p also prints each
+rem DLL's export table, tens of thousands of lines for the Qt DLLs, and
+rem for /f is very slow reading that much output itself.
 for /r "%DEPLOY%" %%B in (*.exe *.dll) do (
-    for /f "tokens=1-3" %%a in ('objdump -p "%%B" 2^>nul') do (
+    for /f "tokens=1-3" %%a in ('objdump -p "%%B" 2^>nul ^| findstr /c:"DLL Name:"') do (
         if "%%a %%b"=="DLL Name:" call :check_dll "%%c" "%%~nxB"
     )
 )
