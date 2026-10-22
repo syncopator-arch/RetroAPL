@@ -77,8 +77,15 @@ install_user_file() {
 
 # --- program files ---------------------------------------------------------
 install_program_file "$REPO_ROOT/fonts/kapl.ttf" "$TARGET/fonts/kapl.ttf"
-[ -f "$REPO_ROOT/docs/images/retroapl-icon.png" ] && install_program_file \
-    "$REPO_ROOT/docs/images/retroapl-icon.png" "$TARGET/bin/retroapl-icon.png"
+# The menu icon: the simple design, which stays readable at the sizes
+# the desktop shows it (the dock's 48-64 pixels); the full art if that
+# isn't there.
+for icon in retroapl-icon-small.png retroapl-icon.png; do
+    if [ -f "$REPO_ROOT/docs/images/$icon" ]; then
+        install_program_file "$REPO_ROOT/docs/images/$icon" "$TARGET/bin/retroapl-icon.png"
+        break
+    fi
+done
 [ -f "$SRC/help.dat" ] && install_program_file "$SRC/help.dat" "$TARGET/help.dat"
 for f in "$SRC"/resources/*; do
     [ -f "$f" ] && install_program_file "$f" "$TARGET/resources/$(basename "$f")"
