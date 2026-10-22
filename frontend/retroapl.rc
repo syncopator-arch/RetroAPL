@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
+// Windows resource file: builds retroapl.ico into APLTerminal.exe, so the
+// program shows its icon in Explorer, on shortcuts and on the taskbar.
+// IDI_ICON1 is the name Qt looks for as the default icon for its windows.
+// Compiled only on Windows (see CMakeLists.txt).
+
+IDI_ICON1 ICON "retroapl.ico"
