@@ -93,3 +93,5 @@
 !/frontend/*.bat
 !/frontend/README.md
 !/frontend/kapl_unicode_mapping.md
+!/frontend/retroapl.rc
+!/frontend/retroapl.ico
