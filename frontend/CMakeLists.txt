@@ -81,6 +81,15 @@ add_executable(${PROJECT_NAME} WIN32
     ${HEADERS}
 )
 
+# ── Windows icon ──────────────────────────────────────────────────────
+# retroapl.rc builds retroapl.ico into the .exe: Explorer, shortcuts and
+# the taskbar show it, and Qt uses it for its windows. Linux takes its
+# icon from the menu entry instead (setup-aplhome.sh).
+if(WIN32)
+    enable_language(RC)
+    target_sources(${PROJECT_NAME} PRIVATE retroapl.rc)
+endif()
+
 # ── Compile definitions ───────────────────────────────────────────────
 # AS_DLL selects the dll_startup/exec_apl_line path in main.c
 # NO_INPUT_PROC tells the backend to use the direct-buffer input path

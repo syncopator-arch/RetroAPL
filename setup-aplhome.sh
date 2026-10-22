@@ -13,6 +13,7 @@
 #
 # Two kinds of files are handled differently:
 #   Program files -- bin/APLTerminal, fonts/kapl.ttf, help.dat,
+#       bin/retroapl-icon.png (the menu entry's icon),
 #       resources/*.md. These belong to RetroAPL. They're copied if
 #       missing and replaced if this repository has a different
 #       version, so re-running setup after an update (and rebuild)
@@ -76,6 +77,8 @@ install_user_file() {
 
 # --- program files ---------------------------------------------------------
 install_program_file "$REPO_ROOT/fonts/kapl.ttf" "$TARGET/fonts/kapl.ttf"
+[ -f "$REPO_ROOT/docs/images/retroapl-icon.png" ] && install_program_file \
+    "$REPO_ROOT/docs/images/retroapl-icon.png" "$TARGET/bin/retroapl-icon.png"
 [ -f "$SRC/help.dat" ] && install_program_file "$SRC/help.dat" "$TARGET/help.dat"
 for f in "$SRC"/resources/*; do
     [ -f "$f" ] && install_program_file "$f" "$TARGET/resources/$(basename "$f")"
@@ -112,7 +115,7 @@ if [ "$have_binary" = 1 ]; then
         echo "Comment=APL interpreter in the style of the IBM 2741 terminal"
         echo "Exec=env \"APLHOME=$TARGET\" \"$TARGET/bin/APLTerminal\""
         echo "Path=$TARGET"
-        [ -f "$TARGET/images/APLICON2.PNG" ] && echo "Icon=$TARGET/images/APLICON2.PNG"
+        [ -f "$TARGET/bin/retroapl-icon.png" ] && echo "Icon=$TARGET/bin/retroapl-icon.png"
         echo "Terminal=false"
         echo "Categories=Development;"
     } > "$DESKTOP"
