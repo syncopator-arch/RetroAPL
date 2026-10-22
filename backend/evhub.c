@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	evhub.c -- the event hub (see evhub.h for the interface and the
 	lock rules; MIDI_SEQUENCER_NOTES.md, Phase 7, for the design).

@@ -183,7 +183,7 @@ report current dir" without checking.
 
 `⎕LC`
 
-Returns the current function's line count.
+Returns the current function line number.
 
 `⎕WSID`
 

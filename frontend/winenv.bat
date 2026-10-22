@@ -1,4 +1,6 @@
 @echo off
+rem SPDX-License-Identifier: GPL-3.0-or-later
+rem Copyright (C) Keith Doyle
 rem winenv.bat
 rem
 rem Shared toolchain detection for winbuild.bat / windeploy.bat. Called

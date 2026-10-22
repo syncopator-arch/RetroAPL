@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
     interfac.c  -- interface to system dependent routines
 */

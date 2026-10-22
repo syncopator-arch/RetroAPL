@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	smftest.c -- test driver for the MIDI file reader (smf.c; Phase 9,
 	step 1, Oct 16, 2026).

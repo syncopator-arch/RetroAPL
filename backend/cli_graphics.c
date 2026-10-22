@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	cli_graphics.c -- apl_cli's stand-in for the Qt front end's
 	graphics bridge (graph_bridge.cpp), so grfuncs.c links into apl_cli

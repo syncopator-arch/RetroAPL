@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	run_tests.c -- regression tests for the APL backend, run via apl_cli.
 

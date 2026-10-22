@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	seqfuncs.c -- the ⎕SEQ quad functions: the interpreter's glue to the
 	MIDI sequencer library (../sequencer, seq.h). Module k=3 in links.c.

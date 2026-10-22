@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 #ifndef GRAPH_BRIDGE_H
 #define GRAPH_BRIDGE_H
 

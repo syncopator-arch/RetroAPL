@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	seq_fake_dev.h -- a fake ALSA raw MIDI device for check_device
 	(Linux only, Phase 3). With -DSEQ_DEVICE_TEST, seq_out_device.c

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	seq_internal.h -- inside the sequencer library only (and the test
 	driver, for seq_clock_is_monotonic()). Not part of the public

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	seq.h -- MIDI sequencer library, public interface.
 	Agreed Oct 4, 2026 (Phase 1); Phase 2 additions marked "Phase 2";

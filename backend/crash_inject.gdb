@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) Keith Doyle
+
 # crash_inject.gdb -- manual check for the crash log (V70).
 #
 # Damages one workspace entry's size so the next garbage collection

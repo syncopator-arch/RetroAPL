@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) Keith Doyle
 #
 # build.sh -- build RetroAPL on Linux: the sequencer library, the
 # interpreter (backend) and the Qt front end, in that order.

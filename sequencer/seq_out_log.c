@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	seq_out_log.c -- output backend for the test modes: decodes each
 	message into one line of text in an in-memory log instead of

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) Keith Doyle
+
 cmake_minimum_required(VERSION 3.16)
 project(APLTerminal VERSION 1.0 LANGUAGES CXX)
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	smf.h -- Standard MIDI File reading (Phase 9, step 1; Oct 16, 2026).
 

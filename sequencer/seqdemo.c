@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	seqdemo.c -- Phase 3 demo: plays through a real MIDI port.
 

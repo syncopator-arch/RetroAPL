@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	evhub.h -- the event hub: the one place the interpreter's engine
 	thread waits for events from outside it (Phase 7 of

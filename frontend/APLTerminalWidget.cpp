@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 #include "APLTerminalWidget.h"
 #include <QFontDatabase>
 #include <QFont>

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	shellsort.  Was heapsort, but heapsort rotates items that are
 	identical, so a shellsort is being used instead.

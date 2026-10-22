@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	evwait.c -- the one event wait behind ⎕EVWAIT (k3 slot 12,
 	seqfuncs.c) and ⎕WCLICK (k2 slot 11, grfuncs.c). Phase 7b of

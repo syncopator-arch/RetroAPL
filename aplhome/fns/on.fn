@@ -1,0 +1,9 @@
+zШb on a<pad Ц retroapl v4.9
+Ц from apl an interactive approach, third ed
+Ц builds a text list> KhelloK on KworldK on KtestK
+aШ:╒2ы 1 1,рa"рa Ц force a to be a matrix
+bШ:╒2ы 1 1,рb"рb Ц force b to be a matrix
+padШ:╒1ырa"с╒1ырb Ц pick larger dimension for pad
+aШ::1ырa",pad"ыa Ц insure aKs max width
+bШ::1ырb",pad"ыb Ц insure bKs max width
+zШ:::1ырb"-1ырa",pad"р:,b",,a

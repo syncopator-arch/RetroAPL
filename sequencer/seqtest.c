@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) Keith Doyle
+
 /*
 	seqtest.c -- standalone test driver for the sequencer library.
 	Links only libseq.a; no interpreter, no device.
