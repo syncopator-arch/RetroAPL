@@ -30,14 +30,14 @@ one (`⎕IO ⍴X` sets `⎕IO` to `⍴X`). A function with only a dyadic form
 doesn't (`⎕IO+1` adds 1 to `⎕IO`). The assignment form leaves nothing
 to work out.
 
-The `-q` startup option picks which forms are accepted (`aplterm -q
+The `-q` startup option picks which forms are accepted (`retroapl -q
 new`, `apl_cli -q new`):
 
-- `both` (the default): both forms.
+- `both`: both forms.
 - `warn`: both forms, and `)ENTER` prints a note for each function
   line that uses the original form, such as `old form ⎕IO X: FN[3]`.
   Use it to find the lines to convert.
-- `new`: the assignment form only. Without `←`, `⎕IO` takes no
+- `new`(the default): the assignment form only. Without `←`, `⎕IO` takes no
   argument and reads like a variable: `⎕IO ⍴X` is dyadic `⍴`, and
   `⎕IO 0`, `⎕IO X` and `⎕IO ¯1` are Syntax Errors. A function that
   uses the original form gives a Syntax Error on that line when

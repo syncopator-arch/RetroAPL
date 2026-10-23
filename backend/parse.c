@@ -402,7 +402,7 @@ short undef_now, undef_right;	/* pass 2: see VAR_CODE and case 3 */
 		c = *cpi;
 
 /* check if var or fn */
-		if ((c >= var_lo && c <= var_hi) || c == ALPH_CHAR)
+		if (is_name1(c))	/* letter, '_' or ∆ (V107) */
 		{
 			cpi = get_vstr(cpi);
 			if (!cpi) return(-1);	/* exceeded length */

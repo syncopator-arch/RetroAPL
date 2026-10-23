@@ -51,7 +51,12 @@ extern short err_track(short e);
 #define SET_ERR(e) e
 #endif
 
-#define is_varch(C) (((C >= var_lo && C <= var_hi) || (C >= '0' && C <= '9') || C == ALPH_CHAR) ? 1 : 0)
+/* Name characters: letters, digits, '_' (ALPH_CHAR) and, since V107,
+   ∆ (CHAR_DELTA). is_name1() is the subset a name can start with (no
+   digits). Both are macros, so C is evaluated more than once, and C
+   must be unsigned (UCHAR) for the CHAR_DELTA test to match. */
+#define is_varch(C) (((C >= var_lo && C <= var_hi) || (C >= '0' && C <= '9') || C == ALPH_CHAR || C == CHAR_DELTA) ? 1 : 0)
+#define is_name1(C) (((C >= var_lo && C <= var_hi) || C == ALPH_CHAR || C == CHAR_DELTA) ? 1 : 0)
 
 /* pointer to funcs, so that an array can be created */
 typedef short (*PTF)();
@@ -383,6 +388,11 @@ typedef short (*PTF)();
 
 /* extention characters */
 #define ALPH_CHAR '_'  /* char also considered alpha */
+#define CHAR_DELTA 0xC8	/* ∆, also a name character (V107): font code,
+			   identity in itrans[]; in a .fn file 'H' or 0xC8
+			   (the editor writes 0xC8). A function
+			   name's .fn file writes it as '=' (fn_file_path(),
+			   commands.c), which no name can contain */
 #define CHAR_EQ 1
 #define CHAR_NE 2
 #define CHAR_GE 3

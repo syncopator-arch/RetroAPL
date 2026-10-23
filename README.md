@@ -54,8 +54,9 @@ Windows from the same source.
 RetroAPL implements most of classic APL\360, plus a few later additions
 such as system ("quad") functions. Some primitives behave differently
 from the book, and a few aren't implemented, among them bracket axis
-(`⍪`, `⌿` and `⍀` cover the first axis) and domino (`⌹`). Names can't
-use APL\360's underscored letters, or `∆` and `⍙`.
+(`⍪`, `⌿` and `⍀` cover the first axis) and domino (`⌹`). Names can
+use `∆` and `_` (`∆X`, `MY_VAR`), but not APL\360's underscored letters
+or `⍙`.
 
 `⎕STRUCT` is an experimental container in the style of APL2's nested
 arrays, and was inspired by them. Each of its cells holds a value of its

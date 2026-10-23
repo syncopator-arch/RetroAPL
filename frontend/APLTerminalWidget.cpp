@@ -26,6 +26,93 @@
 static const int INDENT = 5;
 
 // =============================================================================
+// ∆ in function names (V107)
+// =============================================================================
+//
+// Inside the GUI a function name holds font codes as QChars, the way
+// qt_edit()'s fromLatin1() (main.cpp) hands it over: letters, digits, '_',
+// and U+00C8 for ∆ (font code 0xC8; displayLineToStorage() and the )ENTER
+// that exit-and-compile sends both keep just the low byte). On disk ∆ is
+// '=', which no name can contain, exactly as the backend's fn_file_path()
+// (commands.c) writes it. QString::toLower() mustn't be used to make a file
+// name: it turns U+00C8 into U+00E8. Declared in APLTerminalWidget.h, for
+// main.cpp.
+// -----------------------------------------------------------------------------
+
+static const QChar kFontDelta(0x00C8);
+
+// A function name in the GUI's form: ASCII letters in upper case, and ∆ as
+// U+00C8 whichever way it came in: '=' (as in the file name, and the easy
+// way to get ∆ into the New Function box, which uses the ordinary
+// keyboard), U+2206 or Greek U+0394 pasted there, or U+00E8 from a stray
+// toLower(). No name can contain '=', and names from the engine or a .fn
+// file never do, so reading it as ∆ changes nothing else.
+QString aplFnNormalize(const QString &name)
+{
+    QString out;
+    for (QChar ch : name) {
+        ushort u = ch.unicode();
+        if (u >= 'a' && u <= 'z')
+            out.append(QChar(ushort(u - 32)));
+        else if (u == '=' || u == 0x2206 || u == 0x0394 || u == 0x00E8)
+            out.append(kFontDelta);
+        else
+            out.append(ch);
+    }
+    return out;
+}
+
+// The .fn file's base name for a function: letters in lower case, ∆ as '='.
+// The same as name.toLower() for every name without ∆.
+QString aplFnFileStem(const QString &name)
+{
+    QString out;
+    for (QChar ch : aplFnNormalize(name)) {
+        ushort u = ch.unicode();
+        if (u >= 'A' && u <= 'Z')
+            out.append(QChar(ushort(u + 32)));
+        else if (ch == kFontDelta)
+            out.append(QChar('='));
+        else
+            out.append(ch);
+    }
+    return out;
+}
+
+// The reverse: a .fn file's base name back to the function name
+// (aplFnNormalize() already reads '=' as ∆).
+QString aplFnNameFromStem(const QString &stem)
+{
+    return aplFnNormalize(stem);
+}
+
+// Whether a name typed into the New Function box is one the interpreter can
+// take, after aplFnNormalize(): letters, digits, '_' and ∆, not starting with
+// a digit (is_varch()/is_name1() in parse.h), and at most 31 characters
+// (get_vstr() gives up at MAXSYM_CHARS, 32).
+bool aplFnIsValidName(const QString &name)
+{
+    QString n = aplFnNormalize(name);
+    if (n.isEmpty() || n.size() > 31) return false;
+    for (int i = 0; i < n.size(); i++) {
+        ushort u = n[i].unicode();
+        bool letter = (u >= 'A' && u <= 'Z') || u == '_' || n[i] == kFontDelta;
+        bool digit  = (u >= '0' && u <= '9');
+        if (!(letter || (digit && i > 0))) return false;
+    }
+    return true;
+}
+
+// A function name for text shown in the system font (window title, status
+// bar), where U+00C8 would show as È: ∆ as the real U+2206.
+QString aplFnDisplayName(const QString &name)
+{
+    QString out = aplFnNormalize(name);
+    out.replace(kFontDelta, QChar(0x2206));
+    return out;
+}
+
+// =============================================================================
 // Clipboard translation (KAPL font-index <-> real Unicode APL glyphs)
 // =============================================================================
 //
@@ -171,12 +258,14 @@ bool APLTerminalWidget::forceSaveToFile(const QString &filename)
         m_isNewFunction = false;
         QFileInfo info(filename);
         // Files are always saved lowercase (see the Save/Save-As dialogs in
-        // main.cpp, which build the path via .toLower()), but the function
-        // name itself is kept uppercase everywhere else (enterEditMode()'s
-        // callers all pass .toUpper()) -- that's what )ENTER and the rest
-        // of the app expect. Without .toUpper() here, this line was
-        // silently lowercasing m_currentFunctionName on every save.
-        m_currentFunctionName = info.baseName().toUpper();
+        // main.cpp, which build the path via aplFnFileStem(); .toLower()
+        // before V107), but the function name itself is kept uppercase
+        // everywhere else (enterEditMode() normalizes it to upper case)
+        // -- that's what )ENTER and the rest of the app expect. Without
+        // the upper-casing here, this line was silently lowercasing
+        // m_currentFunctionName on every save. aplFnNameFromStem() upper-
+        // cases, and also turns a '=' in the file name back into ∆ (V107).
+        m_currentFunctionName = aplFnNameFromStem(info.baseName());
         // Update the header line to reflect the new filename? No - preserve user's header
         // But we do need to update the stored content if the function name changed?
         // For now, just update the tracking variables
@@ -1699,8 +1788,13 @@ QString APLTerminalWidget::storageLineToDisplay(const QByteArray &storageLine) c
 }
 
 // Edit mode
-bool APLTerminalWidget::enterEditMode(const QString &functionName, const QStringList &lines)
+bool APLTerminalWidget::enterEditMode(const QString &rawFunctionName, const QStringList &lines)
 {
+    // Callers pass the name upper-cased (Open Function passed it lower-cased
+    // until V107); normalized here once, so every use below gets ASCII upper
+    // case and ∆ as U+00C8 (see aplFnNormalize()).
+    const QString functionName = aplFnNormalize(rawFunctionName);
+
     if (m_editMode) exitEditMode(false);
 
 	document()->setMaximumBlockCount(0);  // 0 = unlimited
@@ -1718,7 +1812,7 @@ bool APLTerminalWidget::enterEditMode(const QString &functionName, const QString
     
     // Check if this function exists on disk
     QString fnsDir = getFnsDirectory();
-    QString expectedPath = QString("%1/%2.fn").arg(fnsDir).arg(functionName.toLower());
+    QString expectedPath = QString("%1/%2.fn").arg(fnsDir).arg(aplFnFileStem(functionName));
     QFileInfo fileInfo(expectedPath);
     
     if (!lines.isEmpty() && lines.size() > 0) {
@@ -1833,7 +1927,7 @@ bool APLTerminalWidget::saveCurrentFunctionAs(const QString &filename)
         // See the matching comment in forceSaveToFile(): baseName() is the
         // lowercase on-disk stem, not the app's uppercase function-name
         // convention.
-        m_currentFunctionName = info.baseName().toUpper();
+        m_currentFunctionName = aplFnNameFromStem(info.baseName());
         return true;
     }
     return false;

@@ -1517,7 +1517,7 @@ private slots:
     void handleEditRequest(const QString &functionName)
     {
         terminal->enterEditMode(functionName.toUpper());
-        statusBar()->showMessage("Editing: " + functionName.toUpper(), 2000);
+        statusBar()->showMessage("Editing: " + aplFnDisplayName(functionName), 2000);
     }
 
     void handleInterrupt()
@@ -1591,13 +1591,27 @@ private slots:
 
     void newFunction()
     {
-        bool ok;
-        QString name = QInputDialog::getText(this, "New Function",
-            "Enter function name:", QLineEdit::Normal, "", &ok);
-        if (ok && !name.isEmpty()) {
-            terminal->enterEditMode(name.toUpper());
-            statusBar()->showMessage("Editing: " + name.toUpper(), 2000);
+        /* V107: the box uses the ordinary keyboard, so = stands for ∆
+           (as in the file name; aplFnNormalize()), and a name the
+           interpreter can't take is refused here, with the box shown
+           again holding what was typed, instead of opening the editor
+           on a function that could never be entered. */
+        QString name;
+        for (;;) {
+            bool ok;
+            name = QInputDialog::getText(this, "New Function",
+                "Function name:\n(letters, digits and _; type = for ∆)",
+                QLineEdit::Normal, name, &ok).trimmed();
+            if (!ok || name.isEmpty()) return;
+            if (aplFnIsValidName(name)) break;
+            QMessageBox::warning(this, "New Function",
+                QString("\"%1\" isn't a valid function name.\n\n"
+                        "Use letters, digits, _ and ∆ (typed as =), "
+                        "up to 31 characters, not starting with a digit.")
+                    .arg(name));
         }
+        terminal->enterEditMode(name.toUpper());
+        statusBar()->showMessage("Editing: " + aplFnDisplayName(name), 2000);
     }
 
     void openFunction()
@@ -1610,9 +1624,11 @@ private slots:
             QStringList lines = APLTerminalWidget::loadFnFile(filename, layout);
             if (!lines.isEmpty()) {
                 QFileInfo info(filename);
-                QString funcName = info.baseName().toLower();
+                /* '=' in the file name is ∆ (V107); upper case, as
+                   every other caller passes it (was toLower()) */
+                QString funcName = aplFnNameFromStem(info.baseName());
                 terminal->enterEditMode(funcName, lines);
-                statusBar()->showMessage("Loaded: " + funcName, 2000);
+                statusBar()->showMessage("Loaded: " + aplFnDisplayName(funcName), 2000);
             } else {
                 statusBar()->showMessage("Failed to load: " + filename, 2000);
             }
@@ -1624,7 +1640,7 @@ private slots:
         if (terminal->isEditMode()) {
             if (terminal->saveCurrentFunction()) {
                 statusBar()->showMessage(
-                    "Function saved: " + terminal->getCurrentFunctionName(), 2000);
+                    "Function saved: " + aplFnDisplayName(terminal->getCurrentFunctionName()), 2000);
             } else {
                 statusBar()->showMessage("Save failed!", 2000);
             }
@@ -1636,7 +1652,7 @@ private slots:
         if (terminal->isEditMode()) {
             QString fnsDir = APLTerminalWidget::getFnsDirectory();
             QString filename = QFileDialog::getSaveFileName(this, "Save Function As",
-                fnsDir + "/" + terminal->getCurrentFunctionName().toLower() + ".fn",
+                fnsDir + "/" + aplFnFileStem(terminal->getCurrentFunctionName()) + ".fn",
                 "APL Function Files (*.fn)");
             if (!filename.isEmpty()) {
                 if (terminal->saveCurrentFunctionAs(filename)) {
@@ -1661,7 +1677,7 @@ private slots:
         if (savePath.isEmpty()) {
             QString fnsDir = APLTerminalWidget::getFnsDirectory();
             savePath = QFileDialog::getSaveFileName(this, "Save Function",
-                fnsDir + "/" + terminal->getCurrentFunctionName().toLower() + ".fn",
+                fnsDir + "/" + aplFnFileStem(terminal->getCurrentFunctionName()) + ".fn",
                 "APL Function Files (*.fn)");
             if (savePath.isEmpty()) return false;
             if (!savePath.endsWith(".fn")) savePath += ".fn";
@@ -1755,7 +1771,7 @@ private slots:
         if (m_deleteLineAction) m_deleteLineAction->setVisible(true);
 
         terminal->clearUndoStack();
-        setWindowTitle(g_appTitle + " - Editing: " + functionName);
+        setWindowTitle(g_appTitle + " - Editing: " + aplFnDisplayName(functionName));
     }
 
     /* Slot connected to terminal's editModeExited signal */
@@ -2464,10 +2480,10 @@ int main(int argc, char *argv[])
     parser.addOption(testOption);
 
     QCommandLineOption quadOption(QStringList() << "q" << "quad-syntax",
-        "Quad-function syntax: both (default; \u2395IO 0 and \u2395IO\u21900), "
+        "Quad-function syntax: both (\u2395IO 0 and \u2395IO\u21900), "
         "warn (both, and )ENTER notes each old-form use), "
-        "new (only \u2395IO\u21900).",
-        "mode", "both");
+        "new (default; only \u2395IO\u21900).",
+        "mode", "new");		// <- the default
     parser.addOption(quadOption);
 
     parser.addPositionalArgument("workspace",

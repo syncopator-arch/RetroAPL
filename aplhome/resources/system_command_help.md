@@ -81,7 +81,8 @@ on the function name will compile it into a current workspace.
 
 With no name, displays the active workspace's name. With a name,
 renames the workspace (without saving it) and displays the old name.
-Short form `)WS`.
+A workspace name can't contain `∆` (an Incorrect Command error, as for
+`)SAVE` and `)LOAD` with such a name). Short form `)WS`.
 
 `)LIB`
 
@@ -137,12 +138,14 @@ or suspended. Short form `)ERA`.
 
 `)ENTER fname fname ...`
 
-Reads each function from its source file `$APLHOME/fns/fname.fn` (the
-file name is always lower case) and defines it in the active
-workspace, replacing any existing function or variable with the same
-name. If a file isn't found, its full path is displayed along with the
-error. Fails with an SI error if the function is currently running or
-suspended. Short form `)ENT`.
+Reads each function from its source file `$APLHOME/fns/fname.fn` and
+defines it in the active workspace, replacing any existing function or
+variable with the same name. The file name is always lower case, and a
+`∆` in the name is `=` in the file name: `A∆B` is in `a=b.fn`. `)LIST`,
+`)DROP` and the editor name files the same way, and `)FNSL` and
+`)FSEARCH` show the `=` as `∆`. If a file isn't found, its full path
+is displayed along with the error. Fails with an SI error if the
+function is currently running or suspended. Short form `)ENT`.
 
 `)EDIT fname`
 

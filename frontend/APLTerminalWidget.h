@@ -209,4 +209,14 @@ private:
 
 };
 
+// ∆ in function names (V107), defined in APLTerminalWidget.cpp (see the
+// comment there). Inside the GUI ∆ is U+00C8, its font code; a .fn file
+// name writes it as '=', as the backend does; and text in the system font
+// (window title, status bar) shows it as U+2206.
+QString aplFnNormalize(const QString &name);     // upper case, ∆ as U+00C8 ('=' too)
+QString aplFnFileStem(const QString &name);      // .fn base name: lower case, ∆ as '='
+QString aplFnNameFromStem(const QString &stem);  // .fn base name back to the function name
+QString aplFnDisplayName(const QString &name);   // ∆ as U+2206, for the system font
+bool    aplFnIsValidName(const QString &name);   // New Function box: a name the interpreter takes
+
 #endif // APLTERMINALWIDGET_H

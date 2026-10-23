@@ -1,0 +1,16 @@
+Clear WS
+     )ENTER LABU
+     )LIST LABU
+     ∇ Z←LABU N;I;B2LOOP;MY_LOOP
+[1]  I←0
+[2]  B2LOOP←100
+[3]  MY_LOOP←200
+[4]  LOOP:I←I+1
+[5]  →(I<N)/LOOP
+[6]  →MY_END
+[7]  Z←'NOT SKIPPED'
+[8]  →0
+[9]  MY_END:Z←I,B2LOOP,MY_LOOP,LOOP,MY_END
+     LABU 3
+3 100 200 4 9
+     

@@ -1,0 +1,19 @@
+A∆B←5
+A∆B+1
+∆X←3
+∆X×2
+X∆←⍳3
+X∆
+MY_V←7
+)VARS
+∆O←1
+⎕IO ∆O
+)ENTER F∆G
+)LIST F∆G
+2 F∆G 3
+)FNS
+)FNSL F∆
+)FSEARCH D∆ONE
+)WSID A∆B
+)DROP F∆G
+)FNSL F∆

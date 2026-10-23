@@ -1,0 +1,49 @@
+Clear WS
+     A∆B←5
+     A∆B+1
+6
+     ∆X←3
+     ∆X×2
+6
+     X∆←⍳3
+     X∆
+1 2 3
+     MY_V←7
+     )VARS
+A∆B       MY_V      X∆        ∆X        
+     ∆O←1
+     ⎕IO ∆O
+1
+     )ENTER F∆G
+     )LIST F∆G
+     ∇ Z←A F∆G B∆C;L∆1;MY_N;∆T
+[1]  ⍝ ∆ AND _ IN NAMES AND LABELS (V107)
+[2]  L∆1←0
+[3]  MY_N←0
+[4]  ∆T←10
+[5]  LOOP:L∆1←L∆1+1
+[6]  MY_N←MY_N+A
+[7]  →(L∆1<B∆C)/LOOP
+[8]  →D∆ONE
+[9]  Z←'NOT SKIPPED'
+[10] →0
+[11] D∆ONE:Z←L∆1,MY_N,∆T,LOOP,D∆ONE
+     2 F∆G 3
+3 6 10 5 11
+     )FNS
+F∆G       
+     )FNSL F∆
+F∆G                 
+     )FSEARCH D∆ONE
+F∆G[8]  →D∆ONE
+F∆G[11]  D∆ONE:Z←L∆1,MY_N,∆T,LOOP,D∆ONE
+2 lines in 1 file
+     )WSID A∆B
+     ^
+Incorrect Command
+
+     )DROP F∆G
+f∆g DROPPED
+     )FNSL F∆
+
+     

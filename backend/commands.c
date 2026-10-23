@@ -273,6 +273,43 @@ char *cp;
 	}
 }
 
+/* ∆ in a function's .fn file name (V107). ∆ (CHAR_DELTA, font code
+   0xC8) isn't a character a file name can carry the same way on
+   Linux (not UTF-8) and Windows (the ANSI code page), so on disk it is
+   '='. No name can contain '=', so the mapping is one to one; and '-'
+   was not used, as )FNSL's filter reads X-Y as a range. Every name
+   without ∆ gives the same file name as before. The front end does the
+   same (aplFnFileStem() in APLTerminalWidget.cpp). */
+#define FN_DELTA_CHAR '='
+
+/* $APLHOME/fns/NAME.fn for a function name: A-Z lowered as go_lower()
+   does, ∆ as FN_DELTA_CHAR. out has LINE_SIZE bytes. name is left as
+   it was. Used by )ENTER, )DROP and )LIST. */
+static void
+fn_file_path(char *out, const char *name)
+{
+char *cp;
+UCHAR c;
+
+	get_aplhome_dir(out, LINE_SIZE, "fns");
+	cp = out + strlen(out);
+	while (*name && cp < out + LINE_SIZE - 4) {
+		c = (UCHAR)*name++;
+		if (c >= 'A' && c <= 'Z') c += 32;
+		else if (c == CHAR_DELTA) c = FN_DELTA_CHAR;
+		*cp++ = (char)c;
+	}
+	strcpy(cp, ".fn");
+}
+
+/* A .fn file name's character as the function name has it: the
+   reverse of fn_file_path()'s ∆ mapping, for )FNSL and )FSEARCH */
+static UCHAR
+fn_shown_char(UCHAR c)
+{
+	return (c == FN_DELTA_CHAR) ? (UCHAR)CHAR_DELTA : c;
+}
+
 short
 on_stack(f)
 short f;
@@ -473,7 +510,14 @@ int len;
    fnmatch()/FindFirstFileA(). Not believed to matter in practice --
    '*' is the only wildcard documented anywhere for )LIB/)FNSL -- but
    flagging it here in case that assumption is wrong.
+
+   For )FNSL (V107), calldir_fns is set around the call: each file
+   name's FN_DELTA_CHAR ('=') is shown as ∆ again, and the pattern is
+   matched against that shown name, so )FNSL A∆ finds A∆B (file
+   a=b.fn) and a '-' in the pattern is still only ever a range.
    ============================================================ */
+static int calldir_fns = 0;
+
 void
 do_calldir(s)
 char *s;
@@ -529,9 +573,16 @@ int count, capacity, k;
 	for (entry = get_first_dir(dirbuf); entry; entry = get_next_dir()) {
 		char type = entry[0];
 		char *nm = entry + 1;
+		char shown[PATHBUF_SIZE];
 		int nl, stem, i;
 
 		if (type != 'F') continue;		/* skip subdirectories */
+		if (calldir_fns) {			/* '=' back to ∆ (V107) */
+			for (i = 0; nm[i] && i < (int)sizeof(shown) - 1; i++)
+				shown[i] = (char)fn_shown_char((UCHAR)nm[i]);
+			shown[i] = '\0';
+			nm = shown;
+		}
 		if (!filt_match(pattern, nm)) continue;
 
 		nl = strlen(nm);
@@ -548,7 +599,10 @@ int count, capacity, k;
 		}
 
 		if (stem >= 63) stem = 63;
-		strncpy(names[count], nm, (size_t)stem);
+		/* stem <= strlen(nm), so a plain copy of stem bytes; memcpy,
+		   not strncpy, which -Wstringop-truncation flags once nm can
+		   be the shown[] buffer (V107) */
+		memcpy(names[count], nm, (size_t)stem);
 		names[count][stem] = '\0';
 		for (cp = names[count]; *cp; cp++)
 			if (*cp >= 'a' && *cp <= 'z') *cp -= 32;
@@ -1159,6 +1213,13 @@ short f;
 {
 	if (*COMMANDP) {
 		COMMANDP = get_vstr(COMMANDP);
+		/* ∆ is a name character since V107, but not yet in a
+		   workspace name: it would go into the .ws file name as a
+		   raw byte (see FN_DELTA_CHAR for function files). Until
+		   workspace files get the same mapping, refused. Before
+		   V107 the name silently stopped at the ∆. */
+		if (COMMANDP && strchr((char *)VBUF, CHAR_DELTA))
+			return(SET_ERR(ERR_COMMAND));
 		if (COMMANDP) {
 			if (f) {
 				Cmessage(MSG_WAS);
@@ -1300,10 +1361,7 @@ char *tp;
 			goto enterr;
 		}
 
-		go_lower(VBUF);
-		get_aplhome_dir((char *)LINEA, LINE_SIZE, "fns");
-		strcat((char *)LINEA,(char *)VBUF);
-		strcat((char *)LINEA,".fn");
+		fn_file_path((char *)LINEA, (char *)VBUF);
 		ifp = fopen((char *)LINEA,"r");
 
 		if (!ifp) 
@@ -1342,9 +1400,10 @@ NL();
 					*lp++ = (UCHAR)line >> 8;
 					*lp++ = (UCHAR)(line & 255);
 				}
-				/* bail if not alphanum */
-/*				if (!is_varch(c)) break; */
-				if (c < '0' || c > var_hi || (c > '9' && c < var_lo)) break;
+				/* bail if not a name character. Until V107 this
+				   tested letters and digits only, so a label with
+				   '_' in it (MY_LOOP:) wasn't found. */
+				if (!is_varch(c)) break;
 			}
 		}
 		fseek(ifp,0L,0);	/* start again */
@@ -1352,6 +1411,10 @@ NL();
 
 /* second pass, compile */
 		line = 0;
+		ms = -1;	/* the function's symbol, set by line 0 (the header),
+				   which always comes first. Set here only because
+				   gcc 11 at -O1 (make check_san) can't see that and
+				   warns at the error path's sym_delete(ms) (V107) */
 		fep = NULL;	/* set while compiling line 0 (the header); still NULL
 				   after the loop means the file was empty */
 		while (fgets((char *)LINEA,LINE_SIZE,ifp)) 
@@ -1507,14 +1570,19 @@ NL();
 				}
 
 			} else {	/* not line 0 */
-/* search the label table */
+/* search the label table. A label is replaced by its line number only
+   where a whole name matches it: the scan starts a match only where a
+   name can start (is_name1()) and steps over the rest of a name
+   (is_varch()). Until V107 both tests were letters only, so with a
+   label LOOP, B2LOOP became B212 and MY_LOOP became MY_12 (the match
+   started after the digit or the '_'); ∆ would have done the same. */
 				qt = 0;
 				cp = LINEB;
 				t = 0;
-				while (t < ct) 
+				while (t < ct)
 				{
 					c = *cp;
-					while (t < ct && ((c < var_lo || c > var_hi) || qt)) 
+					while (t < ct && (!is_name1(c) || qt))
 					{
 						if (c == CHAR_QT) qt = 1 - qt;
 						cp++;
@@ -1527,8 +1595,8 @@ NL();
 						i = strlen(lp);
 						if (!strncmp(cp,lp,i)) 
 						{
-							c = *(cp + i);						
-							if (c < '0' || c > var_hi || (c > '9' && c < var_lo)) 
+							c = *(cp + i);
+							if (!is_varch(c))
 							{
 /* insert line number */
 								memcpy(LINEA,cp+i,((ct-t)+1)-i);
@@ -1558,7 +1626,7 @@ NL();
 						}
 						lp += i + 3;
 					}
-					while (*cp >= var_lo && *cp <= var_hi )
+					while (is_varch(*cp))
 					{
 						cp++;
 						t++;
@@ -1802,8 +1870,8 @@ FILE *ifp;
 			if (fs_contains(raw, pat)) {
 				/* NAME[n]  then the line, as )ENTER's error display */
 				nl = (int)strlen(names[k]) - 3;
-				for (j = 0; j < nl && j < (short)sizeof(cb) - 1; j++)
-					cb[j] = (char)filt_up((int)(UCHAR)names[k][j]);
+				for (j = 0; j < nl && j < (short)sizeof(cb) - 1; j++)	/* ∆ for '=' (V107) */
+					cb[j] = (char)fn_shown_char((UCHAR)filt_up((int)(UCHAR)names[k][j]));
 				cb[j] = '\0';
 				CPRINT(cb);
 				sprintf(cb, "[%d]  ", line);
@@ -2568,7 +2636,8 @@ FILE *wfp;
     if (MSTACK != STACKMAX) return(SET_ERR(ERR_SI));
 
 	if (!strcmp("Clear WS",wspace->wsid)) strcpy(wspace->wsid,"continue");
-    do_wsid(0);
+    /* a refused name (∆, V107) must not save under the old one */
+    if (do_wsid(0)) return(SET_ERR(ERR_COMMAND));
     get_aplhome_dir((char *)LINEA, LINE_SIZE, "ws");
     strcat((char *)LINEA, wspace->wsid);
     strcat((char *)LINEA, ".ws");
@@ -2783,12 +2852,15 @@ do_load()
 	if (*COMMANDP) 
 	{
 		COMMANDP = get_vstr(COMMANDP);
-		if (!COMMANDP) 
+		if (!COMMANDP)
 		{
 			goto loadrr;
 		}
+		/* no ∆ in workspace names yet (V107; see do_wsid()) */
+		if (strchr((char *)VBUF, CHAR_DELTA))
+			return(SET_ERR(ERR_COMMAND));
 	}
-	switch (load_ws(VBUF,0)) 
+	switch (load_ws(VBUF,0))
 	{
 		case 0:
 			Cmessage(MSG_SAVED);
@@ -2850,9 +2922,7 @@ int i;
     for (i = 0; VBUF[i]; i++)
         if (VBUF[i] >= 'A' && VBUF[i] <= 'Z') VBUF[i] += 32;
 
-    get_aplhome_dir((char *)LINEA, LINE_SIZE, "fns");
-    strcat((char *)LINEA, (char *)VBUF);
-    strcat((char *)LINEA, ".fn");
+    fn_file_path((char *)LINEA, (char *)VBUF);	/* ∆ as '=' (V107) */
 
     if (unlink((char *)LINEA) == 0) {
         CPRINT(VBUF);
@@ -3344,10 +3414,7 @@ int ranged, nlines;
 		}
 	}
 
-	get_aplhome_dir(cp, LINE_SIZE, "fns");
-	go_lower(s);
-	strcat(cp,s);
-	strcat(cp,".fn");
+	fn_file_path(cp, s);	/* lowered, ∆ as '=' (V107) */
 	lfp = fopen(cp,"r");
 	if (!lfp) return(SET_ERR(ERR_FNOTF));
 
@@ -3837,7 +3904,9 @@ long l;
 				strcat(LINEA, fbuf);
 			}
 			strcat(LINEA,FN_POSTFIX);
+			calldir_fns = 1;	/* show ∆, not '=' (V107) */
 			calldir((char *)LINEA);
+			calldir_fns = 0;
 			return(0);
 		case 11:	/* FNS */
 			return(do_fns(COMMANDP));
