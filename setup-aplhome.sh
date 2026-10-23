@@ -12,7 +12,7 @@
 #   target-folder  Defaults to $APLHOME if set, else ~/aplhome.
 #
 # Two kinds of files are handled differently:
-#   Program files -- bin/APLTerminal, fonts/kapl.ttf, help.dat,
+#   Program files -- bin/retroapl, fonts/kapl.ttf, help.dat,
 #       bin/retroapl-icon.png (the menu entry's icon),
 #       resources/*.md. These belong to RetroAPL. They're copied if
 #       missing and replaced if this repository has a different
@@ -28,7 +28,7 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$REPO_ROOT/aplhome"
-BINARY="$REPO_ROOT/frontend/build/APLTerminal"
+BINARY="$REPO_ROOT/frontend/build/retroapl"
 TARGET="${1:-${APLHOME:-$HOME/aplhome}}"
 
 if [ ! -d "$SRC" ]; then
@@ -93,9 +93,15 @@ done
 
 have_binary=0
 if [ -f "$BINARY" ]; then
-    install_program_file "$BINARY" "$TARGET/bin/APLTerminal"
-    chmod +x "$TARGET/bin/APLTerminal"
+    install_program_file "$BINARY" "$TARGET/bin/retroapl"
+    chmod +x "$TARGET/bin/retroapl"
     have_binary=1
+    # The program was called APLTerminal before V106. Its old copy is a
+    # program file, so it goes, now that the new one is in place.
+    if [ -e "$TARGET/bin/APLTerminal" ]; then
+        rm -f "$TARGET/bin/APLTerminal"
+        echo "  removed  bin/APLTerminal (the program is now bin/retroapl)"
+    fi
 fi
 
 # --- user files ------------------------------------------------------------
@@ -120,9 +126,14 @@ if [ "$have_binary" = 1 ]; then
         echo "Type=Application"
         echo "Name=RetroAPL"
         echo "Comment=APL interpreter in the style of the IBM 2741 terminal"
-        echo "Exec=env \"APLHOME=$TARGET\" \"$TARGET/bin/APLTerminal\""
+        echo "Exec=env \"APLHOME=$TARGET\" \"$TARGET/bin/retroapl\""
         echo "Path=$TARGET"
         [ -f "$TARGET/bin/retroapl-icon.png" ] && echo "Icon=$TARGET/bin/retroapl-icon.png"
+        # Ties the program's windows to this entry under X11, however
+        # it was started, so the dock shows them as RetroAPL with this
+        # icon. Their WM_CLASS is the program's name, retroapl, which
+        # matches this file's name anyway; this says it outright.
+        echo "StartupWMClass=retroapl"
         echo "Terminal=false"
         echo "Categories=Development;"
     } > "$DESKTOP"

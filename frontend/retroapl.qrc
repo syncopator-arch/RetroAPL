@@ -1,0 +1,8 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) Keith Doyle -->
+<!-- The window icon on Linux (main() sets it). Windows uses retroapl.rc. -->
+<RCC>
+    <qresource prefix="/">
+        <file>retroapl.ico</file>
+    </qresource>
+</RCC>

@@ -2,7 +2,12 @@
 # Copyright (C) Keith Doyle
 
 cmake_minimum_required(VERSION 3.16)
-project(APLTerminal VERSION 1.0 LANGUAGES CXX)
+project(RetroAPL VERSION 1.0 LANGUAGES CXX)
+
+# The program's file name: retroapl on Linux, retroapl.exe on Windows.
+# (Before V106 it was APLTerminal.) On Linux it is also the windows'
+# WM_CLASS, which matches the menu entry, retroapl.desktop.
+set(PROGRAM retroapl)
 
 # Qt6 requires C++17 minimum
 set(CMAKE_CXX_STANDARD 17)
@@ -76,32 +81,36 @@ set(HEADERS
 # ── Executable ────────────────────────────────────────────────────────
 # WIN32 keyword: builds as a GUI-subsystem app on Windows (no console window).
 # Ignored entirely on Linux/Unix -- no effect on that build.
-add_executable(${PROJECT_NAME} WIN32
+add_executable(${PROGRAM} WIN32
     ${SOURCES}
     ${HEADERS}
 )
 
-# ── Windows icon ──────────────────────────────────────────────────────
-# retroapl.rc builds retroapl.ico into the .exe: Explorer, shortcuts and
-# the taskbar show it, and Qt uses it for its windows. Linux takes its
-# icon from the menu entry instead (setup-aplhome.sh).
+# ── Icon ──────────────────────────────────────────────────────────────
+# Windows: retroapl.rc builds retroapl.ico into the .exe: Explorer,
+# shortcuts and the taskbar show it, and Qt uses it for its windows.
+# Linux: retroapl.qrc builds the same .ico in as a Qt resource, and
+# main() sets it as the window icon. The menu entry's icon is
+# setup-aplhome.sh's job.
 if(WIN32)
     enable_language(RC)
-    target_sources(${PROJECT_NAME} PRIVATE retroapl.rc)
+    target_sources(${PROGRAM} PRIVATE retroapl.rc)
+else()
+    target_sources(${PROGRAM} PRIVATE retroapl.qrc)
 endif()
 
 # ── Compile definitions ───────────────────────────────────────────────
 # AS_DLL selects the dll_startup/exec_apl_line path in main.c
 # NO_INPUT_PROC tells the backend to use the direct-buffer input path
 # UNIX is required by the backend headers
-target_compile_definitions(${PROJECT_NAME} PRIVATE
+target_compile_definitions(${PROGRAM} PRIVATE
     AS_DLL
     NO_INPUT_PROC
 	$<IF:$<BOOL:${WIN32}>,WINDOWS,UNIX>
 )
 
 # ── Link libraries ────────────────────────────────────────────────────
-target_link_libraries(${PROJECT_NAME} PRIVATE
+target_link_libraries(${PROGRAM} PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
@@ -116,7 +125,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 # ── Warnings ──────────────────────────────────────────────────────────
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(${PROJECT_NAME} PRIVATE
+    target_compile_options(${PROGRAM} PRIVATE
         -Wall
         -Wextra
         # Suppress warnings that originate from backend headers included
@@ -128,15 +137,15 @@ endif()
 
 # ── Debug symbols ─────────────────────────────────────────────────────
 if(CMAKE_BUILD_TYPE MATCHES Debug)
-    target_compile_options(${PROJECT_NAME} PRIVATE -g)
+    target_compile_options(${PROGRAM} PRIVATE -g)
 endif()
 
 # ── Install ───────────────────────────────────────────────────────────
-install(TARGETS ${PROJECT_NAME}
+install(TARGETS ${PROGRAM}
     RUNTIME DESTINATION bin
 )
 install(FILES "${CMAKE_SOURCE_DIR}/../fonts/kapl.ttf"
-    DESTINATION share/${PROJECT_NAME}/fonts
+    DESTINATION share/${PROGRAM}/fonts
 )
 # Note: the program loads the font only from $APLHOME/fonts/kapl.ttf,
 # so this install isn't how RetroAPL is normally set up: use

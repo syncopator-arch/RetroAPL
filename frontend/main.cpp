@@ -2,7 +2,8 @@
 // Copyright (C) Keith Doyle
 
 /*
- * main.cpp — APL Terminal Qt frontend, integrated with libapl backend.
+ * main.cpp — RetroAPL's Qt front end (the program retroapl), integrated
+ * with the libapl backend.
  *
  * Threading model:
  *   Main thread  : Qt event loop, all widget operations.
@@ -116,6 +117,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QFontDatabase>
+#include <QIcon>
 #include <QStringList>
 
 #include "APLTerminalWidget.h"
@@ -2429,8 +2431,30 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
+#ifndef Q_OS_WIN
+    /* Window icon on Linux. On Windows, Qt already gives every window the
+     * icon built into the .exe (IDI_ICON1 in retroapl.rc). Elsewhere it's
+     * set here, once for the whole application, so the terminal, the
+     * graphics windows and the dialogs all get it; a window's own
+     * setWindowIcon() would cover that window only. retroapl.ico is built
+     * in (retroapl.qrc), with all its sizes: the thickened 16/20 pixel
+     * designs for title bars, the art at 64 and up. Desktops that show
+     * title-bar icons (KDE, Xfce, Cinnamon, MATE) use it; GNOME has none,
+     * and its dock and Alt+Tab use the menu entry's icon.
+     *
+     * The desktop file name ties the windows to the menu entry
+     * (retroapl.desktop, written by setup-aplhome.sh) under Wayland,
+     * where GNOME ignores the icon above and takes it from the menu
+     * entry. Under X11 the windows' WM_CLASS does the same job: it is
+     * the program's name, retroapl, which the entry names as its
+     * StartupWMClass. */
+    QApplication::setWindowIcon(QIcon(":/retroapl.ico"));
+    QApplication::setDesktopFileName("retroapl");
+#endif
+
     QCommandLineParser parser;
-    parser.setApplicationDescription("APL Terminal - IBM 2741 Emulator");
+    parser.setApplicationDescription(
+        "RetroAPL - APL interpreter in the style of the IBM 2741 terminal");
     parser.addHelpOption();
 
     QCommandLineOption logOption("log", "Enable logging of APL input to apl_input.bin");
@@ -2462,7 +2486,7 @@ int main(int argc, char *argv[])
         else if (q == "warn") quad_syntax = 1;  /* QSYN_WARN */
         else if (q == "new")  quad_syntax = 2;  /* QSYN_NEW */
         else {
-            qWarning("aplterm: -q must be both, warn or new, not '%s'",
+            qWarning("retroapl: -q must be both, warn or new, not '%s'",
                      q.toLocal8Bit().constData());
             parser.showHelp(2);
         }

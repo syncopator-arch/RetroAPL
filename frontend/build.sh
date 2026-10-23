@@ -22,7 +22,7 @@
 # Layout (sibling directories):
 #   backend/    makefile -> libapl.a, apl_cli
 #   sequencer/  makefile -> libseq.a
-#   frontend/   CMakeLists.txt, this script -> build/APLTerminal
+#   frontend/   CMakeLists.txt, this script -> build/retroapl
 #
 # The font isn't touched here: setup-aplhome.sh installs it in
 # $APLHOME/fonts, the only place the program loads it from.
@@ -139,7 +139,7 @@ build_project() {
     cmake --build "$BUILD_DIR" -j"$(nproc)"
 
     print_status "Build complete!"
-    echo "Program: $BUILD_DIR/APLTerminal"
+    echo "Program: $BUILD_DIR/retroapl"
     echo "Next, if you haven't yet: $REPO_ROOT/setup-aplhome.sh"
     echo "(run it again after each rebuild to update the installed copy)."
 }
@@ -157,8 +157,8 @@ run_checks() {
 }
 
 run_application() {
-    if [ ! -f "$BUILD_DIR/APLTerminal" ]; then
-        print_error "APLTerminal not found. Build first."
+    if [ ! -f "$BUILD_DIR/retroapl" ]; then
+        print_error "retroapl not found. Build first."
         exit 1
     fi
 
@@ -168,8 +168,8 @@ run_application() {
         print_warning "No font in $APLHOME/fonts -- run $REPO_ROOT/setup-aplhome.sh first."
     fi
 
-    print_status "Running APLTerminal (APLHOME=$APLHOME)..."
-    exec "$BUILD_DIR/APLTerminal"
+    print_status "Running retroapl (APLHOME=$APLHOME)..."
+    exec "$BUILD_DIR/retroapl"
 }
 
 show_help() {

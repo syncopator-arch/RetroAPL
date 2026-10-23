@@ -5,7 +5,7 @@ setlocal enabledelayedexpansion
 
 rem windeploy.bat
 rem
-rem Gathers everything APLTerminal.exe needs to run on a machine without
+rem Gathers everything retroapl.exe needs to run on a machine without
 rem a Qt development install: the Qt DLLs and plugins (windeployqt), and
 rem the MinGW runtime DLLs. Run after winbuild.bat (build.bat in the
 rem repository root runs both).
@@ -22,7 +22,7 @@ rem Resolved relative to this script's own location, so it works
 rem regardless of the current directory.
 
 set SCRIPT_DIR=%~dp0
-set EXE=%SCRIPT_DIR%build\APLTerminal.exe
+set EXE=%SCRIPT_DIR%build\retroapl.exe
 set DEPLOY=%SCRIPT_DIR%deploy
 
 call "%SCRIPT_DIR%winenv.bat"
@@ -45,13 +45,13 @@ if exist "%DEPLOY%" rmdir /s /q "%DEPLOY%"
 mkdir "%DEPLOY%"
 copy /y "%EXE%" "%DEPLOY%\" >nul
 if errorlevel 1 (
-    echo Error: could not copy APLTerminal.exe to %DEPLOY%
+    echo Error: could not copy retroapl.exe to %DEPLOY%
     exit /b 1
 )
 
 rem --- Qt DLLs and plugins ---
 echo ==^> Running windeployqt...
-"%WINDEPLOYQT%" "%DEPLOY%\APLTerminal.exe"
+"%WINDEPLOYQT%" "%DEPLOY%\retroapl.exe"
 if errorlevel 1 (
     echo Error: windeployqt failed.
     exit /b 1

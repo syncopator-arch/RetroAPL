@@ -139,7 +139,7 @@ The source is in three parts, which are built in this order:
 |--------------|---------------------------------------------|---------------------------------|
 | `sequencer/` | The MIDI sequencer library (C)              | `libseq.a`                      |
 | `backend/`   | The interpreter (C)                         | `libapl.a`, and `apl_cli`       |
-| `frontend/`  | The Qt6 GUI (C++), linked with both libraries | `APLTerminal`                 |
+| `frontend/`  | The Qt6 GUI (C++), linked with both libraries | `retroapl`                    |
 
 `build.sh` (Linux) and `build.bat` (Windows), in the repository root,
 build all three in order. Both take the same commands:
@@ -157,7 +157,7 @@ a clean build, old object files can get linked against the new code.
 
 ### Linux details
 
-The program is built as `frontend/build/APLTerminal`. `build.sh` is a
+The program is built as `frontend/build/retroapl`. `build.sh` is a
 short wrapper around `frontend/build.sh`, so either one works.
 
 To build by hand instead:
@@ -190,7 +190,7 @@ set CMAKE_BIN=C:\Qt\Tools\CMake_64\bin
 `build.bat` runs two scripts in `frontend\`:
 
 - `winbuild.bat` builds the three parts. The program is
-  `frontend\build\APLTerminal.exe`.
+  `frontend\build\retroapl.exe`.
 - `windeploy.bat` gathers the program, the Qt and MinGW DLLs and Qt's
   plugins in `frontend\deploy\`. Then it checks that every DLL they
   need is either there or part of Windows, and names any that is

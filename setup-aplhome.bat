@@ -11,7 +11,7 @@ rem Usage: setup-aplhome.bat [target-folder]
 rem   target-folder  Defaults to %APLHOME% if set, else C:\aplhome.
 rem
 rem Two kinds of files are handled differently:
-rem   Program files -- bin\ (APLTerminal.exe and its DLLs, from
+rem   Program files -- bin\ (retroapl.exe and its DLLs, from
 rem       frontend\deploy\), fonts\kapl.ttf, help.dat, resources\*.md.
 rem       Copied if missing, replaced if this repository's copy differs,
 rem       so re-running setup after an update (and rebuild) brings them
@@ -69,15 +69,21 @@ rem --- the program and the Start menu --------------------------------------
 rem frontend\deploy\ is made by windeploy.bat (build.bat runs it): the
 rem program, the Qt and MinGW DLLs and the Qt plugin folders.
 set "DEPLOY=%REPO%\frontend\deploy"
-if not exist "%DEPLOY%\APLTerminal.exe" goto :no_program
+if not exist "%DEPLOY%\retroapl.exe" goto :no_program
 robocopy "%DEPLOY%" "%TARGET%\bin" *.* /E %RC%
 if errorlevel 8 goto :copy_failed
 
+rem The program was called APLTerminal.exe before V106. Its old copy is a
+rem program file, so it goes, now that the new one is in place. (The DLLs
+rem it used are the new one's too.) It can't be deleted while it runs.
+if exist "%TARGET%\bin\APLTerminal.exe" del /q "%TARGET%\bin\APLTerminal.exe" 2>nul
+if exist "%TARGET%\bin\APLTerminal.exe" echo Note: couldn't remove the old %TARGET%\bin\APLTerminal.exe -- is it running? Close it and delete it, or run this script again.
+
 echo.
-powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Programs')+'\RetroAPL.lnk'); $s.TargetPath='%TARGET%\bin\APLTerminal.exe'; $s.WorkingDirectory='%TARGET%'; $s.Description='RetroAPL'; $s.Save()"
+powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Programs')+'\RetroAPL.lnk'); $s.TargetPath='%TARGET%\bin\retroapl.exe'; $s.WorkingDirectory='%TARGET%'; $s.Description='RetroAPL'; $s.Save()"
 if errorlevel 1 (
     echo RetroAPL is installed in %TARGET%\bin. ^(The Start menu entry
-    echo couldn't be made; run %TARGET%\bin\APLTerminal.exe directly.^)
+    echo couldn't be made; run %TARGET%\bin\retroapl.exe directly.^)
 ) else (
     echo RetroAPL is installed in %TARGET%\bin and in your Start menu.
 )
@@ -85,7 +91,7 @@ goto :aplhome
 
 :no_program
 echo.
-echo The program hasn't been built yet (no %DEPLOY%\APLTerminal.exe).
+echo The program hasn't been built yet (no %DEPLOY%\retroapl.exe).
 echo Run build.bat, then run this script again to install it in
 echo %TARGET%\bin and add it to your Start menu.
 

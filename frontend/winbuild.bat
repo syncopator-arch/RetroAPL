@@ -7,7 +7,7 @@ rem winbuild.bat
 rem
 rem Builds RetroAPL on Windows: the MIDI sequencer library (libseq.a),
 rem the interpreter (libapl.a and apl_cli.exe), then the Qt front end
-rem (APLTerminal.exe). Run windeploy.bat next to gather the DLLs it
+rem (retroapl.exe). Run windeploy.bat next to gather the DLLs it
 rem needs -- or run build.bat in the repository root, which does both.
 rem
 rem Usage: winbuild.bat [clean|check]
@@ -93,14 +93,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist APLTerminal.exe (
-    echo Error: build did not produce APLTerminal.exe
+if not exist retroapl.exe (
+    echo Error: build did not produce retroapl.exe
     exit /b 1
 )
 
 echo.
 echo ==^> Build complete!
-echo Executable: %FRONTEND_DIR%build\APLTerminal.exe
+echo Executable: %FRONTEND_DIR%build\retroapl.exe
 echo Run windeploy.bat next to gather the DLLs it needs.
 endlocal
 exit /b 0
