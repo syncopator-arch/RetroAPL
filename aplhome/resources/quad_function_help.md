@@ -6,6 +6,12 @@ you're working. A window handle (`wnum`) is a number returned by `⎕WOPEN`.
 Packed colors are 24-bit `0xRRGGBB` values unless a function says
 otherwise.
 
+A `⎕` written straight before a name that isn't one of these
+functions, such as `⎕BLBLB` or `⎕IO∆X`, is an Unknown Special Function
+error. A plain `⎕` (quad input or output) needs something other than a
+letter, `_` or `∆` right after it: a space, `←`, a digit, a parenthesis
+or the end of the line.
+
 ---
 
 ## Settable functions: `⎕IO←n` and `⎕IO n`

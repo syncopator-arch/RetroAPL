@@ -340,7 +340,15 @@ static int input_translate(UCHAR *cp, UCHAR *outs)
                     cpt = all_fnames[k];
                 }
 sfound:
-                if (!cpt) c = CHAR_QD;
+                /* No special function by that name. A ⎕ straight before
+                   something that starts a name (a letter, _ or ∆, as
+                   compline() reads it) is never a quad beside a name:
+                   mark it (CHAR_BADSYS) so the line fails to compile
+                   with "Unknown Special Function" (V109). Anything else
+                   after it (a space, a digit, ←, ...) is a plain quad as
+                   before. The letters themselves are translated as
+                   usual below. */
+                if (!cpt) c = is_name1(itrans[*cp]) ? CHAR_BADSYS : CHAR_QD;
                 *sp++ = c;
             } else {
                 *sp++ = itrans[*cp++];

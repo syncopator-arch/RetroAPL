@@ -20,6 +20,15 @@ lengths, the shorter one is reused from its start to fill out the
 longer, where the book gives a `Length Error`: `1 2 3 4+1 2` is
 `2 4 4 6`.
 
+The same goes for arrays of any shape. Items are taken in row order,
+and the result has the shape of the argument with more items (if both
+have as many, the one of higher rank, or else the left). So
+`(3 4⍴⍳12)+⍳4` adds `1 2 3 4` to each row, and `M+V` with `V` as long
+as a row of `M` is a quick way to work row by row. Shapes aren't
+otherwise checked: `(2 3⍴1)=2 4⍴1` gives a 2 by 4 result, made by
+reusing the left argument's 6 items, so its rows don't line up with the
+right's. Compare matrices of different widths with care.
+
 ---
 
 ## Summary
@@ -456,8 +465,8 @@ output continues on the same line.
 The points above where RetroAPL behaves differently, gathered in one
 place:
 
-- Scalar functions reuse the shorter of two vector arguments instead
-  of giving a `Length Error`.
+- Scalar functions reuse the shorter of two arguments, of any shape,
+  instead of giving a `Length Error` (see the start of this page).
 - `∧ ∨ ⍲ ⍱` treat any nonzero number as true.
 - Comparisons are exact; there's no `⎕CT`.
 - `÷` can do integer division (`)INTDIV`).

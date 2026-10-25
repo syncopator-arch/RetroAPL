@@ -63,6 +63,7 @@ extern short pop_fn();
 extern short restart_mode;
 extern short stack_pop();
 extern short lookup_sym();
+extern short find_sym(char *vstr);	/* parse.c: lookup only, never adds (V108) */
 extern short sys_funcs();
 extern struct FuncEnt *MakeFNEnt();
 extern ws_off_t *get_vparm();
@@ -92,6 +93,7 @@ extern void caseflip(UCHAR *cp);
 extern void init_ws();
 extern short do_clearws(long a);
 extern short load_ws(char *s,int f);
+extern void show_loadmsg(void);	/* commands.c: ∆LOADMSG after a load (V108) */
 extern short do_si(short f);
 /* do_si()'s walk with a cap: newest frames from the top, oldest from the
    bottom, a count of the rest; newest < 0 means no cap (do_si() itself).

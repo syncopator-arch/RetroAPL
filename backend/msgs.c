@@ -25,6 +25,9 @@ char *s;
 			break;
 		case ERR_SYSTEM:
 			s = "System Error";
+			p = 1;	/* V108: caret and newline like every other
+				   error; without, the next output landed on
+				   its line */
 			break;
 		case ERR_SYNTAX:
 			s = "Syntax Error";
@@ -156,6 +159,10 @@ char *s;
 			break;
 		case ERR_MIDIFILE:
 			s = "Bad MIDI File";
+			p = 1;
+			break;
+		case ERR_BADSYS:
+			s = "Unknown Special Function";
 			p = 1;
 			break;
 		default:

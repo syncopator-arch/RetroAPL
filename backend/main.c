@@ -158,6 +158,12 @@ int32_t l;
 
 	FNLINE = 0;
 
+	/* the startup workspace's ∆LOADMSG (V108), before its boot function:
+	   that only runs from the first exec_apl_line() call. Nothing on a
+	   clear workspace (no startup ws found). */
+	show_loadmsg();
+	flush_output();
+
 	s = wspace->bootfn;
 	if (s != -1 && xflag)
 	{

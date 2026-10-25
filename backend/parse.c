@@ -142,22 +142,25 @@ UCHAR op_table[] = {
 	0
 };
 
-/* return symbol number */
-short 
-lookup_sym(char *vstr)
+/*
+	find_sym() -- the symbol number of a name already in the table, or
+	-1. Never adds the name: for looking a name up from C without
+	leaving an empty entry behind (∆LOADMSG on every )LOAD, V108).
+	lookup_sym() below is this plus "add it if missing".
+*/
+short
+find_sym(char *vstr)
 {
 REG short vnum;
-short snum;
 short scount;
 struct NameEnt *ne;
 
-	vnum = 0;	/* could hash this if desired */
-	snum = vnum;
 	scount = strlen(vstr);
-	do {
-		if (SYMT[vnum].namelen == scount) 
+	for (vnum = 0; vnum < SYMTACTUAL; vnum++)	/* could hash this if desired */
+	{
+		if (SYMT[vnum].namelen == scount)
 		{
-			if (scount <= SYMNAME_MAX) 
+			if (scount <= SYMNAME_MAX)
 			{
 				if (!strncmp(vstr,(char *)SYMT[vnum].name.c,scount)) return(vnum);
 			} else {
@@ -165,10 +168,26 @@ struct NameEnt *ne;
 				if (!strncmp(vstr,(char *)ne->ne_data,scount)) return(vnum);
 			}
 		}
-		vnum++;
-		if (vnum == SYMTACTUAL) vnum = 0;
-	} while (snum != vnum);
-	do {
+	}
+	return(-1);
+}
+
+/* return symbol number, adding the name if it isn't there yet; -1 if
+   the table is full. Callers must check for -1 (V108): most of them use
+   -1 for "no name" too. Until V108 the add loop below never stopped at
+   SYMTACTUAL, so a full table read past the end of SYMT instead of
+   returning -1. */
+short
+lookup_sym(char *vstr)
+{
+REG short vnum;
+short scount;
+struct NameEnt *ne;
+
+	vnum = find_sym(vstr);
+	if (vnum >= 0) return(vnum);
+	scount = strlen(vstr);
+	for (vnum = 0; vnum < SYMTACTUAL; vnum++) {
 		if (!SYMT[vnum].namelen) {	/* look for empty slot */
 			SYMT[vnum].namelen = (UCHAR)scount;
 			if (scount <= SYMNAME_MAX) memcpy(SYMT[vnum].name.c,vstr,6);
@@ -182,8 +201,7 @@ struct NameEnt *ne;
 			SYMT[vnum].type = SYM_UNDEF;
 			return(vnum);
 		}
-		vnum++;
-	} while (snum != vnum);
+	}
 	return(-1);		/* symbol table full */
 }
 
@@ -362,6 +380,7 @@ short exponent;
 		-6 Missing Right Paren
 		-7 Missing Quote
 		-8 Missing Right bracket
+		-9 Unknown special function (CHAR_BADSYS, V109)
 */
 short
 compline(UCHAR *src, UCHAR *dst)
@@ -529,6 +548,11 @@ short undef_now, undef_right;	/* pass 2: see VAR_CODE and case 3 */
 			cpi++;
 			continue;
 		}
+
+		/* ⎕ before a name that isn't a special function (see
+		   CHAR_BADSYS, parse.h). Outside quotes: the quote case
+		   above copies quoted text without looking at it. */
+		if (c == CHAR_BADSYS) return(-9);
 
 		c = *cpi++;		/* must be an op */
 		i = 0;

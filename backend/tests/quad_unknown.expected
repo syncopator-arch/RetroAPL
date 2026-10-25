@@ -1,0 +1,25 @@
+Clear WS
+     ⍝ ⎕ straight before a name that isn't a special function (V109) is
+     ⍝ Unknown Special Function. Before, the ⎕ was quad input beside the
+     ⍝ name: ⎕BLBLB gave a ⎕: prompt. Quoted, or after a space, unchanged.
+     ⎕IO
+1
+     ⎕BLBLB
+     ^
+Unknown Special Function
+     ⎕IO∆X
+     ^
+Unknown Special Function
+     ⎕IOX
+     ^
+Unknown Special Function
+     ⎕BLBLB←1
+     ^
+Unknown Special Function
+     '⎕BLBLB'
+⎕BLBLB
+     X←⎕IO
+     X
+1
+     ⍝ ⎕BLBLB IN A COMMENT
+     

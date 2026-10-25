@@ -59,6 +59,15 @@ damaged, or won't fit, the active workspace is left as it was — except
 that a file found to be cut short partway through loading leaves a
 clear workspace instead.
 
+A workspace can carry a message for whoever loads it: a character
+variable named `∆LOADMSG`. It's shown after the "Saved" line, and when
+the workspace is loaded at startup, before its boot function runs. A
+character vector is shown as one line (wrapped at `)WIDTH`), a
+character matrix one line per row; anything else (a single character,
+a number) shows nothing. It's only displayed, never run. Set it with
+`←` and save, for example `∆LOADMSG←'TYPE DEMO TO START'`; it's listed
+by `)VARS` and removed with `)ERASE ∆LOADMSG`.
+
 `)SAVE`
 
 `)SAVE name`
@@ -82,14 +91,17 @@ on the function name will compile it into a current workspace.
 With no name, displays the active workspace's name. With a name,
 renames the workspace (without saving it) and displays the old name.
 A workspace name can't contain `∆` (an Incorrect Command error, as for
-`)SAVE` and `)LOAD` with such a name). Short form `)WS`.
+`)SAVE` and `)LOAD` with such a name). Workspace names are shown in
+upper case, as they're typed; the file in `$APLHOME/ws/` is lower
+case (`)SAVE FOO` writes `foo.ws`). Short form `)WS`.
 
 `)LIB`
 
 `)LIB pattern`
 
 Lists the saved workspaces in `$APLHOME/ws/`, optionally only those
-whose names match `pattern`.
+whose names match `pattern`. A workspace with a `∆LOADMSG` says what
+it's for when you `)LOAD` it (see `)LOAD`).
 
 `)RESIZE size`
 
@@ -106,7 +118,8 @@ in the workspace. Displays the workspace name when done. Short form
 Sets the function that runs automatically when this workspace is
 loaded at interpreter startup, and displays the previous setting.
 `)BOOT` on its own removes the boot function. The setting is saved
-with the workspace. Short form `)BO`.
+with the workspace. Short form `)BO`. A workspace's `∆LOADMSG` (see
+`)LOAD`) is shown before the boot function runs.
 
 `)OFF`
 

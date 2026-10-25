@@ -283,9 +283,28 @@ static QMutex             g_inputMutex;
 static QWaitCondition     g_inputCond;
 static QQueue<QByteArray> g_inputQueue;
 static bool               g_engineRunning = false;
+/* V111: the engine thread is at the prompt, waiting for a line, with
+   its "     " already printed. Set and read under g_inputMutex; set in
+   EngineThread::run()'s loop as it waits, cleared as it takes a line.
+   Not set while it waits in qt_getin() (⎕ input) or anywhere else.
+   exitEditMode() uses it to print exactly one prompt after an edit. */
+static bool               g_engineIdle = false;
 static QMutex             g_editMutex;
 static QWaitCondition     g_editCond;
 static bool               g_editActive = false;
+
+/* V112: the engine is at the prompt with nothing queued (g_engineIdle,
+   above). New/Open Function are offered only then: elsewhere -- a line
+   running, ⎕ input waiting, the boot function at startup -- leaving
+   the editor would clear the screen under it, and Exit and Compile's
+   )ENTER would go to whatever reads the next line (⎕ input refuses
+   it). Stays true until the GUI thread itself queues a line, since
+   only it fills the queue, so a check made here holds until then. */
+static bool engineIdle()
+{
+    QMutexLocker lock(&g_inputMutex);
+    return g_engineIdle && g_inputQueue.isEmpty();
+}
 
 /* ── Dark-mode stylesheet ────────────────────────────────────────────
  *
@@ -303,6 +322,10 @@ static const QString kDarkStyleSheet = QStringLiteral(
     "    background-color: #383838; color: #e0e0e0;"
     "    border: 1px solid #555555; }"
     "QMenu::item:selected { background-color: #505050; }"
+    /* V112: without this, the color above applies to disabled items too
+       (a stylesheet color overrides the palette's disabled one), so a
+       disabled item looked enabled and just didn't highlight */
+    "QMenu::item:disabled { color: #7a7a7a; }"
     "QMenu::separator { height: 1px; background: #555555; margin: 2px 0; }"
     "QStatusBar { background-color: #383838; color: #e0e0e0; }"
     "QGroupBox {"
@@ -520,8 +543,10 @@ protected:
             QByteArray line;
             {
                 QMutexLocker lock(&g_inputMutex);
+                g_engineIdle = true;	/* the prompt is up (V111) */
                 while (g_inputQueue.isEmpty() && g_engineRunning)
                     g_inputCond.wait(&g_inputMutex);
+                g_engineIdle = false;
                 if (!g_engineRunning) break;
                 line = g_inputQueue.dequeue();
             }
@@ -1591,6 +1616,11 @@ private slots:
 
     void newFunction()
     {
+        if (!engineIdle()) {	/* V112: see engineIdle() */
+            statusBar()->showMessage(
+                "New Function: only at the prompt, not while APL is busy", 3000);
+            return;
+        }
         /* V107: the box uses the ordinary keyboard, so = stands for ∆
            (as in the file name; aplFnNormalize()), and a name the
            interpreter can't take is refused here, with the box shown
@@ -1616,6 +1646,11 @@ private slots:
 
     void openFunction()
     {
+        if (!engineIdle()) {	/* V112: see engineIdle() */
+            statusBar()->showMessage(
+                "Open Function: only at the prompt, not while APL is busy", 3000);
+            return;
+        }
         QString fnsDir = APLTerminalWidget::getFnsDirectory();
         QString filename = QFileDialog::getOpenFileName(this, "Open Function",
             fnsDir, "APL Function Files (*.fn *.FN)");
@@ -1730,18 +1765,37 @@ private slots:
         QString fnName = terminal->getCurrentFunctionName();
         terminal->exitEditMode(compile);
 
-        if (compile && g_engineRunning && !fnName.isEmpty()) {
-            QString cmd = QString(")ENTER ") + fnName;
-            QByteArray raw;
-            for (QChar qc : cmd)
-                raw.append(static_cast<char>(qc.unicode() & 0xFF));
-            g_suppressNextPrompt = true;
-            {
-                QMutexLocker lock(&g_inputMutex);
+        /* Exactly one prompt after the edit (V111). If the engine is
+           idle at the prompt (a New/Open Function edit with nothing
+           running), the editor took the screen and its "     " with it,
+           so a prompt is owed: )ENTER's, after a compile, or one printed
+           here. Otherwise the engine is busy -- in )EDIT's qt_edit(), or
+           running a line -- and prints its own when that line ends, so
+           )ENTER's is suppressed and nothing is printed here. Before,
+           the suppress was unconditional (right for )EDIT only) and
+           Discard printed nothing, so a menu edit left no prompt.
+           Decided under g_inputMutex: the engine only goes from idle to
+           busy by taking a line from the queue, which only this thread
+           fills, so the answer holds until the enqueue below. */
+        bool idle;
+        bool queued = false;
+        {
+            QMutexLocker lock(&g_inputMutex);
+            idle = g_engineIdle && g_inputQueue.isEmpty();
+            if (compile && g_engineRunning && !fnName.isEmpty()) {
+                QString cmd = QString(")ENTER ") + fnName;
+                QByteArray raw;
+                for (QChar qc : cmd)
+                    raw.append(static_cast<char>(qc.unicode() & 0xFF));
+                g_suppressNextPrompt = !idle;
                 g_inputQueue.enqueue(raw);
+                queued = true;
             }
-            g_inputCond.wakeOne();
         }
+        if (queued)
+            g_inputCond.wakeOne();
+        else if (idle)
+            terminal->printOutput("     ");
 
         {
             QMutexLocker lock(&g_editMutex);
@@ -2242,6 +2296,21 @@ private:
         fileMenu->addAction(m_openFuncAction);
 
         m_termSep = fileMenu->addSeparator();   /* hidden during edit mode */
+
+        /* V112: grey New/Open Function out while the engine isn't at
+           the prompt, checked as the menu opens. Enabled again as it
+           closes: a disabled action's shortcut doesn't fire either, and
+           Ctrl+N/Ctrl+O must still reach newFunction()/openFunction(),
+           which make the real check (and say why in the status bar). */
+        connect(fileMenu, &QMenu::aboutToShow, this, [this]() {
+            bool idle = engineIdle();
+            m_newFuncAction->setEnabled(idle);
+            m_openFuncAction->setEnabled(idle);
+        });
+        connect(fileMenu, &QMenu::aboutToHide, this, [this]() {
+            m_newFuncAction->setEnabled(true);
+            m_openFuncAction->setEnabled(true);
+        });
 
         /* Edit-mode items (hidden on startup) */
         m_saveAction = new QAction("&Save Function", this);

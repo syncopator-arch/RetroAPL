@@ -164,6 +164,9 @@ typedef short (*PTF)();
 				   or uses SMPTE timing. A missing file is
 				   ERR_FNOTF for ⎕MIDIREAD and no rows for
 				   ⎕MIDIINFO. */
+#define ERR_BADSYS 40		/* "Unknown Special Function" (V109): ⎕
+				   straight before a name that isn't one
+				   (⎕BLBLB, ⎕IO∆X). See CHAR_BADSYS. */
 
 /* mem entry flags */
 #define ME_VAL 1	/* value */
@@ -468,6 +471,15 @@ typedef short (*PTF)();
 #define CHAR_NG '-'
 /* #define CHAR_QT '"'     now defined in depends.h */
 #define CHAR_QD '#'	/* quad */
+/* CHAR_BADSYS (V109): input_translate() writes it for a ⎕ directly
+   followed by something that starts a name but isn't a special
+   function, and compline() refuses it (ERR_BADSYS). Before, the ⎕ was
+   a plain quad and the letters a name beside it: ⎕BLBLB asked for quad
+   input. 0xCC is the font's own quad, which the translator never
+   writes outside quotes (it becomes CHAR_QD or CHAR_SYS), and it is in
+   no op_table entry and isn't a name character. Inside quotes the
+   font byte is copied as it is, and compline() never looks at it. */
+#define CHAR_BADSYS 0xcc
 #define CHAR_QQ '$'	/* quote-quad */
 #define CHAR_COMMENT '`'
 

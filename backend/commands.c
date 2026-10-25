@@ -24,6 +24,8 @@
 #include "externs.h"
 #include "platform.h"
 
+void print_wsid(void);	/* below, after char_flip() (V108) */
+
 #define LTABLE_SIZE 4000L
 
 /* SYMT_REL removed -- SYMT is now embedded in workspace, all me_reference
@@ -1223,7 +1225,9 @@ short f;
 		if (COMMANDP) {
 			if (f) {
 				Cmessage(MSG_WAS);
-				CPRINT(wspace->wsid);
+				print_wsid();
+				CNL();	/* V108: missing, so the next output
+					   landed on the "Was" line */
 			}
 			strncpy((char *)wspace->wsid,(char *)VBUF,WSID_SIZE-1);
 			wspace->wsid[WSID_SIZE-1] = '\0';
@@ -1231,7 +1235,7 @@ short f;
 		}
 	}
 	if (f) {
-		CPRINT(wspace->wsid);
+		print_wsid();
 		CNL();
 	}
 	return(0);
@@ -1272,7 +1276,8 @@ UCHAR c,*cp,*cpb;
 		s = compline(cp,LINEA);
 		if (s) 
 		{
-			if (s > -3) ERROR_CODE = SET_ERR(ERR_STOVF);
+			if (s == -9) ERROR_CODE = SET_ERR(ERR_BADSYS);	/* V109 */
+			else if (s > -3) ERROR_CODE = SET_ERR(ERR_STOVF);
 			else ERROR_CODE = SET_ERR(ERR_SYNTAX);
 			return(0L);
 		}
@@ -1328,6 +1333,7 @@ short
 do_enter()
 {
 short i,line,loc,s,ms,rs,ls,zs,t,ct,qt;
+short stovf;	/* a header name or local didn't fit in the symbol table */
 long l;
 FILE *ifp;
 struct Func0Ent *f0e;
@@ -1435,6 +1441,7 @@ NL();
 			{
 
 				zs = ls = ms = rs = -1;
+				stovf = 0;
 				i = s = 0;
 				while (i < ct) 	/* look for result var */
 				{
@@ -1450,6 +1457,7 @@ NL();
 				{
 					LINEA[i] = '\0';
 					zs = lookup_sym(LINEA);
+					if (zs < 0) stovf = 1;
 					i++;
 				} else i = 0;
 
@@ -1461,6 +1469,7 @@ NL();
 				ms = LINEA[i];
 				LINEA[i] = '\0';
 				ls = lookup_sym(&LINEA[s]);
+				if (ls < 0) stovf = 1;
 				LINEA[i] = (unsigned char)ms;
 				while (LINEA[i] == ' ') i++;
 				s = i;
@@ -1472,6 +1481,7 @@ NL();
 					rs = LINEA[i];
 					LINEA[i] = '\0';
 					ms = lookup_sym(&LINEA[s]);
+					if (ms < 0) stovf = 1;
 					LINEA[i] = (unsigned char)rs;
 					while (LINEA[i] == ' ') i++;
 					s = i;
@@ -1483,6 +1493,7 @@ NL();
 						t = LINEA[i];
 						LINEA[i] = '\0';
 						rs = lookup_sym(&LINEA[s]);
+						if (rs < 0) stovf = 1;
 						LINEA[i] = (unsigned char)t;
 						while (LINEA[i] == ' ') i++;
 					} else {	/* monadic */
@@ -1500,6 +1511,17 @@ NL();
 				{
 					if (LINEA[s] == ';') loc++;
 					s++;
+				}
+				/* -1 already means "no result/left/right" here, so a
+				   name that didn't fit is caught as it's looked up,
+				   before anything is changed (V108). Before, the
+				   function went into SYMT[-1]. */
+				if (stovf)
+				{
+					fclose(ifp);
+					free(tp);
+					free(ltable);
+					return(SET_ERR(ERR_STOVF));
 				}
 				if (on_stack(ms)) 	/* si damage */
 				{
@@ -1538,19 +1560,21 @@ NL();
 					while (is_varch(LINEA[i])) i++;
 					t = LINEA[i];
 					LINEA[i] = '\0';
-					f0e->f0e_locals[loc++] = lookup_sym(&LINEA[s]);
+					f0e->f0e_locals[loc] = lookup_sym(&LINEA[s]);
+					if (f0e->f0e_locals[loc++] < 0) stovf = 1;
 					LINEA[i] = (unsigned char)t;
 					while (LINEA[i] == ' ') i++;
 				}
 
 				/* %%% seemed overkill, but Claude claimed it is not unprecidented */
-				if (i < ct) 	/* leftover junk after the last local -- e.g. ';V,M' */
+				if (i < ct || stovf) 	/* leftover junk after the last local -- e.g. ';V,M' --
+							   or a local that didn't fit (V108) */
 				{
 					sym_delete(ms);
 					fclose(ifp);
 					free(tp);
 					free(ltable);
-					return(SET_ERR(ERR_SYNTAX));
+					return(SET_ERR(stovf ? ERR_STOVF : ERR_SYNTAX));
 				}
 
 				f0e->f0e_MemEnt.me_rank = loc;
@@ -2138,6 +2162,31 @@ UCHAR c;
 	return(c);
 }
 
+/*
+	print_wsid() -- the workspace name as names are shown (V108): the
+	same flip print_name() gives )VARS and )FNS, so FOO shows as FOO in
+	)WSID, )SAVE, )CLEAR and )RESIZE, as in )LIB. wsid holds the name
+	as get_vstr() read it (lower case in the normal setting), which is
+	also the .ws file name, so it isn't changed, only shown flipped.
+	"Clear WS" is the placeholder, not a name: shown as it is.
+*/
+void
+print_wsid(void)
+{
+char cb[WSID_SIZE];
+short i;
+
+	if (!symbolcase || !strcmp(wspace->wsid, "Clear WS"))
+	{
+		CPRINT(wspace->wsid);
+		return;
+	}
+	for (i = 0; i < WSID_SIZE - 1 && wspace->wsid[i]; i++)
+		cb[i] = (char)char_flip((UCHAR)wspace->wsid[i]);
+	cb[i] = '\0';
+	CPRINT(cb);
+}
+
 void
 table_flip(cp)
 UCHAR *cp;
@@ -2328,7 +2377,7 @@ long a;
         if (resize_ws_destructive(a)) return(-1);
         init_ws();      /* set origin, wsid, etc. on new workspace */
     }
-    CPRINT(wspace->wsid);
+    print_wsid();
     CNL();
     return(0);
 }
@@ -2349,7 +2398,7 @@ long a;
 		if (mem_init(NULL) != 1) return(SET_ERR(ERR_NOMEM));
 	}
 
-	CPRINT(wspace->wsid);
+	print_wsid();
 	CNL();
 	return(0);
 }
@@ -2641,7 +2690,6 @@ FILE *wfp;
     get_aplhome_dir((char *)LINEA, LINE_SIZE, "ws");
     strcat((char *)LINEA, wspace->wsid);
     strcat((char *)LINEA, ".ws");
-    strcpy(VBUF, wspace->wsid);   /* VBUF still used for display below */
     wfp = fopen((char *)LINEA,"wb");
 
     if (!wfp) return(SET_ERR(ERR_SAVE));
@@ -2706,7 +2754,7 @@ FILE *wfp;
 
     Cmessage(MSG_SAVED);
     print_stamp();
-    CPRINT(VBUF);
+    print_wsid();
     CNL();
     return(0);
 saveerr:;
@@ -2845,6 +2893,52 @@ loaderr:;
     return(ret);
 }
 
+/*
+	show_loadmsg() -- ∆LOADMSG, a workspace's message for whoever loads
+	it (V108; for demo workspaces). Called after )LOAD's "Saved" line,
+	and by dll_startup() (main.c) for the startup workspace, before its
+	boot function runs.
+
+	An ordinary variable: set with ←, listed by )VARS, removed with
+	)ERASE; nothing in the workspace header or file format. Shown only,
+	never executed. A character vector is one line (wrapped at )WIDTH,
+	which load_ws() has just restored), a character matrix one line per
+	row, both printed by vprint() as if the name had been typed. Anything
+	else -- a single character, an empty vector, a number, rank 3 or
+	more, a function of that name, no such name -- shows nothing.
+
+	find_sym(), not lookup_sym(): a workspace without the variable
+	mustn't get an empty ∆LOADMSG entry added on every load (and saved).
+	The name is built from var_lo, so it matches however set_case() has
+	the letters stored (lower case in the normal setting).
+*/
+#define LOADMSG_NAME "LOADMSG"		/* after the ∆ */
+
+void
+show_loadmsg(void)
+{
+char nm[sizeof(LOADMSG_NAME) + 1];
+const char *cp;
+struct ValEnt *ve;
+short i;
+
+	if (SILENT_COMMAND) return;
+	nm[0] = (char)CHAR_DELTA;
+	for (cp = LOADMSG_NAME, i = 1; *cp; cp++, i++)
+		nm[i] = (char)(var_lo + (*cp - 'A'));
+	nm[i] = '\0';
+
+	i = find_sym(nm);
+	if (i < 0 || SYMT[i].type != SYM_VAR || !SYMT[i].value) return;
+	ve = (struct ValEnt *)WS_PTR(SYMT[i].value);
+	if ((ve->ve_vtype | VARIABLE_BIT) != QUOT_CODE) return;
+	if (ve->ve_rank < 1 || ve->ve_rank > 2 || ve->ve_length < 1) return;
+
+	if (CURSX) NL();
+	vprint((struct MemEnt *)ve);
+	NL();
+}
+
 short
 do_load()
 {
@@ -2866,6 +2960,7 @@ do_load()
 			Cmessage(MSG_SAVED);
 			print_stamp();
 			CNL();
+			show_loadmsg();
 			return(0);
 		case 1:
 			/* damaged or unrecognized file -- current workspace untouched */
@@ -2900,9 +2995,11 @@ short i;
 	while (*COMMANDP) {
 		COMMANDP = get_vstr(COMMANDP);
 		if (!COMMANDP) return(SET_ERR(ERR_COMMAND));	/* error */
-		i = lookup_sym(VBUF);
-		if (on_stack(i)) return(SET_ERR(ERR_SI));
-		sym_delete(i);
+		i = find_sym((char *)VBUF);	/* not lookup_sym(): nothing to add (V108) */
+		if (i >= 0) {
+			if (on_stack(i)) return(SET_ERR(ERR_SI));
+			sym_delete(i);
+		}
 		while (*COMMANDP == ' ') COMMANDP++;
 	}
 	while (GarbCollect());
@@ -3997,7 +4094,13 @@ long l;
 			wspace->bootfn = -1;
 			if (*COMMANDP) {
 				COMMANDP = get_vstr(COMMANDP);
-				if (COMMANDP) wspace->bootfn = lookup_sym(VBUF);
+				if (COMMANDP) {
+					wspace->bootfn = lookup_sym(VBUF);
+					if (wspace->bootfn < 0) {	/* table full (V108) */
+						wspace->bootfn = i;
+						return(SET_ERR(ERR_STOVF));
+					}
+				}
 			}
 			Cmessage(MSG_WAS);
 			if (i != -1 ) print_name(i);
