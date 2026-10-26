@@ -8,14 +8,16 @@ Primitive Function Reference and the Quad Function Reference.
 System commands are typed on their own line at the prompt, starting
 with a right parenthesis, such as `)LIB` or `)SAVE`.
 
-RetroAPL keeps your work in two kinds of file:
+RetroAPL keeps your work in two kinds of files in a storage folder
+under $APLHOME (Linux) or %APLHOME% (Windows):
 
 - A **workspace** (`$APLHOME/ws/name.ws`) holds everything in the
   active session: variables, compiled functions and settings. You save
   it with `)SAVE` and bring it back with `)LOAD`.
 - A **function source file** (`$APLHOME/fns/name.fn`) holds the text
-  of one function. You write it with the editor (`)EDIT`) and compile
-  it into the active workspace with `)ENTER`.
+  of one function in an internal form. You write it with the editor 
+  (`)EDIT`) and compile it into the active workspace with `)ENTER`.
+  You list it in readable form with )LIST.
 
 ---
 
@@ -39,6 +41,9 @@ These work much as they do in APL\360 and APL2.
 | Show the functions that are running or suspended | `)SI` |
 | End the session (it doesn't save first) | `)OFF` |
 
+Notes: 
+- )LOAD of a new workspace does not save the existing workspace first.
+
 ## Classic Commands NOT in RetroAPL
 
 These are in APL\360 or APL2 but not in RetroAPL.
@@ -52,6 +57,10 @@ These are in APL\360 or APL2 but not in RetroAPL.
 | List the users signed on | `)PORTS` |
 | Transfer files | `)IN`, `)OUT`, `)PIN` |
 | Clear the state indicator | `)SIC`, `)RESET` |
+
+Notes:
+- )COPY of functions is less necessary due to the function source files 
+  existence separate from the workspaces.
 
 Command names are matched by their leading letters, so a few of these
 run a different RetroAPL command instead of giving an error: `)SIC`
@@ -72,3 +81,7 @@ These are new in RetroAPL, or work differently from other APLs.
 | Delete a function source file (it asks first) | `)DROP name` |
 | Clear the state indicator | `)PURGE` |
 | Debug functions | `)STOP`, `)STEP`, `)TRACE` |
+
+Notes:
+- Not a complete list, see the System Command Reference for more.
+
