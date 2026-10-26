@@ -23,6 +23,11 @@ packages not yet available, but at least a Windows package is planned.
 Designed to be portable, builds have been tested on Windows 10 and 
 Ubuntu Linux 22.04 on aarch64 hardware.
 
+This is a personal project shared in case it’s interesting or useful. 
+I work on it as time and interest allow. I can't guarantee I'll respond
+to issues or accept contributions.  Forks are welcome; that's what the
+GPL is for.
+
 ![The RetroAPL terminal listing a k-means clustering function](docs/images/retroapl-terminal.png)
 
 > **There are no prebuilt downloads yet.** You build RetroAPL from

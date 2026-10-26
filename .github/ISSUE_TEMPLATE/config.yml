@@ -1,0 +1,13 @@
+# .github/ISSUE_TEMPLATE/config.yml
+# Disables blank issues so everything goes through the bug report form,
+# and points questions at the docs instead of the issue tracker.
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: Questions and how-to
+    url: https://github.com/syncopator-arch/RetroAPL#readme
+    about: Please check the README (including its FAQ) and the help files first. This is a personal project and I'm not able to provide individual support.
+  - name: Help files
+    url: https://github.com/syncopator-arch/RetroAPL/tree/main/aplhome/resources
+    about: The interpreter's help files (also available from the in-app menus).

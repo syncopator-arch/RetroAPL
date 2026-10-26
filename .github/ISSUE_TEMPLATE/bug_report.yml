@@ -1,0 +1,91 @@
+# .github/ISSUE_TEMPLATE/bug_report.yml
+name: Bug report
+description: Report something the interpreter does wrong (crashes, incorrect results, build failures).
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem.
+
+        **Please note:** this is a hobby project maintained in my spare time. I read reports when I can,
+        but I can't promise a response or a fix. Clear, minimal reproductions are far more likely to get looked at.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I've checked the README (including the FAQ) and help files.
+          required: true
+        - label: I've searched existing issues (open and closed) for this problem.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Interpreter version or commit
+      description: Release version, or the commit hash if you built from source.
+      placeholder: e.g. v1.2.0 or a1b2c3d
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS and build environment
+      description: Operating system, and compiler/toolchain if you built it yourself.
+      placeholder: e.g. Ubuntu 24.04, gcc 13.2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: What kind of problem is it?
+      options:
+        - Incorrect result
+        - Crash or hang
+        - Error message that seems wrong
+        - Build / compile failure
+        - Documentation error
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest APL expression or session that shows the problem. Please paste text rather than screenshots.
+      render: text
+      placeholder: |
+        ⍳5
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What you expected to happen, and if relevant, which APL dialect or reference you're comparing against.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: What actually happened, including any error output.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Optional. Workarounds you've found, related issues, etc.
+    validations:
+      required: false
