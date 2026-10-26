@@ -12,7 +12,9 @@ encountered his first computer in college, an IBM System\360 with APL.
 This codebase began more than 30 years ago as a personal project on DOS
 and Windows, with a C interpreter and a Delphi front end. It has since
 been ported to 64-bit Linux with a new Qt6 front end, and it builds on
-Windows from the same source.
+Windows from the same source.  Compared to the original APL\360, it is
+largely complete, but not entirely.  It also supports considerable
+extensions to support file I/O, basic graphics and MIDI sequencing.
 
 For more on the story behind RetroAPL, see [HISTORY-README.md](HISTORY-README.md).  
 
