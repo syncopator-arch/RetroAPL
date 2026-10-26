@@ -65,7 +65,7 @@ Nested arrays themselves aren't supported, so the primitives that go
 with them, such as enclose and disclose, aren't implemented. (`⊂` and
 `⊃` are bitwise shift functions in RetroAPL.)
 
-The details are in three reference files. They are the same pages the
+The details are in four reference files. They are the same pages the
 Help menu shows:
 
 - [Getting started](aplhome/resources/getting_started.md)
