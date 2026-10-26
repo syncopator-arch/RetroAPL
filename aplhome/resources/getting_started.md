@@ -84,4 +84,6 @@ These are new in RetroAPL, or work differently from other APLs.
 
 Notes:
 - Not a complete list, see the System Command Reference for more.
+- View the other three help files for other non-command reference information.
+
 
