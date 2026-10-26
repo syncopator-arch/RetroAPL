@@ -68,11 +68,12 @@ with them, such as enclose and disclose, aren't implemented. (`⊂` and
 The details are in three reference files. They are the same pages the
 Help menu shows:
 
+- [Getting started](aplhome/resources/getting_started.md)
+- [System commands](aplhome/resources/system_command_help.md) (`)LOAD`,
+  `)SAVE`, `)EDIT`, ...)
 - [Primitive functions](aplhome/resources/primitive_help.md), including
   the [differences from the book](aplhome/resources/primitive_help.md#differences-from-the-book)
   and [what isn't implemented](aplhome/resources/primitive_help.md#not-implemented)
-- [System commands](aplhome/resources/system_command_help.md) (`)LOAD`,
-  `)SAVE`, `)EDIT`, ...)
 - [Quad functions](aplhome/resources/quad_function_help.md): system,
   file, graphics, sequencer and MIDI file functions
 
