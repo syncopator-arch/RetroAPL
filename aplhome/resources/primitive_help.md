@@ -427,10 +427,11 @@ There's no bracket axis (`+/[1]M`, `⌽[1]M`, `,[1]M` are
 `⍎R`
 
 Execute: runs the character vector `R` as an APL line and gives its
-result (`⍎'1+2'` is `3`). The line can call functions, and can be a
-system command (`⍎')VARS'`), though not every command does something
-from inside execute. An error inside a function run this way shows
-`In execute:` with the function and line.
+result (`⍎'1+2'` is `3`). The line can call functions, but it can't
+be a system command: system commands run only when typed at the
+prompt, so `⍎')VARS'` gives `Incorrect Command` and nothing is run,
+even when the `⍎` itself is typed at the prompt. An error inside a
+function run this way shows `In execute:` with the function and line.
 
 `⍕R`
 
