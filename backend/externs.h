@@ -289,4 +289,15 @@ extern void translate_init(UCHAR *kt);
    local declaration just above -- externs.h wasn't available to edit. */
 extern long sys_font_families(char *buf, long bufsize);
 
+/* A question for the person, with a choice of answers (V113, )DROP's
+   "are you sure"). Link-time hook like sys_font_families(): main.cpp
+   defines the real one, a dialog on the GUI thread; apl_cli's returns
+   -1, "no dialog here", and the caller (commands.c's ask_choice())
+   asks on the terminal instead. title and text are UTF-8; buttons is
+   one or more button labels separated by '\n', and a Cancel button
+   is always added, as the default. Returns the chosen label's number,
+   1 up; 0 for Cancel (also when the window is closing); -1 for no
+   dialog. */
+extern int sys_confirm(const char *title, const char *text, const char *buttons);
+
 

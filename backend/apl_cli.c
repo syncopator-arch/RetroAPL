@@ -388,6 +388,10 @@ main(int argc, char **argv)
 int flush_graphics()                    { return 0; }
 void sys_ctrl(long mode)                { (void)mode; }
 long sys_font_families(char *buf, long bufsize) { (void)buf; (void)bufsize; return -1; }
+/* no dialog here: commands.c's ask_choice() asks on the terminal and
+   reads the answer through cli_getin(), so tests answer with a line
+   (V113, )DROP) */
+int sys_confirm(const char *t, const char *x, const char *b) { (void)t; (void)x; (void)b; return -1; }
 long graph_ctrl(long a,long b,long c,long d) { return 0; }
 void sys_title(unsigned char *cp)        { }
 long open_window(char *cp,long x,long y,long w,long h) { return 0; }

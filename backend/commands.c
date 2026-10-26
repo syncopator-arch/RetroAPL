@@ -1209,6 +1209,105 @@ char *pattern;
 	return(do_list(-1, pattern));
 }
 
+/*
+	V113: helpers for )WSID, )SAVE and )DROP.
+
+	file_exists(): a regular file is at path.
+
+	ws_file_path(): $APLHOME/ws/NAME.ws, built exactly as do_save() and
+	load_ws() build it -- the name as get_vstr() read it, not lowered --
+	so a check here looks at the file )SAVE would write. out has
+	LINE_SIZE bytes.
+
+	shown_name(): a name as names are shown (print_wsid()'s flip, when
+	symbolcase is set), with ∆ as the font byte (utf8 0, for terminal
+	output) or as UTF-8 (utf8 1, for sys_confirm()'s dialog text, which
+	the GUI shows in an ordinary font, not KAPL).
+*/
+static int
+file_exists(const char *path)
+{
+struct stat st;
+
+	return (stat(path, &st) == 0 && S_ISREG(st.st_mode));
+}
+
+static void
+ws_file_path(char *out, const char *name)
+{
+size_t n;
+
+	get_aplhome_dir(out, LINE_SIZE, "ws");
+	n = strlen(out);
+	strncat(out, name, LINE_SIZE - n - 4);
+	strcat(out, ".ws");
+}
+
+static void
+shown_name(char *out, size_t size, const char *name, int utf8)
+{
+size_t n;
+UCHAR c;
+
+	n = 0;
+	while (*name && n + 4 < size) {
+		c = (UCHAR)*name++;
+		if (c == CHAR_DELTA && utf8) {
+			out[n++] = (char)0xE2;	/* U+2206 */
+			out[n++] = (char)0x88;
+			out[n++] = (char)0x86;
+			continue;
+		}
+		if (symbolcase) c = char_flip(c);
+		out[n++] = (char)c;
+	}
+	out[n] = '\0';
+}
+
+/*
+	A different name than the active workspace's, whose .ws already
+	exists (V113, the person): refused, so a later )SAVE can't overwrite
+	that workspace without anyone noticing. Prints why and returns
+	WSID_TAKEN; the name stays as it was. Only for a *different* name:
+	)WSID or )SAVE with the active workspace's own name is the normal
+	resave. The ∆ check comes first, so name has no ∆ here.
+*/
+#define WSID_TAKEN (-1)
+
+static short
+wsid_taken(const char *name, short saving)
+{
+char cb[WSID_SIZE + 8];
+char nm[WSID_SIZE];
+char path[LINE_SIZE];	/* not LINEA: COMMANDP points into it */
+
+	/* the name as do_wsid() will store it: wsid keeps WSID_SIZE-1
+	   characters, and that is the name )SAVE writes */
+	strncpy(nm, name, WSID_SIZE - 1);
+	nm[WSID_SIZE - 1] = '\0';
+
+	if (!strcmp(nm, wspace->wsid)) return(0);
+	ws_file_path(path, nm);
+	if (!file_exists(path)) return(0);
+
+	shown_name(cb, sizeof cb, nm, 0);
+	CPRINT(saving ? "NOT SAVED, " : "NOT CHANGED, ");
+	CPRINT(cb);
+	CPRINT(" ALREADY EXISTS");
+	CNL();
+	CPRINT("TO REPLACE IT, DELETE IT FIRST WITH )DROP ");
+	CPRINT(cb);
+	CNL();
+	return(WSID_TAKEN);
+}
+
+/*
+	f 1: )WSID itself (shows the old name). f 0: do_save()'s rename,
+	silent. Returns 0, ERR_COMMAND's code for a ∆ in the name, or
+	WSID_TAKEN (V113) when the name belongs to another saved workspace
+	-- already reported, so callers turn it into "no error", not into
+	an error code (do_command() would read -1 as one).
+*/
 short
 do_wsid(f)
 short f;
@@ -1222,6 +1321,8 @@ short f;
 		   V107 the name silently stopped at the ∆. */
 		if (COMMANDP && strchr((char *)VBUF, CHAR_DELTA))
 			return(SET_ERR(ERR_COMMAND));
+		if (COMMANDP && wsid_taken((char *)VBUF, (short)!f))
+			return(WSID_TAKEN);
 		if (COMMANDP) {
 			if (f) {
 				Cmessage(MSG_WAS);
@@ -2676,6 +2777,7 @@ do_save()
 {
 int32_t l,n,o,v;
 long r;
+short i;
 FILE *wfp;
 
     Adjust_Stack();
@@ -2684,9 +2786,18 @@ FILE *wfp;
 
     if (MSTACK != STACKMAX) return(SET_ERR(ERR_SI));
 
+    /* a refused name (∆, V107) must not save under the old one; nor
+       one that's another saved workspace's (V113): do_wsid() has said
+       why, so no error on top. The rename comes before the Clear WS
+       -> continue default (they were the other way round until V113),
+       so a refused )SAVE NAME from a clear workspace leaves it named
+       Clear WS rather than continue. A plain )SAVE as Clear WS still
+       writes continue.ws, existing or not: classic CONTINUE. */
+    if ((i = do_wsid(0)) != 0) {
+        if (i == WSID_TAKEN) return(0);
+        return(SET_ERR(ERR_COMMAND));
+    }
 	if (!strcmp("Clear WS",wspace->wsid)) strcpy(wspace->wsid,"continue");
-    /* a refused name (∆, V107) must not save under the old one */
-    if (do_wsid(0)) return(SET_ERR(ERR_COMMAND));
     get_aplhome_dir((char *)LINEA, LINE_SIZE, "ws");
     strcat((char *)LINEA, wspace->wsid);
     strcat((char *)LINEA, ".ws");
@@ -3006,32 +3117,232 @@ short i;
 	return(0);
 }
 
+/*
+	ask_choice() (V113): asks the person to pick one of buttons, or
+	cancel. buttons is one or more labels separated by '\n'; Cancel is
+	always offered too, and is the default. Returns the chosen label's
+	number, 1 up, or 0 for Cancel.
+
+	The GUI shows a dialog: sys_confirm(), the same kind of link-time
+	hook as sys_font_families() (declared in externs.h, defined in
+	main.cpp; it takes utext, which is UTF-8). A front end with no
+	dialog (apl_cli) returns -1, and the question is asked on the
+	terminal instead, with ftext (font bytes, for terminal output):
+	the text, then (Y/N) for one label or the labels' first letters
+	and N for several, and one line read the way ⎕ input reads it.
+	The answer's first letter that isn't a space picks; anything else,
+	or end of input, is Cancel. Commands run only at the prompt, so
+	nothing is running underneath either way.
+
+	The answer line is recorded in the crash-log transcript, as typed
+	input is, and CURSX goes back to 0 after it: the front end echoed
+	the line and its newline itself (INVARIANTS.md, CURSX).
+*/
+static short
+ask_choice(const char *title, const char *utext, const char *ftext,
+	const char *buttons)
+{
+char keys[8];
+char prompt[24];
+UCHAR line[LINE_SIZE];
+const char *bp,*tp;
+short n,k,r;
+UCHAR c;
+
+	r = (short)sys_confirm(title, utext, buttons);
+	if (r >= 0) return(r);
+
+	/* no dialog: ask on the terminal */
+	n = 0;
+	bp = buttons;
+	while (*bp && n < (short)sizeof keys) {
+		c = (UCHAR)*bp;
+		if (c >= 'a' && c <= 'z') c -= 32;
+		keys[n++] = (char)c;
+		while (*bp && *bp != '\n') bp++;
+		if (*bp) bp++;
+	}
+	if (n == 1) keys[0] = 'Y';
+
+	/* the text, a line at a time (CPRINT doesn't break lines) */
+	tp = ftext;
+	while (*tp) {
+		k = 0;
+		while (tp[k] && tp[k] != '\n') k++;
+		if (k) {
+			char lb[160];
+			if (k > (short)sizeof lb - 1) k = (short)sizeof lb - 1;
+			memcpy(lb, tp, k);
+			lb[k] = '\0';
+			CPRINT(lb);
+		}
+		CNL();
+		tp += k;
+		while (*tp && *tp != '\n') tp++;	/* rest of an over-long line */
+		if (*tp) tp++;
+	}
+
+	k = 0;
+	prompt[k++] = '(';
+	for (r = 0; r < n; r++) {
+		prompt[k++] = keys[r];
+		prompt[k++] = '/';
+	}
+	prompt[k++] = 'N';
+	prompt[k++] = ')';
+	prompt[k++] = ' ';
+	prompt[k] = '\0';
+	CPRINT(prompt);
+
+	line[0] = '\0';
+	r = getin(line);
+	CURSX = 0;
+	if (!r) return(0);		/* end of input */
+	crash_record_input(line);
+
+	for (k = 0; line[k] == ' '; k++);
+	c = line[k];
+	if (c >= 'a' && c <= 'z') c -= 32;
+	if (c == 'N') return(0);
+	for (r = 0; r < n; r++)
+		if (c == (UCHAR)keys[r]) return((short)(r + 1));
+	return(0);
+}
+
+/* the file name part of a path, for the dialog text */
+static const char *
+path_base(const char *path)
+{
+const char *cp,*bp;
+
+	bp = path;
+	for (cp = path; *cp; cp++)
+		if (*cp == '/' || *cp == '\\') bp = cp + 1;
+	return(bp);
+}
+
+/*
+	)DROP NAME (V113: workspaces too, with a question first).
+
+	Deletes $APLHOME/ws/NAME.ws or $APLHOME/fns/NAME.fn -- before V113,
+	only the function file. Whichever exists is named in a question
+	(ask_choice(): a dialog in the GUI) that says what deleting it means;
+	Cancel is the default. If both exist, the question asks which one.
+	Neither: NOT FOUND and an Incorrect Command, as before.
+
+	The two files are named as )SAVE/)LOAD and )ENTER name them: the
+	workspace from the name as read (ws_file_path(), as do_save()), the
+	function file lowered with ∆ as '=' (fn_file_path()). A name with ∆
+	can't be a workspace's (do_wsid() refuses it), so only the function
+	file is looked for then.
+
+	Messages show the name as names are shown (shown_name()): FOO
+	DROPPED. Until V113 the lowered name was printed as it was.
+	A refusal -- Cancel -- is NOT DROPPED, with no error; a delete that
+	fails is NOT DROPPED and an Incorrect Command.
+*/
 short
 do_drop()
 {
 int i;
+short ws,fn,which;
+char wsname[WSID_SIZE];
+char wspath[LINE_SIZE];
+char fnpath[LINE_SIZE];
+char uname[MAXSYM_CHARS * 3 + 8];	/* the name shown, UTF-8 (∆ is 3 bytes) */
+char fname[MAXSYM_CHARS + 8];		/* the name shown, font bytes */
+char utext[800];
+char ftext[800];
+const char *wsfile,*fnfile;
 
     if (!*COMMANDP) return(SET_ERR(ERR_SYNTAX));
     COMMANDP = get_vstr(COMMANDP);
     if (!COMMANDP) return(SET_ERR(ERR_COMMAND));
 
+    /* the workspace file: the name as )SAVE would store it (V113) */
+    ws = 0;
+    if (!strchr((char *)VBUF, CHAR_DELTA)) {
+        strncpy(wsname, (char *)VBUF, WSID_SIZE - 1);
+        wsname[WSID_SIZE - 1] = '\0';
+        ws_file_path(wspath, wsname);
+        ws = (short)file_exists(wspath);
+    }
+
     /* lowercase name to match file save convention */
     for (i = 0; VBUF[i]; i++)
         if (VBUF[i] >= 'A' && VBUF[i] <= 'Z') VBUF[i] += 32;
 
-    fn_file_path((char *)LINEA, (char *)VBUF);	/* ∆ as '=' (V107) */
+    fn_file_path(fnpath, (char *)VBUF);	/* ∆ as '=' (V107) */
+    fn = (short)file_exists(fnpath);
 
-    if (unlink((char *)LINEA) == 0) {
-        CPRINT(VBUF);
-        CPRINT(" DROPPED");
-        CNL();
-        return(0);
-    } else {
-        CPRINT(VBUF);
+    shown_name(fname, sizeof fname, (char *)VBUF, 0);
+    shown_name(uname, sizeof uname, (char *)VBUF, 1);
+
+    if (!ws && !fn) {
+        CPRINT(fname);
         CPRINT(" NOT FOUND");
         CNL();
         return(SET_ERR(ERR_COMMAND));
     }
+
+    wsfile = path_base(wspath);
+    fnfile = path_base(fnpath);
+
+    /* The question. Kept short (the person, V113). Each text twice:
+       UTF-8 for the dialog, font bytes for apl_cli's terminal.
+       Every %s has a precision, so the longest possible text fits
+       utext/ftext (800) and gcc can see it: a name is at most 104
+       bytes (uname), a file name is cut at 80 -- really at most
+       MAXSYM_CHARS + 3, but it points into a LINE_SIZE path, and
+       without the precision -O2's -Wformat-truncation warns. The
+       longest, DROP_BOTH_TEXT, is 191 + 2*104 + 2*80 = 559 bytes. */
+#define DROP_WS_TEXT \
+	"Delete the saved workspace %.104s (%.80s)?\n\n" \
+	"This deletes the whole workspace, not a function file."
+#define DROP_FN_TEXT \
+	"Delete the function file %.104s (%.80s)?\n\n" \
+	"The function stays in the active workspace; use )ERASE %.104s " \
+	"to remove it there."
+#define DROP_BOTH_TEXT \
+	"%.104s is both a saved workspace (%.80s) and a function file (%.80s). " \
+	"Which one do you want to delete?\n\n" \
+	"Deleting the function file leaves the function in the active " \
+	"workspace; use )ERASE %.104s to remove it there."
+
+    if (ws && fn) {
+        snprintf(utext, sizeof utext, DROP_BOTH_TEXT, uname, wsfile, fnfile, uname);
+        snprintf(ftext, sizeof ftext, DROP_BOTH_TEXT, fname, wsfile, fnfile, fname);
+        i = ask_choice("Drop", utext, ftext, "Workspace\nFunction File");
+        which = (i == 1) ? 1 : (i == 2) ? 2 : 0;
+    } else if (ws) {
+        snprintf(utext, sizeof utext, DROP_WS_TEXT, uname, wsfile);
+        snprintf(ftext, sizeof ftext, DROP_WS_TEXT, fname, wsfile);
+        which = ask_choice("Drop Workspace", utext, ftext, "Delete") ? 1 : 0;
+    } else {
+        snprintf(utext, sizeof utext, DROP_FN_TEXT, uname, fnfile, uname);
+        snprintf(ftext, sizeof ftext, DROP_FN_TEXT, fname, fnfile, fname);
+        which = ask_choice("Drop Function File", utext, ftext, "Delete") ? 2 : 0;
+    }
+#undef DROP_WS_TEXT
+#undef DROP_FN_TEXT
+#undef DROP_BOTH_TEXT
+
+    if (!which) {
+        CPRINT(fname);
+        CPRINT(" NOT DROPPED");
+        CNL();
+        return(0);
+    }
+    if (unlink(which == 1 ? wspath : fnpath) == 0) {
+        CPRINT(fname);
+        CPRINT(" DROPPED");
+        CNL();
+        return(0);
+    }
+    CPRINT(fname);
+    CPRINT(" NOT DROPPED");
+    CNL();
+    return(SET_ERR(ERR_COMMAND));
 }
 
 short
@@ -3975,7 +4286,10 @@ long l;
 			if (*COMMANDP) sscanf((char *)COMMANDP,"%ld",&l);
 			return(do_clearws(l));
 		case 5:		/* WSID */
-			return(do_wsid(1));
+			i = do_wsid(1);
+			/* a name taken by another saved workspace: refused
+			   and reported (V113), not an error */
+			return((i == WSID_TAKEN) ? 0 : i);
 		case 6:		/* GARB */
 			return(do_garb());
 		case 7:		/* SAVE */

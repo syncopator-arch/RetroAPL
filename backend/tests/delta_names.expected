@@ -43,7 +43,9 @@ F∆G[11]  D∆ONE:Z←L∆1,MY_N,∆T,LOOP,D∆ONE
 Incorrect Command
 
      )DROP F∆G
-f∆g DROPPED
-     )FNSL F∆
+Delete the function file F∆G (f=g.fn)?
 
+The function stays in the active workspace; use )ERASE F∆G to remove it there.
+(Y/N) )FNSL F∆
+F∆G NOT DROPPED
      

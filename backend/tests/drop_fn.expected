@@ -1,0 +1,24 @@
+Clear WS
+     )DROP DROPME
+Delete the function file DROPME (dropme.fn)?
+
+The function stays in the active workspace; use )ERASE DROPME to remove it there.
+(Y/N) N
+DROPME NOT DROPPED
+     )DROP DROPME
+Delete the function file DROPME (dropme.fn)?
+
+The function stays in the active workspace; use )ERASE DROPME to remove it there.
+(Y/N) Y
+DROPME DROPPED
+     )DROP DROPME
+DROPME NOT FOUND
+     ^
+Incorrect Command
+
+     )DROP NOSUCHNAME
+NOSUCHNAME NOT FOUND
+     ^
+Incorrect Command
+
+     

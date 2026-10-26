@@ -261,6 +261,62 @@ extern "C" long sys_font_families(char *buf, long bufsize)
     return count;
 }
 
+/* ── Question dialog ()DROP, V113) ─────────────────────────────────────
+ *
+ * commands.c's ask_choice() asks the person to pick one of several
+ * answers or cancel -- )DROP's "are you sure" before it deletes a
+ * workspace or a function file. Same link-time hook arrangement as
+ * sys_font_families() above: declared in externs.h, defined here for
+ * the Qt build; apl_cli's returns -1 and the question goes to the
+ * terminal instead.
+ *
+ * title and text are UTF-8 (the backend writes ∆ as UTF-8 for this:
+ * a QMessageBox uses the ordinary UI font, not KAPL, so font-index
+ * bytes would show the wrong glyphs). buttons is one or more labels
+ * separated by '\n'; a Cancel button is always added, and it is the
+ * default and the Escape button, so Enter alone never deletes
+ * anything. Returns the chosen label's number, 1 up, or 0 for Cancel
+ * or the dialog closed.
+ *
+ * Blocking (Qt::BlockingQueuedConnection), like sys_font_families():
+ * the engine thread needs the answer. Commands run only at the prompt,
+ * so no function is running while it waits. Once the window is closing
+ * (g_shuttingDown) it answers 0 at once rather than waiting on a GUI
+ * thread that is waiting for the engine. Like the other blocking
+ * calls, it doesn't cover the window being closed by other means while
+ * the dialog is up; the dialog is modal to the main window, so the
+ * person has to answer it first. */
+extern "C" int sys_confirm(const char *title, const char *text, const char *buttons)
+{
+    if (!g_terminal || g_shuttingDown) return 0;
+
+    const QString t = QString::fromUtf8(title ? title : "");
+    const QString x = QString::fromUtf8(text ? text : "");
+    const QStringList labels =
+        QString::fromUtf8(buttons ? buttons : "").split('\n', Qt::SkipEmptyParts);
+
+    int result = 0;
+    QMetaObject::invokeMethod(g_terminal, [&]() {
+        QMessageBox box(g_terminal->window());
+        box.setIcon(QMessageBox::Warning);
+        box.setWindowTitle(t);
+        box.setTextFormat(Qt::PlainText);
+        box.setText(x);
+
+        QList<QAbstractButton *> choices;
+        for (const QString &label : labels)
+            choices.append(box.addButton(label, QMessageBox::AcceptRole));
+        QPushButton *cancel = box.addButton(QMessageBox::Cancel);
+        box.setDefaultButton(cancel);
+        box.setEscapeButton(cancel);
+
+        box.exec();
+        const int i = choices.indexOf(box.clickedButton());
+        result = (i >= 0) ? i + 1 : 0;
+    }, Qt::BlockingQueuedConnection);
+    return result;
+}
+
 /*
  * Startup workspace name and ⎕ARGS pass-through values, populated from the
  * command line in main() before the engine thread starts. These must live
@@ -928,10 +984,14 @@ private:
  * One class serves every reference document: the window title and the
  * content file name (resolved under resourcesDirectory()) are
  * constructor arguments, and APLMainWindow keeps one lazily-created
- * instance per document -- currently the quad function reference
+ * instance per document -- currently the Getting Started page
+ * (getting_started.md), the quad function reference
  * (quad_function_help.md), the system command reference
  * (system_command_help.md) and the primitive function reference
- * (primitive_help.md). All three share the same authoring format:
+ * (primitive_help.md). The Getting Started page is mostly prose, with
+ * `##` headings for its index; any paragraph in it made only of code
+ * spans is styled and indexed like a reference entry. The three
+ * references share the same authoring format:
  * entry syntax lines are paragraphs made only of code spans,
  * categories are `##` headings. The primitive reference also has a
  * Markdown table, which styleAndIndexContent() leaves alone.
@@ -1580,6 +1640,12 @@ private slots:
         window->show();
         window->raise();
         window->activateWindow();
+    }
+
+    void openGettingStarted()
+    {
+        showHelpWindow(m_startHelpWindow, "Getting Started with RetroAPL",
+                       "getting_started.md");
     }
 
     void openSystemCommandReference()
@@ -2421,14 +2487,16 @@ private:
         settingsMenu->addAction(settingsAction);
 
         /* ── Help ──────────────────────────────────────────────────────
-         * Quad Function Reference first: expected to be used far more
-         * often than the system command reference (the person's call).
+         * Order (the person's call, V113): Getting Started first, for
+         * newcomers, then the System Command, Primitive Function and
+         * Quad Function references. Until V113 the quad reference
+         * came first.
          */
         QMenu *helpMenu = menuBar()->addMenu("&Help");
 
-        QAction *quadRefAction = new QAction("&Quad Function Reference", this);
-        connect(quadRefAction, &QAction::triggered, this, &APLMainWindow::openHelpReference);
-        helpMenu->addAction(quadRefAction);
+        QAction *startAction = new QAction("&Getting Started", this);
+        connect(startAction, &QAction::triggered, this, &APLMainWindow::openGettingStarted);
+        helpMenu->addAction(startAction);
 
         QAction *cmdRefAction = new QAction("&System Command Reference", this);
         connect(cmdRefAction, &QAction::triggered, this, &APLMainWindow::openSystemCommandReference);
@@ -2437,6 +2505,10 @@ private:
         QAction *primRefAction = new QAction("&Primitive Function Reference", this);
         connect(primRefAction, &QAction::triggered, this, &APLMainWindow::openPrimitiveReference);
         helpMenu->addAction(primRefAction);
+
+        QAction *quadRefAction = new QAction("&Quad Function Reference", this);
+        connect(quadRefAction, &QAction::triggered, this, &APLMainWindow::openHelpReference);
+        helpMenu->addAction(quadRefAction);
 
         helpMenu->addSeparator();
 
@@ -2473,6 +2545,7 @@ private:
     /* Help reference windows, one per document -- each created on first
      * use, kept alive (hidden, not destroyed) after that; see
      * APLHelpReferenceWindow's comment and showHelpWindow(). */
+    APLHelpReferenceWindow *m_startHelpWindow = nullptr; /* getting started */
     APLHelpReferenceWindow *m_helpWindow    = nullptr;   /* quad functions  */
     APLHelpReferenceWindow *m_cmdHelpWindow = nullptr;   /* system commands */
     APLHelpReferenceWindow *m_primHelpWindow = nullptr;  /* primitives      */

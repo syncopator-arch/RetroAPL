@@ -74,8 +74,11 @@ by `)VARS` and removed with `)ERASE ∆LOADMSG`.
 
 Writes the active workspace to disk under its current name (see
 `)WSID`), then displays the time it was saved. With a name, the
-workspace is renamed to `name` first and saved under that. A workspace
-still named `Clear WS` is saved as `continue`. Fails with an SI error
+workspace is renamed to `name` first and saved under that, unless a
+different saved workspace already has that name: then nothing is
+saved and the name stays as it was, as for `)WSID`. A workspace
+still named `Clear WS` is saved as `continue`, replacing any
+`continue` saved before. Fails with an SI error
 if any function is running or suspended — clear the state indicator
 first (see `)SI` and `)PURGE`). There's no "save changes?" prompt
 anywhere else, so save before `)OFF` if you want to keep your work.
@@ -90,7 +93,10 @@ on the function name will compile it into a current workspace.
 
 With no name, displays the active workspace's name. With a name,
 renames the workspace (without saving it) and displays the old name.
-A workspace name can't contain `∆` (an Incorrect Command error, as for
+The name can't be one that a different saved workspace already has:
+the name is left as it was, with a message, so a later `)SAVE` can't
+overwrite that workspace by accident. To reuse the name, delete the
+saved workspace first with `)DROP`. A workspace name can't contain `∆` (an Incorrect Command error, as for
 `)SAVE` and `)LOAD` with such a name). Workspace names are shown in
 upper case, as they're typed; the file in `$APLHOME/ws/` is lower
 case (`)SAVE FOO` writes `foo.ws`). Short form `)WS`.
@@ -200,12 +206,16 @@ given in part: `)FSEARCH ⎕I` finds `⎕IO` and `⎕INTDIV`, and
 `)FSEARCH ⎕IO 0` finds just that use. The files are searched, not the
 functions in the active workspace. Typed in full; no short form.
 
-`)DROP fname`
+`)DROP name`
 
-Deletes the function source file `$APLHOME/fns/fname.fn` and reports
-whether it was dropped or not found. This deletes a function file, not
-a workspace — different from `)DROP` in most other APLs. Functions
-already defined in the active workspace aren't affected.
+Deletes a saved workspace (`$APLHOME/ws/name.ws`) or a function
+source file (`$APLHOME/fns/name.fn`), after asking first. A dialog
+says which one it is and what deleting it means; Cancel is the
+default. If both exist, the dialog asks which one to delete.
+Deleting a function file doesn't affect the function if it's already
+defined in the active workspace: use `)ERASE` for that. Reports
+`name DROPPED`, `name NOT DROPPED` if you cancel, or `name NOT FOUND`
+(an Incorrect Command error) if neither file exists.
 
 **A limit on very long lines.** A function can't be called, and `⍎` or
 `⎕` input can't be used, with more than 254 bytes of compiled code still
