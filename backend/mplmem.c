@@ -14,7 +14,19 @@
 
 #define SANITY_CHECK
 
-int garb_debug = 1;	/* set to 1 to always garb collect for debugging */
+/*
+ * garb_debug: 1 = MakeEnt() collects garbage on every allocation, so code
+ * that holds a pointer into the pool across an allocation fails at once
+ * and the same way every time, instead of rarely. Slower. Off by default
+ * (was 1 until V115). The GUI sets it from Settings ("Collect memory on
+ * every allocation", saved in settings.ini) before the engine starts;
+ * apl_cli turns it on, so the regression tests run in this mode;
+ * )GARB on / )GARB off change it for the current session. Safe to change
+ * between allocations from any thread, like ABORTSIG: MakeEnt() reads it
+ * once per call, and every allocation site already has to survive a
+ * collection.
+ */
+int garb_debug = 0;
 
 long GarbCollect(void);
 

@@ -535,8 +535,11 @@ Writes a full internal dump of the workspace to `debug.log` in
 
 With no argument, compacts workspace memory and displays how many
 bytes were recovered. `on` or `off` sets whether memory is compacted
-on every allocation, which is slow; setting it displays the previous
-state.
+on every allocation, which in theory is a little slower, though usually
+not enough to notice; setting it displays the previous state. It lasts
+for the current session. Each session starts with the choice made under
+**Settings** ("Collect memory on every allocation", off unless chosen
+there).
 
 `)DEBUG`
 

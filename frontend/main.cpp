@@ -27,7 +27,8 @@
  *
  * Settings:
  *   Persistent settings (keyboard layout, font size, background brightness,
- *   dark mode, the MIDI port for quad-SEQOPEN '', window geometry) are
+ *   dark mode, the MIDI port for quad-SEQOPEN '', garbage collection on
+ *   every allocation, window geometry) are
  *   stored in $APLHOME/settings.ini via
  *   QSettings (IniFormat).  Loaded on startup, saved from the Settings dialog
  *   (OK or Apply), and window geometry updated on close.
@@ -564,6 +565,12 @@ extern "C" {
        QSYN_NEW 2 in parse.h), set from -q in main() before the engine
        thread starts */
     extern int quad_syntax;
+    /* mplmem.c (V115): 1 = collect garbage on every allocation. Set from
+       Settings in loadSettings(), before the engine thread starts, and
+       from applyAndSaveSettings() only when the checkbox changed, so a
+       )GARB on/off typed this session isn't undone by OK. A plain flag
+       the engine reads, like ABORTSIG. */
+    extern int garb_debug;
 }
 
 class EngineThread : public QThread
@@ -640,6 +647,7 @@ protected:
  *   - Terminal background brightness (slider, live preview)
  *   - Dark mode (app-level stylesheet)
  *   - MIDI output port for ⎕SEQOPEN '' (V98)
+ *   - Garbage collection on every allocation (V115)
  *
  * OK      → apply + save + close
  * Apply   → apply + save, stay open (useful for brightness tuning)
@@ -668,6 +676,10 @@ public:
             internal error ends the session -- see crashlog.c. Nothing is
             written to disk unless that happens. On by default: the first
             crash is the one that can't be reproduced without it. */
+        bool gcEveryAlloc = false;   /* V115: garb_debug (mplmem.c) at
+            startup -- collect garbage on every allocation. Slower, but a
+            memory problem then shows up at once and the same way every
+            time. )GARB on/off still change it for one session. */
         QString midiPort;   /* V98: the port ⎕SEQOPEN '' opens, as the
             port's whole label from ⎕SEQPORTS ("U2MIDI Pro / U2MIDI Pro
             MIDI 1"), not hw:C,D,S or a WinMM number, which change when
@@ -761,6 +773,20 @@ public:
             "along with the error, to help work out what led to it.\n"
             "Nothing is written to disk unless that happens.");
 
+        /* Garbage collection on every allocation (V115, garb_debug) */
+        m_gcEveryAllocCheck = new QCheckBox(
+            "Collect memory on every allocation  (for tracking down crashes)");
+        m_gcEveryAllocCheck->setChecked(current.gcEveryAlloc);
+        m_gcEveryAllocCheck->setToolTip(
+            "When on, APL compacts its workspace memory every time it "
+            "allocates, instead of only when space runs short. In theory "
+            "that's a little slower, though usually not enough to notice, "
+            "and a memory problem inside the interpreter then shows up right "
+            "away and the same way every time, which makes it much easier "
+            "to reproduce and report.\n"
+            "Off by default. )GARB on and )GARB off change it for the "
+            "current session only.");
+
         /* MIDI output port for ⎕SEQOPEN '' (V98). Chosen from the
          * ports there are now; Refresh lists them again (USB devices
          * come and go). A saved port that isn't plugged in stays in the
@@ -796,6 +822,7 @@ public:
         mainLay->addWidget(m_unicodeClipboardCheck);
         mainLay->addWidget(m_nativeFileDialogCheck);
         mainLay->addWidget(m_crashTranscriptCheck);
+        mainLay->addWidget(m_gcEveryAllocCheck);
         mainLay->addWidget(midiGroup);
         mainLay->addSpacing(8);
         mainLay->addWidget(buttons);
@@ -822,6 +849,7 @@ public:
         s.unicodeClipboard = m_unicodeClipboardCheck->isChecked();
         s.nativeFileDialog = m_nativeFileDialogCheck->isChecked();
         s.crashTranscript  = m_crashTranscriptCheck->isChecked();
+        s.gcEveryAlloc     = m_gcEveryAllocCheck->isChecked();
         s.midiPort         = m_midiPortCombo->currentData().toString();
         return s;
     }
@@ -880,6 +908,7 @@ private:
     QCheckBox         *m_unicodeClipboardCheck;
     QCheckBox         *m_nativeFileDialogCheck;
     QCheckBox         *m_crashTranscriptCheck;
+    QCheckBox         *m_gcEveryAllocCheck;
     QComboBox         *m_midiPortCombo;
 };
 
@@ -1982,6 +2011,7 @@ private slots:
         m_settings.unicodeClipboard = cfg.value("unicodeclipboard", true).toBool();
         m_settings.nativeFileDialog = cfg.value("nativefiledialog", false).toBool();
         m_settings.crashTranscript  = cfg.value("crashtranscript", true).toBool();
+        m_settings.gcEveryAlloc     = cfg.value("gceveryalloc", false).toBool();
         m_settings.midiPort         = cfg.value("midiport", QString()).toString();
 
         m_printLandscape   = cfg.value("print_landscape",   true).toBool();
@@ -2032,6 +2062,7 @@ private slots:
         applyDarkMode(m_settings.darkMode);
         m_graphManager->setUseNativeFileDialog(m_settings.nativeFileDialog);
         crash_set_transcript(m_settings.crashTranscript ? 1 : 0);   /* crashlog.c */
+        garb_debug = m_settings.gcEveryAlloc ? 1 : 0;               /* mplmem.c */
         seqf_set_default_port(m_settings.midiPort.toLatin1().constData());   /* seqfuncs.c */
     }
 
@@ -2047,6 +2078,7 @@ private slots:
         cfg.setValue("unicodeclipboard", m_settings.unicodeClipboard);
         cfg.setValue("nativefiledialog", m_settings.nativeFileDialog);
         cfg.setValue("crashtranscript",  m_settings.crashTranscript);
+        cfg.setValue("gceveryalloc",     m_settings.gcEveryAlloc);
         cfg.setValue("midiport",         m_settings.midiPort);
         cfg.setValue("print_landscape",   m_printLandscape);
         cfg.setValue("print_shrinktofit", m_printShrinkToFit);
@@ -2097,6 +2129,10 @@ private slots:
 
     void applyAndSaveSettings(const APLSettingsDialog::Settings &s)
     {
+        /* Only a change of the checkbox reaches the engine: OK or Apply
+         * for some other setting mustn't undo a )GARB on/off typed this
+         * session (V115). Compared before m_settings is replaced. */
+        bool gcChanged = (s.gcEveryAlloc != m_settings.gcEveryAlloc);
         m_settings = s;                                /* update stored copy first */
         terminal->setKeyboardLayout(s.keyboard);
         terminal->setFontSize(s.fontSize);
@@ -2108,6 +2144,8 @@ private slots:
          * ABORTSIG. Turning it off and on again starts the transcript
          * afresh (crashlog.c). */
         crash_set_transcript(s.crashTranscript ? 1 : 0);
+        /* Plain flag too (mplmem.c); takes effect at the next allocation. */
+        if (gcChanged) garb_debug = s.gcEveryAlloc ? 1 : 0;
         /* Copied under seqfuncs.c's lock; used from the next ⎕SEQOPEN ''. */
         seqf_set_default_port(s.midiPort.toLatin1().constData());
         saveSettings();

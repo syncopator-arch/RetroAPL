@@ -342,6 +342,14 @@ memorize, and you never have to pick glyphs with the mouse.
 - **Strange crashes or link errors after updating the source.** Run a
   clean build (`./build.sh clean` or `build.bat clean`, then build
   again).
+- **Tracking down a crash or odd behavior.** If RetroAPL ever stops
+  with an internal error, or does something you can't pin down, turn on
+  **Collect memory on every allocation** under **Settings** and try
+  again. In theory APL runs a little slower with it on, though usually
+  not enough to notice, and memory problems then show up right away and
+  the same way every time, which makes them much easier to reproduce
+  and report. `)GARB on` and `)GARB off` do the same for
+  the current session only.
 
 ## Tests
 

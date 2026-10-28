@@ -37,7 +37,7 @@ doesn't (`⎕IO+1` adds 1 to `⎕IO`). The assignment form leaves nothing
 to work out.
 
 The `-q` startup option picks which forms are accepted (`retroapl -q
-new`, `apl_cli -q new`):
+new`):
 
 - `both`: both forms.
 - `warn`: both forms, and `)ENTER` prints a note for each function
@@ -1748,59 +1748,8 @@ the file can't be written (no such folder, no permission).
 
 ## Sequencer Test Functions
 
-`⎕SEQRUNTO beat` and `⎕SEQLOG` exist in every build but work only with
-the sequencer's test backend, which runs on a simulated clock and
-writes to a log instead of a device. The regression tests turn it on
-with `apl_cli -S`: every `⎕SEQOPEN` then opens the test backend,
-whatever port it names (a device name too: nothing is looked up), and
-`⎕SEQPORTS` returns a fixed list of three test ports instead of the
-machine's, so a test reads the same wherever it runs. With a real port
-open, `⎕SEQRUNTO` and `⎕SEQLOG` give `Domain Error`.
-
-`⎕SEQRUNTO` instantly plays everything before `beat` and holds there,
-so a version sent while held exactly on a loop boundary takes over at
-that boundary. Returns the beat it holds at (to the nearest 1/2520).
-Under `)SEQUNIT`, `beat` and the result are in its units.
-A beat at or before the current one does nothing. `Domain Error` if
-the sequencer isn't playing (it would never get there) or `beat` is
-negative.
-
-`⎕SEQLOG` returns the log since the last `⎕SEQLOG` (or since the open)
-as a character matrix, one line per MIDI message, and empties it, so
-each call shows only what's new:
-beat, exact tick, simulated time since open, message
-(`8.000 t20160 4000.000ms ON  ch1 60 v100`). The log is the
-sequencer's own, so it counts beats and ticks whatever `)SEQUNIT` is. Nothing new gives a 0×0
-matrix. It still works after `⎕SEQCLOSE`, so the closing note-offs
-can be read.
-
-On the test backend, a wait with `¯1` in its list (`⎕EVWAIT` or
-`⎕WCLICK`) first takes any events posted with `⎕EVPOST` (below); if
-none ends it, it plays at once up to and including the wait's event
-(the next reported note, or beat) and returns it, holding just past
-it, so a wait never takes real time and gives the same result on every
-run. Right after `⎕SEQPLAY←1` it returns what happens at beat `0`,
-since the simulated clock hasn't moved. If nothing comes within 10000
-beats (a reporting track made only of rests, say), the wait gives
-`Domain Error` instead of waiting forever.
-
-`⎕EVPOST kind,values` feeds window events to `⎕WCLICK`/`⎕EVWAIT` in `apl_cli`,
-the command-line front end the regression tests use, which has no real
-windows to click (its windows are a table that remembers their state
-but draws nothing). Each event goes to the waits that come after it,
-in order: a wait takes posted events until one ends it, and leaves the
-rest for the next wait. The first number says which event:
-
-| `kind,values` | Event |
-| --- | --- |
-| `1,w,x,y` | a left click in window `w` at `x,y` |
-| `2,w` | window `w` closed by the user |
-| `3` | Escape |
-| `4` | Ctrl+C |
-
-Returns how many events are now waiting. A wait with nothing posted to
-end it, and nothing from the sequencer to wait for, gives `Domain
-Error` instead of waiting forever. In
-the GUI `⎕EVPOST` always gives `Domain Error`; so does an unknown kind,
-a fraction, or a full queue (64 events). `Length Error` for the wrong
-number of values, `Rank Error` for a matrix.
+`⎕SEQRUNTO`, `⎕SEQLOG` and `⎕EVPOST` are used by RetroAPL's regression
+tests, which run the interpreter without real windows or a MIDI device.
+They exist in every build but have nothing to work on in RetroAPL
+itself: `⎕SEQRUNTO` and `⎕SEQLOG` need the sequencer's test backend,
+and `⎕EVPOST` always gives `Domain Error`.

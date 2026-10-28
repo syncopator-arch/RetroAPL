@@ -21,7 +21,8 @@
 	    === APL fatal error <date time> ===     header
 	    <the message given to fatal_error()>
 	    RetroAPL backend <version>, built <date time>
-	    --- workspace ---                       plain header fields
+	    --- workspace ---                       plain header fields, and
+	                                            whether garb_debug was on
 	    --- recent session ---                  the transcript, see below
 	    --- SI ---                              si_walk(), capped
 	    === end ===
@@ -328,6 +329,11 @@ write_workspace(FILE *f)
 			(long)(STACKMAX - MSTACK));
 	fprintf(f, "FUNC_NUM=%d  FNLINE=%d  ERROR_CODE=%d\n",
 		(int)FUNC_NUM, (int)FNLINE, (int)ERROR_CODE);
+	/* V115: which memory mode the session was in. With collection on
+	   every allocation, a problem should recur the same way; without it,
+	   turning that on (Settings, or )GARB on) is the first thing to try. */
+	fprintf(f, "collect on every allocation (garb_debug): %s\n",
+		garb_debug ? "on" : "off");
 }
 
 /* The SI, through si_walk() (commands.c), capped at CRASH_SI_NEWEST

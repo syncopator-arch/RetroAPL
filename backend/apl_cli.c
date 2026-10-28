@@ -35,11 +35,16 @@
 	               name; without -P, ⎕SEQOPEN '' gives 0, no such port.
 	    -w wsname  workspace name passed to dll_startup(); default "",
 	               the same as the GUI with no workspace argument.
-	    -q mode    quad-function syntax (quad_syntax, parse.c), same as
-	               the GUI's -q: both (default) accepts ⎕IO 0 and
-	               ⎕IO←0; warn also has )ENTER note each old-form use;
-	               new accepts only ⎕IO←0.
+	    -q mode    quad-function syntax (quad_syntax, parse.c), as the
+	               GUI's -q: both accepts ⎕IO 0 and ⎕IO←0; warn also
+	               has )ENTER note each old-form use; new accepts only
+	               ⎕IO←0. Default here: both (parse.c's initial value);
+	               the GUI's default is new.
 	    args       passed through to the backend for quad-ARGS.
+
+	apl_cli always starts with garbage collection on every allocation
+	(garb_debug, mplmem.c), unlike the GUI, where it's off unless chosen
+	in Settings: the regression tests run in that mode.
 
 	Without -t, prompts are shown only when stdin is a terminal, so
 	`apl_cli < script.apl` prints just the results.
@@ -72,6 +77,7 @@ extern int  crash_log_pending(char *path, size_t pathsz, char *summary, size_t s
 extern int  seqf_virtual;	/* seqfuncs.c: -S */
 extern void seqf_set_default_port(const char *name);	/* seqfuncs.c: -P */
 extern void cli_graphics_init(void);	/* cli_graphics.c */
+extern int  garb_debug;	/* mplmem.c: collect on every allocation */
 /* quad_syntax, QSYN_*: declared in parse.h, defined in parse.c */
 
 #define PROMPT		"     "		/* matches the GUI's INDENT */
@@ -345,6 +351,13 @@ main(int argc, char **argv)
 
 	show_prompt = transcript || isatty(STDIN_FILENO);
 	signal(SIGINT, cli_sigint);
+
+	/* Collect garbage on every allocation (mplmem.c; off by default since
+	   V115, the GUI's Settings choose it there). The regression tests run
+	   in this mode: it makes a pointer held across an allocation fail at
+	   once, every time (V103's crash was found this way), and their
+	   expected transcripts were made with it. )GARB off still works. */
+	garb_debug = 1;
 
 	platform_register(&cli_funcs);
 	platform_defaults();

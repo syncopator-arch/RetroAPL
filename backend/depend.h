@@ -27,8 +27,9 @@
 // backend 4.7 adds sequencer and ^ glyph corrections
 // backend 4.8 adds midi file I/O and some dyop.c correctness fixes & struct bugs
 // backend 4.9 adds midi program change, finish midiwrite
-#define BACKEND_VERSION  "4.9"
-#define FRONTEND_VERSION "2.4"
+// backend 5.0/2.5 post github public, plus garb_debug setting
+#define BACKEND_VERSION  "5.0"
+#define FRONTEND_VERSION "2.5"
 #define APL_PRODUCT_NAME "retroapl"
 
 #define VERSION BACKEND_VERSION   // legacy alias -- kept in case anything else references VERSION directly
