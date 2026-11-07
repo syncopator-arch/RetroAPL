@@ -38,6 +38,16 @@
 // -----------------------------------------------------------------------------
 
 // Classic mode (OrigTrans) - Original IBM 2741 layout
+//
+// OrigTrans has two jobs, and since V116 only one of them is the
+// Classic keymap as typed:
+//   - the .fn file encoding, in BOTH layouts: loadFnFile() shows file
+//     byte b as OrigTrans[b], saveToFile() writes through m_origInv (its
+//     inverse, last one wins), and the backend's orig_trans[]
+//     (platform_translate.c) must stay identical to it for )ENTER and
+//     )FSEARCH. Changing an entry changes what existing .fn files mean.
+//   - the Classic keymap, through classicKeyToFont() below, which
+//     overrides a few keys without touching the encoding.
 const uint8_t OrigTrans[256] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
@@ -56,6 +66,28 @@ const uint8_t OrigTrans[256] = {
     0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef,
     0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff
 };
+
+// Classic keymap as typed (V116): OrigTrans, except shift-1 and shift-4,
+// which give the 2741's diaeresis and less-or-equal (font 0xA1, 0xA4)
+// instead of '!' and '$'. Done here rather than in OrigTrans, which is
+// also the .fn file encoding (see its comment): '!' and '$' are still
+// typed by overstrike ('quote BS period', 'stile BS S') and still save
+// and load as file bytes 0x21 and 0x24, and the diaeresis and <= save
+// as 0xA1 and 0xA4, as they always did from the ASCII layout. Used by
+// APLTerminalWidget::translateKeyToFont() and Help > Keyboard Layout.
+//
+// Not changed (the person, V116): shifted ']' gives '}' and no key
+// gives '{'. That key isn't on a 2741. A '{' would also not survive a
+// save: no Classic key gives it, so m_origInv writes it as 0x7B, which
+// loads back as the right arrow.
+inline uint8_t classicKeyToFont(uint8_t key)
+{
+    switch (key) {
+    case '!': return 0xA1;   // shift-1: diaeresis
+    case '$': return 0xA4;   // shift-4: less than or equal
+    default:  return OrigTrans[key];
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Table 1b: AsciiTrans - ASCII Mode Keyboard Layout

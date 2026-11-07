@@ -113,6 +113,7 @@
 #include <QPageLayout>
 #include <QMarginsF>
 #include <QPainter>
+#include <QPaintEvent>
 #include <QTextDocument>
 #include <QAbstractTextDocumentLayout>
 #include <QFont>
@@ -1420,6 +1421,163 @@ private:
     QListWidget  *m_index;
 };
 
+/* ── Help > Keyboard Layout (V116) ─────────────────────────────────────
+ *
+ * The character keys of a US PC keyboard, drawn with QPainter in the APL
+ * font (kapl.ttf) from the same lookup the terminal types with: AsciiTrans
+ * for the Altered 2741 Keymap, classicKeyToFont() (OrigTrans with a few
+ * keys overridden; mappings.hpp) for the Original 2741 Keymap, chosen as
+ * APLTerminalWidget::translateKeyToFont() chooses. Each key
+ * shows the character it gives with Shift above, and without Shift
+ * below. Nothing is stored or installed, so the legends can't drift
+ * from mappings.hpp, and a layout change in Settings redraws an open
+ * window (applyAndSaveSettings()).
+ *
+ * Laid out in fixed units, 1130 x 288 (the person's SVG, trimmed to the
+ * character keys, which this was designed from), scaled to fit the
+ * widget with the aspect kept, centred. The space around it is the
+ * case colour, so it reads as part of the picture. kapl.ttf puts each
+ * glyph at the Latin-1 code point equal to its font byte, so QChar(byte)
+ * draws it, as in the terminal (fontIndexToChar()).
+ *
+ * A plain QWidget/QDialog pair, no Q_OBJECT: no signals or slots of
+ * its own. Modeless and kept for the app's lifetime once opened, like
+ * the reference windows (see showHelpWindow()).
+ */
+class APLKeyboardMap : public QWidget
+{
+public:
+    explicit APLKeyboardMap(const QString &fontFamily, QWidget *parent = nullptr)
+        : QWidget(parent), m_fontFamily(fontFamily)
+    {
+        setMinimumSize(400, 102);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    }
+
+    void setKeyboardLayout(APLTerminalWidget::KeyboardLayout layout)
+    {
+        m_layout = layout;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        static const qreal kWidth = 1130, kHeight = 288;
+
+        QPainter p(this);
+        p.fillRect(rect(), QColor(0x34, 0x38, 0x3e));   /* case */
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::TextAntialiasing);
+
+        qreal s = qMin(width() / kWidth, height() / kHeight);
+        p.translate((width() - kWidth * s) / 2, (height() - kHeight * s) / 2);
+        p.scale(s, s);
+
+        /* Keys 76 x 62 on an 82 pitch; each row's unshifted and shifted
+         * characters, key by key. */
+        struct Row { qreal y, x; const char *lower, *upper; };
+        static const Row rows[] = {
+            {   8, 10, "1234567890-=", "!@#$%^&*()_+" },
+            {  78, 39, "qwertyuiop[]", "QWERTYUIOP{}" },
+            { 148, 60, "asdfghjkl;'",  "ASDFGHJKL:\"" },
+            { 218, 89, "zxcvbnm,./",   "ZXCVBNM<>?"   },
+        };
+        for (const Row &r : rows) {
+            for (int i = 0; r.lower[i] != '\0'; i++)
+                drawKey(p, r.x + 82 * i, r.y, 76, false,
+                        glyph(r.upper[i]), glyph(r.lower[i]));
+        }
+        drawKey(p, 1023, 78, 97, true, glyph('|'), glyph('\\'));
+
+        /* Backspace: a single legend, centred */
+        drawKey(p, 994, 8, 126, false, QString(), QString());
+        p.setFont(legendFont(15));
+        p.setPen(QColor(0x20, 0x25, 0x2a));
+        p.drawText(QRectF(994, 8, 126, 62), Qt::AlignCenter, "Backspace");
+    }
+
+private:
+    /* The font character the key gives in this layout */
+    QString glyph(char key) const
+    {
+        uint8_t k = static_cast<uint8_t>(key);
+        return QString(QChar(m_layout == APLTerminalWidget::Classic
+                             ? classicKeyToFont(k) : AsciiTrans[k]));
+    }
+
+    QFont legendFont(int pixelSize) const
+    {
+        QFont f(m_fontFamily);
+        f.setPixelSize(pixelSize);
+        return f;
+    }
+
+    void drawKey(QPainter &p, qreal x, qreal y, qreal w, bool mod,
+                 const QString &upper, const QString &lower)
+    {
+        p.setPen(QPen(QColor(0xa8, 0xa5, 0x9e), 1.5));
+        p.setBrush(mod ? QColor(0xc9, 0xc8, 0xc2) : QColor(0xe7, 0xe5, 0xdf));
+        p.drawRoundedRect(QRectF(x, y, w, 62), 6, 6);
+
+        if (!upper.isEmpty()) {
+            p.setFont(legendFont(26));
+            p.setPen(QColor(0x26, 0x31, 0x3a));
+            p.drawText(QRectF(x, y + 4, w, 26), Qt::AlignCenter, upper);
+        }
+        if (!lower.isEmpty()) {
+            p.setFont(legendFont(19));
+            p.setPen(QColor(0x20, 0x25, 0x2a));
+            p.drawText(QRectF(x, y + 33, w, 26), Qt::AlignCenter, lower);
+        }
+    }
+
+    QString m_fontFamily;   /* APLTerminalWidget::fontFamily(): kapl.ttf's */
+    APLTerminalWidget::KeyboardLayout m_layout = APLTerminalWidget::ASCII;
+};
+
+class APLKeyboardWindow : public QDialog
+{
+public:
+    explicit APLKeyboardWindow(const QString &fontFamily, QWidget *parent = nullptr)
+        : QDialog(parent)
+    {
+        setModal(false);
+        resize(920, 300);
+
+        m_map = new APLKeyboardMap(fontFamily, this);
+
+        QLabel *note = new QLabel(
+            "Upper character: with Shift.   Lower character: without Shift.", this);
+
+        QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
+
+        QHBoxLayout *bottom = new QHBoxLayout();
+        bottom->addWidget(note);
+        bottom->addStretch();
+        bottom->addWidget(buttons);
+
+        QVBoxLayout *mainLay = new QVBoxLayout(this);
+        mainLay->addWidget(m_map, 1);
+        mainLay->addLayout(bottom);
+    }
+
+    /* Called on every show and on every settings change, so the title
+     * and the legends always match the terminal's current layout. The
+     * names are the Settings dialog's. */
+    void setKeyboardLayout(APLTerminalWidget::KeyboardLayout layout)
+    {
+        m_map->setKeyboardLayout(layout);
+        setWindowTitle(layout == APLTerminalWidget::Classic
+                       ? "Keyboard Layout: Original 2741 Keymap"
+                       : "Keyboard Layout: Altered 2741 Keymap");
+    }
+
+private:
+    APLKeyboardMap *m_map;
+};
+
 /* ── Main window ────────────────────────────────────────────────────── */
 class APLMainWindow : public QMainWindow
 {
@@ -1675,6 +1833,19 @@ private slots:
     {
         showHelpWindow(m_startHelpWindow, "Getting Started with RetroAPL",
                        "getting_started.md");
+    }
+
+    /* Help > Keyboard Layout (V116): created on first use and kept, like
+     * the reference windows; the layout is set again on every show. */
+    void openKeyboardLayout()
+    {
+        if (!m_keyboardWindow)
+            m_keyboardWindow = new APLKeyboardWindow(terminal->fontFamily(), this);
+
+        m_keyboardWindow->setKeyboardLayout(terminal->getKeyboardLayout());
+        m_keyboardWindow->show();
+        m_keyboardWindow->raise();
+        m_keyboardWindow->activateWindow();
     }
 
     void openSystemCommandReference()
@@ -2135,6 +2306,8 @@ private slots:
         bool gcChanged = (s.gcEveryAlloc != m_settings.gcEveryAlloc);
         m_settings = s;                                /* update stored copy first */
         terminal->setKeyboardLayout(s.keyboard);
+        if (m_keyboardWindow)                          /* Help > Keyboard Layout */
+            m_keyboardWindow->setKeyboardLayout(s.keyboard);
         terminal->setFontSize(s.fontSize);
         terminal->setBackgroundBrightness(s.brightness);
         terminal->setClipboardUnicodeTranslationEnabled(s.unicodeClipboard);
@@ -2528,13 +2701,18 @@ private:
          * Order (the person's call, V113): Getting Started first, for
          * newcomers, then the System Command, Primitive Function and
          * Quad Function references. Until V113 the quad reference
-         * came first.
+         * came first. Keyboard Layout (V116) right after Getting
+         * Started.
          */
         QMenu *helpMenu = menuBar()->addMenu("&Help");
 
         QAction *startAction = new QAction("&Getting Started", this);
         connect(startAction, &QAction::triggered, this, &APLMainWindow::openGettingStarted);
         helpMenu->addAction(startAction);
+
+        QAction *keyboardAction = new QAction("&Keyboard Layout", this);
+        connect(keyboardAction, &QAction::triggered, this, &APLMainWindow::openKeyboardLayout);
+        helpMenu->addAction(keyboardAction);
 
         QAction *cmdRefAction = new QAction("&System Command Reference", this);
         connect(cmdRefAction, &QAction::triggered, this, &APLMainWindow::openSystemCommandReference);
@@ -2587,6 +2765,7 @@ private:
     APLHelpReferenceWindow *m_helpWindow    = nullptr;   /* quad functions  */
     APLHelpReferenceWindow *m_cmdHelpWindow = nullptr;   /* system commands */
     APLHelpReferenceWindow *m_primHelpWindow = nullptr;  /* primitives      */
+    APLKeyboardWindow      *m_keyboardWindow = nullptr;  /* Help > Keyboard Layout (V116) */
 
     /* Current persistent settings */
     APLSettingsDialog::Settings m_settings;

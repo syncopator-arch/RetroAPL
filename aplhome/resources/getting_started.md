@@ -5,6 +5,12 @@ A short introduction for people new to RetroAPL. The other pages on the
 Help menu have the full details: the System Command Reference, the
 Primitive Function Reference and the Quad Function Reference.
 
+Help > Keyboard Layout shows which key types each APL character, for
+the keyboard layout chosen in Settings. Composite characters such as
+⍋ and ⍝ have no key of their own: they are typed as overstrikes, one
+character, then Backspace, then the other (| Backspace ∆ gives ⍋,
+∩ Backspace ∘ gives ⍝; either order works).
+
 System commands are typed on their own line at the prompt, starting
 with a right parenthesis, such as `)LIB` or `)SAVE`.
 

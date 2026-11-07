@@ -1637,7 +1637,9 @@ void APLTerminalWidget::handleReturn()
 uint8_t APLTerminalWidget::translateKeyToFont(QChar key)
 {
     uint8_t ascii = static_cast<uint8_t>(key.toLatin1());
-    return (m_keyboardLayout == Classic) ? OrigTrans[ascii] : AsciiTrans[ascii];
+    /* Classic: classicKeyToFont(), not OrigTrans directly -- OrigTrans is
+     * also the .fn encoding (V116; see mappings.hpp) */
+    return (m_keyboardLayout == Classic) ? classicKeyToFont(ascii) : AsciiTrans[ascii];
 }
 
 QChar APLTerminalWidget::fontIndexToChar(uint8_t index)
