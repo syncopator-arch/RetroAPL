@@ -1513,6 +1513,15 @@ private:
         return f;
     }
 
+    /* Legend sizes and bands on the 62-unit-high key (V117: enlarged from
+     * 26/19 px in bands y+4..30 and y+33..59, which left most of the
+     * keytop empty). Each band's centre is where the glyph is centred;
+     * QPainter doesn't clip drawText() to the rect, so a band narrower
+     * than the font's line height is fine. */
+    static constexpr int   kUpperPx = 34, kLowerPx = 25;
+    static constexpr qreal kUpperTop = 2,  kUpperH = 32;   /* centre y+18   */
+    static constexpr qreal kLowerTop = 33, kLowerH = 27;   /* centre y+46.5 */
+
     void drawKey(QPainter &p, qreal x, qreal y, qreal w, bool mod,
                  const QString &upper, const QString &lower)
     {
@@ -1521,14 +1530,14 @@ private:
         p.drawRoundedRect(QRectF(x, y, w, 62), 6, 6);
 
         if (!upper.isEmpty()) {
-            p.setFont(legendFont(26));
+            p.setFont(legendFont(kUpperPx));
             p.setPen(QColor(0x26, 0x31, 0x3a));
-            p.drawText(QRectF(x, y + 4, w, 26), Qt::AlignCenter, upper);
+            p.drawText(QRectF(x, y + kUpperTop, w, kUpperH), Qt::AlignCenter, upper);
         }
         if (!lower.isEmpty()) {
-            p.setFont(legendFont(19));
+            p.setFont(legendFont(kLowerPx));
             p.setPen(QColor(0x20, 0x25, 0x2a));
-            p.drawText(QRectF(x, y + 33, w, 26), Qt::AlignCenter, lower);
+            p.drawText(QRectF(x, y + kLowerTop, w, kLowerH), Qt::AlignCenter, lower);
         }
     }
 
