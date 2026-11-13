@@ -211,6 +211,12 @@ knowing:** unlike a traditional APL atomic vector, this one is simply
 bytes `0` through `255` in literal numeric order — don't assume
 APL-glyph positions here match another APL's `⎕AV`.
 
+Also note that there are a couple of notable special characters:
+
+  ⎕AV[2] (origin 1) is a clear screen character
+
+  ⎕AV[3] (origin 1) is a cursor home character
+
 `⎕LCASE text`
 
 Lowercases a character string; mirror of `⎕UCASE`.
